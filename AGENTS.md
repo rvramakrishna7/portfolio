@@ -55,6 +55,14 @@ A personal portfolio site for Ramakrishna, a full-stack and AI automation develo
 
 STOP and report when: a precondition fails, a secret is needed, a command fails twice, a requirement is unclear, or the task conflicts with this file or the decision log.
 
+## 6a. Terminal commands (the owner approves each one, so keep them clean)
+The owner's shell is Windows PowerShell. Use PowerShell syntax, and run every command from the project root.
+1. **One command per call.** No chaining with `;`, `&&`, `||` or `&`, no pipes, no `cd` chains, unless the task prompt names that exact command. Each npm script (`npm test`, `npm run lint`, `npm run build`, `npm run e2e`, `npm run check:flat`, `npm run typecheck`) is its own call.
+2. **Never put a delete or overwrite in the same call as anything else.** A deletion (`Remove-Item`, `del`, `rm`) goes in its own call, with a one-line reason, and is listed in the report under "Deviations". Never use `-Force` or `-Recurse` without owner approval.
+3. **Never delete or change a config or test file to make a check pass** (for example `vitest.config.ts`, `playwright.config.ts`, `eslint` config). If a config blocks you, STOP and report the exact error.
+4. Prefer the npm scripts in `package.json` over raw `npx` commands, so the owner's allow list can cover them.
+5. Do not install anything that is not in the task prompt.
+
 ## 7. Honest reporting (mandatory)
 1. A test is PASS only if you ran it in THIS task and pasted its output. A successful build is NOT a test pass.
 2. Use exactly one of: `PASS (evidence: <command/output>)`, `FAIL`, `NOT RUN`, `PENDING OWNER CHECK`.
@@ -140,5 +148,6 @@ Put the report at the end of your final message. Do not summarise command output
 | 7f.3 | Used about ten temporary scripts and reported "none". | List every one. |
 | 6 | Changed server code and reported "Deviations: none". | Every deviation goes in the report. |
 | 5 | Silently loosened a test assertion to make it pass. | Never weaken a test to get a PASS. Report the failure. |
+| 6a | S0 asked to run `Remove-Item vitest.config.ts -Force` chained with tests, build and e2e in one command. | One command per call; deletes alone; never remove a config to get a check through. |
 
 Each new violation is added here with the task ID.
