@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Restart Options: Options trading automation | Ramakrishna</title>
+<meta name="description" content="How I took options strike shifting from 45 to 60 seconds by hand to 2 to 3 seconds, with a trading platform that survives network drops and restarts.">
+<link rel="canonical" href="__SITE__/work/restart-options/">
+<meta name="theme-color" content="#0b0d10">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Ramakrishna">
+<meta property="og:title" content="Restart Options: Options trading automation | Ramakrishna">
+<meta property="og:description" content="How I took options strike shifting from 45 to 60 seconds by hand to 2 to 3 seconds, with a trading platform that survives network drops and restarts.">
+<meta property="og:url" content="__SITE__/work/restart-options/">
+<meta property="og:image" content="__SITE__/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Restart Options: Options trading automation | Ramakrishna">
+<meta name="twitter:description" content="How I took options strike shifting from 45 to 60 seconds by hand to 2 to 3 seconds, with a trading platform that survives network drops and restarts.">
+<meta name="twitter:image" content="__SITE__/og.png">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="/assets/style.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Home", "item": "__SITE__/"}, {"@type": "ListItem", "position": 2, "name": "Restart Options", "item": "__SITE__/work/restart-options/"}]}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" aria-hidden="true"></div>
+<header class="site-head">
+  <a class="brand" href="/">Rama<b>krishna</b></a>
+  <nav class="nav" aria-label="Main">
+    <a class="hide-s" href="/#work">Work</a>
+    <a class="hide-s" href="/#experience">Experience</a>
+    <a class="hide-s" href="/#stack">Skills</a>
+  </nav>
+  <div class="head-actions">
+    <button class="btn ghost" type="button" data-open-palette aria-haspopup="dialog">Jump to <span class="kbd">Ctrl K</span></button>
+    <a class="btn primary" href="/#contact">Contact</a>
+  </div>
+</header>
+<dialog id="palette" aria-label="Jump to a section">
+  <input id="pal-input" class="pal-in" type="text" placeholder="Jump to..." autocomplete="off" aria-label="Search sections">
+  <ul id="pal-list" class="pal-list">
+    <li><a href="/#work"><span>Work</span><small>four stories</small></a></li>
+    <li><a href="/work/restart-options/"><span>Restart Options</span><small>story 01</small></a></li>
+    <li><a href="/work/zync/"><span>Zync</span><small>story 02</small></a></li>
+    <li><a href="/work/vouch/"><span>Vouch</span><small>story 03</small></a></li>
+    <li><a href="/work/mcp-gateway/"><span>Team MCP Gateway</span><small>story 04</small></a></li>
+    <li><a href="/#experience"><span>Experience</span><small>internship</small></a></li>
+    <li><a href="/#stack"><span>Skills</span><small>tools</small></a></li>
+    <li><a href="/#contact"><span>Contact</span><small>send a message</small></a></li>
+    <li><a href="https://www.linkedin.com/in/rvramakrishna" target=_blank rel=noopener><span>LinkedIn</span><small>opens in a new tab</small></a></li>
+    <li><a href="https://github.com/rvramakrishna7" target=_blank rel=noopener><span>GitHub</span><small>opens in a new tab</small></a></li>
+  </ul>
+  <p class="pal-hint">Enter to open &middot; Esc to close</p>
+</dialog>
+<main id="main">
+<div class="case-hero"><div class="wrap">
+  <p class="crumbs"><a href="/">Home</a> / <a href="/#work">Work</a> / Story 01</p>
+  <p class="eyebrow">Options trading automation</p>
+  <h1 style="margin-top:.8rem">Restart Options</h1>
+  <p class="hook" style="margin-top:1.4rem;max-width:40ch">Traders moved strikes by hand. Each shift took a minute while the market kept moving.</p>
+  <ul class="chips" style="margin-top:1.6rem" aria-label="Built with"><li>React</li><li>Node.js</li><li>Express</li><li>MongoDB</li><li>WebSocket</li><li>JWT</li></ul>
+</div></div>
+<div class="wrap case-body">
+  <section><h2>The problem</h2><p>Options traders shifted strikes by hand. Each shift took 45 to 60 seconds, and the market kept moving the whole time.</p></section>
+  <section><h2>The constraint</h2><p>Market data comes over a live feed that can drop. If the feed or the server restarts, open positions must not be lost or forgotten.</p></section>
+  <section><h2>What I did</h2><ul><li>Automated adjustments and exits for 5 NIFTY and BANKNIFTY strategies: debit spread, straddle, strangle, iron fly and calendar spread. Each runs in paper mode and live mode.</li><li>When the internet drops, the live feed reconnects and re-subscribes every open position, so monitoring carries on by itself.</li><li>After a server restart, open positions and P&amp;L come back from MongoDB.</li><li>Added a short cooldown between adjustments, so the same adjustment does not fire twice in a row.</li></ul></section>
+  <section><h2>The result</h2><div class="results"><div><strong>45–60 s → 2–3 s</strong><span>Strike shifting time (timed by hand)</span></div><div><strong>38</strong><span>REST endpoints, with JWT login and owner/user roles</span></div><div><strong>99</strong><span>Lighthouse performance score, desktop</span></div></div></section>
+  <section><h2>Proof</h2><div class="links"><a href="https://restartoptions.vercel.app" rel="noopener" target="_blank">Open the live site</a><a href="https://github.com/rvramakrishna7/restart" rel="noopener" target="_blank">See the code</a><a href="/#contact">Ask me about it</a></div></section>
+  <nav class="pager" aria-label="More stories">
+    <a href="/work/mcp-gateway/"><small>&larr; Previous</small><span>Team MCP Gateway</span></a>
+    <a class="next" href="/work/zync/"><small>Next &rarr;</small><span>Zync</span></a>
+  </nav>
+</div>
+</main>
+<footer>
+  <div class="wrap">
+    <span>&copy; <span id="year">2026</span> Ramakrishna. Built by hand with plain HTML, CSS and a little JavaScript.</span>
+    <span><a href="https://github.com/rvramakrishna7" rel="noopener">GitHub</a> &middot; <a href="https://www.linkedin.com/in/rvramakrishna" rel="noopener">LinkedIn</a></span>
+  </div>
+</footer>
+<button class="totop" type="button" aria-label="Back to top">&uarr;</button>
+<script src="/assets/main.js" defer></script>
+</body>
+</html>
