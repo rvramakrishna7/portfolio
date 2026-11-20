@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Hero } from "@/components/Hero";
 import { ProofStrip } from "@/components/ProofStrip";
+import { Work } from "@/components/Work";
 
 export const metadata: Metadata = {
   title: "Ramakrishna | Full-stack and AI automation developer",
@@ -13,6 +14,7 @@ export default function HomePage() {
     <main id="main" tabIndex={-1}>
       <Hero />
       <ProofStrip />
+      <Work />
     </main>
   );
 }
