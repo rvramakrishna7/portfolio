@@ -1,14 +1,12 @@
 # Status: Portfolio site
 
-Current step: S7b (Four small fixes after quality pass), done.
+Current step: S7b and S7c merged into main; S8 (Deploy) next.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-012).
 Done since last update:
-- Merged `feat/quality` (S7) into `main` (`4bcf608`) with `git merge --no-ff` and created branch `feat/quality-fixes`.
-- Item 1 (HSTS): Removed `Strict-Transport-Security` header in `next.config.ts` (Vercel manages HSTS natively) and updated `e2e/headers.spec.ts` removing the HSTS assertion while retaining CSP and COOP assertions across all routes.
-- Item 2 (Forced colors): Added explicit `@media (forced-colors: active)` rules in `src/styles/globals.css` mapping text, borders, links, buttons, and focus rings to CSS system colors (`Canvas`, `CanvasText`, `LinkText`, `ButtonText`, `ButtonFace`, `Field`, `FieldText`, `Highlight`) and ensuring chapter panels/meta have `clip-path: none !important; opacity: 1 !important;`. Updated `e2e/forced-colors-zoom.spec.ts` to step-scroll the entire home page, verify contact form inputs/button are visible, evaluate Euclidean color distance in RGB space (asserting computed color distance >= 80 against background), and saved section viewport screenshots (`forced-colors-hero.png`, `forced-colors-proof.png`, `forced-colors-chapter-1..4.png`, `forced-colors-experience.png`, `forced-colors-skills.png`, `forced-colors-contact.png`).
-- Item 3 (Extreme viewports): Updated `e2e/viewport-extremes.spec.ts` to scroll step-by-step through `/`, `/work/vouch`, and `/nope` at 320 px, 1920 px, and 2560 px, verifying zero horizontal scroll (`document.documentElement.scrollWidth <= clientWidth`) and saving section viewport screenshots for hero, proof, chapters 1-4, experience, skills, and contact.
-- Item 4 (OG image): Formatted text lines in `src/app/opengraph-image.tsx` as single string expressions (`{"Mumbai, India"}`, `{"Ramakrishna"}`, `{"Full-stack and AI automation developer"}`) to eliminate Satori whitespace collapse, and removed the duplicate bottom name while keeping the clean separator rule. Verified visual layout in `e2e/screenshots/og.png`.
-- Item 5 (Verification & Production Lighthouse): Ran full test suite (84 / 84 Playwright tests passing, typecheck, lint, vitest, check:flat all passing). Production Lighthouse verified on Home (Mobile 94, Desktop 100) and Restart Options (3 mobile runs: 98, 95, 97 -> median 97; Desktop 100).
+- Merged `feat/quality-fixes` (S7b) into `main` (`4eb93e4`) with `git merge --no-ff`.
+- Merged `feat/contact-resend` (S7c) into `main` (`2060eaf`) with `git merge --no-ff`.
+- Verified clean build and test suite on `main`: `npm run lint`, `npm run typecheck`, `npm test` (16 tests passed), `npm run check:flat` (29 files scanned), `npm run build` (12 static/SSG routes rendered).
+- Contact form server delivery switched from Web3Forms to Resend (DEC-012) via plain `fetch` to `https://api.resend.com/emails`; verified real dispatch returning 200 OK.
 Next step (awaiting owner approval): S8 (Deploy and live verification).
 Blockers / questions for the owner:
 - Resend API key and contact recipient email configured in .env.local for server-side contact delivery (DEC-012); delivery pending owner inbox check in S8.
