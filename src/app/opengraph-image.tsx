@@ -50,14 +50,24 @@ export default function OpenGraphImage() {
           >
             Ramakrishna
           </div>
+          {/* Satori ignores CSS word-spacing on plain text runs; explicit flex items with columnGap ensure uniform word gaps */}
           <div
             style={{
+              display: "flex",
+              flexDirection: "row",
+              flexWrap: "nowrap",
+              columnGap: "11px",
+              alignItems: "baseline",
               fontSize: "32px",
               color: "#ece8df",
               lineHeight: 1.3,
             }}
           >
-            Full-stack and AI automation developer
+            <span>Full-stack</span>
+            <span>and</span>
+            <span>AI</span>
+            <span>automation</span>
+            <span>developer</span>
           </div>
         </div>
 
