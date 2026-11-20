@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { STORIES } from "@/content/stories";
+import { absoluteUrl } from "@/lib/site";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -73,19 +74,19 @@ export default async function StoryPage({ params }: PageProps) {
         "@type": "ListItem",
         position: 1,
         name: "Home",
-        item: "/",
+        item: absoluteUrl("/"),
       },
       {
         "@type": "ListItem",
         position: 2,
         name: "Work",
-        item: "/#work",
+        item: absoluteUrl("/#work"),
       },
       {
         "@type": "ListItem",
         position: 3,
         name: story.title,
-        item: `/work/${story.slug}`,
+        item: absoluteUrl(`/work/${story.slug}`),
       },
     ],
   };
@@ -160,7 +161,6 @@ export default async function StoryPage({ params }: PageProps) {
             >
               See the code
             </a>
-            <Link href="/#contact">Ask me about it</Link>
           </div>
         </section>
         <nav className="pager" aria-label="More stories">

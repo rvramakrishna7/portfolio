@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import { Contact } from "@/components/Contact";
+import { Experience } from "@/components/Experience";
 import { Hero } from "@/components/Hero";
 import { ProofStrip } from "@/components/ProofStrip";
+import { Skills } from "@/components/Skills";
 import { Work } from "@/components/Work";
 
 export const metadata: Metadata = {
@@ -15,6 +18,9 @@ export default function HomePage() {
       <Hero />
       <ProofStrip />
       <Work />
+      <Experience />
+      <Skills />
+      <Contact />
     </main>
   );
 }

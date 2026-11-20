@@ -1,20 +1,33 @@
 # Status: Portfolio site
 
-Current step: S4 (Story pages), done.
+Current step: S5 (Experience, skills, education, contact form), done.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-009).
 Done since last update:
-- Merged `feat/work` (S3) into `main` (`19f38bc`) with `git merge --no-ff` and created branch `feat/stories`.
-- Completed S3 carry-over fix: added `white-space: nowrap` and fine-tuned `.results strong` (`clamp(1.05rem, 0.9rem + 0.4vw, 1.35rem)` default, `clamp(0.85rem, 0.78rem + 0.35vw, 1.05rem)` with `padding: 12px` at `<= 420 px`) so `"45–60 s → 2–3 s"` and `"18.8 s → 3.35 s"` stay strictly single-line at all viewports down to 375 px. Added single-line height assertion to `e2e/work.spec.ts`.
-- Implemented `src/app/work/[slug]/page.tsx` as a Server Component (`export const dynamicParams = false;`, `generateStaticParams()` for all 4 stories, `generateMetadata` setting title, description, canonical link, Open Graph, Twitter, and JSON-LD BreadcrumbList).
-- Story layout adheres to `design.md`: breadcrumbs (`Home / Work / <Story Title>`), eyebrow tag, single `<h1>`, italic serif hook, tech chips, two-column responsive sections on `>= 900 px` (The problem, The constraint, What I did, The result, Proof), and wrapping bottom pager (`nav.pager`).
-- Added story styling to `src/styles/globals.css` (.crumbs, .case-hero, .case-body, .pager) with zero gradients, strict token reuse, and no magic numbers.
-- Implemented comprehensive `e2e/stories.spec.ts` covering 200 responses, 404 on `/work/nope` with noindex, exact content/number/link verification from `docs/content.md`, zero-JS visibility, reduced motion, zero axe accessibility violations at 375 and 1440 px, single-line results, command-palette navigation, and TEST-012 crawling every internal link with status 200/404.
-- Generated full-page screenshots at 375, 768, 1024, 1280, and 1440 px for all 4 stories in `e2e/screenshots/` and verified visual layout.
-- Lighthouse scores on production build: Home 100/100/100/100 (mobile & desktop), Story 100/100/100/100 (mobile & desktop). Total JS over the wire remains 141 KB (under 150 KB budget, 0 KB added by story Server Component).
-Next step (awaiting owner approval): S5 (Experience, skills, contact).
+- Merged `feat/stories` (S4) into `main` (`1bfa2b3`) with `git merge --no-ff` and created branch `feat/contact`.
+- Part A (S4 fixes):
+  - Removed "Ask me about it" link from the Proof block of story pages (not in `docs/content.md`). Updated story tests.
+  - Extracted URL resolution into `src/lib/site.ts` (`getSiteUrl()` and `absoluteUrl(path)`), ensuring metadataBase in `layout.tsx` and story JSON-LD schema emit valid absolute URLs.
+  - Committed Part A as `446044e` (`fix: story page proof links and absolute structured data URLs`).
+- Part B (Sections):
+  - Built `src/components/Experience.tsx` (`id="experience"`): Lead Automation & AI Developer at SonicVocal (Oct 2024 – Present), intro paragraph, 5 numbered deliverable items, and NDA note in dashed border box. Zero links to SonicVocal live site.
+  - Built `src/components/Skills.tsx` (`id="skills"`): 5 skill clusters in a `<dl>` definition list (AI & LLM Systems, Backend & Architecture, Frontend & Mobile, Data, Cache & Search, Cloud & Ops), plus two cards for Education (B.E. in Computer Engineering, University of Mumbai, First Class) and Certifications (Professional Scrum Master I, AWS Certified Cloud Practitioner).
+  - Built `src/components/Contact.tsx` (`id="contact"`): section label, heading, sub-text, three large cards linking to LinkedIn, GitHub, and Resume (`/resume.pdf`), and the accessible contact form on the right.
+  - Updated `src/app/page.tsx` home page order: Hero, Proof, Work, Experience, Skills, Contact.
+- Part C (Contact API & Form):
+  - Created `src/app/api/contact/route.ts` with strict Zod validation, control character stripping, honeypot (`website`), 10 KB body limit (413), Content-Type checking (415), Origin header verification (403), per-IP rate limiting (5 req / 10 min, 429), and 8-second fetch timeout forwarding to Web3Forms.
+  - Built `src/components/ContactForm.tsx` (accessible client component with labels, aria-invalid, aria-describedby, aria-live status polite, no-JS fallback guidance).
+  - First-load JS budget verified: ContactForm added to client bundle (`.next/static/chunks/1x61hkkdb8whc.js` together with ChapterReveal & CountUp is 4.3 KB uncompressed, ~1.5 KB gzipped), well within the <= 5 KB gzipped budget.
+  - Search on `.next/static` for `WEB3FORMS` and `access_key` confirmed 0 matches (zero secrets leaked to client).
+- Part D (Tests & Verification):
+  - Created `src/app/api/contact/route.test.ts` with 11 Vitest unit tests covering all status codes and edge cases (13/13 passing across all unit tests).
+  - Created `e2e/contact.spec.ts` with 8 Playwright test suites covering full text verification from `docs/content.md`, NDA box styling, zero-JS functionality, mocked API success/error/502 handling, honeypot, and zero axe accessibility violations at 375 px and 1440 px.
+  - Full Playwright suite: 50 / 50 passing across all test files.
+  - Verified full-page screenshots at 375, 768, 1024, 1280, and 1440 px for Experience, Skills, and Contact.
+  - Lighthouse on production build: Mobile 91/100/100/100 (CLS 0), Desktop 100/100/100/100 (CLS 0). Total JS transfer 145.6 KB (< 150 KB).
+Next step (awaiting owner approval): S6 (SEO, social tags, and assets).
 Blockers / questions for the owner:
-- Web3Forms access key (free) needed before S5 can be tested for real.
-- `resume.pdf` to put in `public/` before S8.
+- Web3Forms access key (free) needed before real email delivery can be verified (currently TEST-010 is mocked and marked PENDING OWNER CHECK for live delivery).
+- `resume.pdf` to put in `public/` before S8 (link is in contact section, excluded from 404 test with named constant and marked PENDING OWNER CHECK).
 - Real site address (custom domain or the Vercel one) before S6.
 
 Deviations:
@@ -30,4 +43,6 @@ Deviations:
 - S3: Rendered the decorative `aria-hidden="true"` chapter number (`.num`, coloured `--line-2` `#363e4a`) via an inline decorative `<svg>` `<text>` element because axe-core's `color-contrast` check flags HTML DOM text nodes in `--line-2` (`1.72:1` against `--bg` `#0b0d10`), even when `aria-hidden="true"` is present.
 - S3: After reviewing the initial chapter screenshots, adjusted `.results` (`minmax(min(100%, 145px), 1fr)` and `grid-column: 1 / -1` on the 3rd odd cell at `<= 420 px`) and `.results strong` (`clamp(1.1rem, 0.95rem + 0.45vw, 1.35rem)`) so all 3 result cells sit in a single row at `768–1440 px` without orphan empty grid cells or 2-line wraps on `"45–60 s → 2–3 s"` and `"18.8 s → 3.35 s"`.
 - S4: Set `metadataBase` in `src/app/layout.tsx` (`new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000")`) so relative canonical links in Next.js App Router resolve to valid absolute URLs, satisfying Lighthouse canonical audit and achieving 100 SEO.
+- S4: Added canonical, Open Graph, Twitter, and JSON-LD structured data on story pages ahead of S6; `metadataBase` falls back to `http://localhost:3000` when `NEXT_PUBLIC_SITE_URL` is unset. TEST-009 is therefore reported as PARTIAL (story pages only) until S6.
 - S4: Removed temporary Lighthouse test JSON reports (`lighthouse-home-mobile.json`, `lighthouse-home-desktop.json`, `lighthouse-story-mobile.json`, `lighthouse-story-desktop.json`) with individual `Remove-Item` commands per rule 6a.
+- S5: Removed temporary Lighthouse test JSON reports (`lighthouse-s5-mobile.json`, `lighthouse-s5-desktop.json`) with individual `Remove-Item` commands per rule 6a.
