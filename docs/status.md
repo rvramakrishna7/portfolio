@@ -1,8 +1,11 @@
 # Status: Portfolio site
 
-Current step: S8a done and merged into main; S8b (GitHub + Vercel deploy) next.
+Current step: S8b-1 done (main pushed to GitHub); S8b-2 (Vercel deploy & live verification) next.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
 Done since last update:
+- S8b-1: Verified zero secrets tracked in git (`git ls-files | findstr /i /c:".env" /c:"key" /c:"secret"` confirmed only `.env.example`).
+- S8b-1: Configured origin remote to `https://github.com/rvramakrishna7/portfolio.git`.
+- S8b-1: Received owner approval and pushed `main` to GitHub with tracking (`git push -u origin main`).
 - Created branch `feat/deploy-prep` from `main`.
 - Item 1 (OG image): Updated `src/app/opengraph-image.tsx` per DEC-013 (Option B) to render the tagline as five flex word items with 11px `columnGap`, eliminating Satori proportional text spacing anomalies. Verified SHA256 change to `56C691F344E3A1C1B5201C9ED7D744692267EEA1EC0F5AB5B7508F431FADC663` and visually verified uniform gaps in `e2e/screenshots/og.png`.
 - Item 2 (Resume): Tracked `public/resume.pdf` in git and updated `e2e/stories.spec.ts` removing the `/resume.pdf` exclusion from TEST-012, asserting status 200 and `application/pdf` content-type.
