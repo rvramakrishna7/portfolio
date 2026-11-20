@@ -57,7 +57,10 @@ export function ProofStrip() {
               </span>
               <span className="what">{card.meaning}</span>
               <details className="stat-details">
-                <summary>How was this measured?</summary>
+                <summary>
+                  <span className="summary-closed">How was this measured?</span>
+                  <span className="summary-open">Hide</span>
+                </summary>
                 <p className="how">{card.howMeasured}</p>
               </details>
             </div>

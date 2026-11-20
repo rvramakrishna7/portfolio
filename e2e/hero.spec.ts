@@ -133,7 +133,9 @@ test.describe("Hero and proof strip (S2)", () => {
       const summary = card.locator("summary");
       const how = card.locator(".how");
 
-      await expect(summary).toHaveText("How was this measured?");
+      await expect(summary).toHaveText("How was this measured?", {
+        useInnerText: true,
+      });
       await expect(how).toBeHidden();
 
       await summary.focus();
@@ -142,17 +144,22 @@ test.describe("Hero and proof strip (S2)", () => {
       // Open with Enter
       await page.keyboard.press("Enter");
       await expect(details).toHaveAttribute("open", "");
+      await expect(summary).toHaveText("Hide", { useInnerText: true });
       await expect(how).toBeVisible();
       await expect(how).toHaveText(PROOF_CARDS_EXPECTED[i].how);
 
       // Close with Enter
       await page.keyboard.press("Enter");
       await expect(details).not.toHaveAttribute("open", "");
+      await expect(summary).toHaveText("How was this measured?", {
+        useInnerText: true,
+      });
       await expect(how).toBeHidden();
 
       // Open with Space
       await page.keyboard.press("Space");
       await expect(details).toHaveAttribute("open", "");
+      await expect(summary).toHaveText("Hide", { useInnerText: true });
       await expect(how).toBeVisible();
       await expect(how).toHaveText(PROOF_CARDS_EXPECTED[i].how);
     }

@@ -1,11 +1,12 @@
 # Status: Portfolio site
 
-Current step: S2 (Hero and proof strip), done.
+Current step: S3 (Four chapters), done.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-009).
 Done since last update:
-- Merged `feat/shell` (S1) into `main` (`e36c46e`) with `git merge --no-ff` and created branch `feat/hero`.
-- Completed S2 (Hero and proof strip) on `feat/hero`: `Hero.tsx` (Server Component with inline SVG `<pattern>` blueprint grid, status pill with pulsing dot under `prefers-reduced-motion: no-preference`, H1 with `.accent` span, intro paragraph, CTA buttons, four-row blueprint `<table>` title block, and `"Scroll down"` cue), `ProofStrip.tsx` (Server Component with four proof cards and native `<details>/<summary>` disclosures), `CountUp.tsx` (`"use client"` count-up for `1,212` only, skipped under reduced motion, adding `+0.54 KB` gzipped JS), and `e2e/hero.spec.ts` (15/15 Playwright tests passing across `hero.spec.ts`, `shell.spec.ts`, and `smoke.spec.ts`).
-Next step (awaiting owner approval): S3 (Four chapters).
+- Merged `feat/hero` (S2) into `main` (`65999ef`) with `git merge --no-ff` and created branch `feat/work`.
+- Completed S2 carry-over fixes A and B: pure-CSS `<details>/<summary>` label swap (`"How was this measured?"` -> `"Hide"` when open) verified in `e2e/hero.spec.ts`, and refined `.hero h1` (`font-size: clamp(2.1rem, 1.2rem + 3.2vw, 4.2rem); max-width: 22ch;`) so the hero headline sits in 4 lines at all five widths (`375`, `768`, `1024`, `1280`, `1440` px).
+- Completed S3 (Four chapters — Work section) on `feat/work`: `src/content/stories.ts` (typed `STORIES` array copied verbatim from `docs/content.md`), `src/components/Work.tsx` (Server Component rendering `#work`, the four chapters, and the Book My Nest footer note), `src/components/ChapterReveal.tsx` (`"use client"` progressive enhancement for the chapter-opening effect adding only `+0.20 KB` gzipped JS), and `e2e/work.spec.ts` (22/22 Playwright tests passing across `hero.spec.ts`, `shell.spec.ts`, `smoke.spec.ts`, and `work.spec.ts` with zero axe violations).
+Next step (awaiting owner approval): S4 (Story pages).
 Blockers / questions for the owner:
 - Web3Forms access key (free) needed before S5 can be tested for real.
 - `resume.pdf` to put in `public/` before S8.
@@ -21,3 +22,5 @@ Deviations:
 - S2: Updated `e2e/smoke.spec.ts` line 18 to expect the real hero `<h1>` text (`"Traders lost a minute every time they moved a strike. Now it takes a few seconds."`) instead of the S0 temporary placeholder `"Ramakrishna"` after S2 item 2 replaced the home placeholder with the real hero.
 - S2: Wrapped the inner content of `.case-hero` in `src/app/not-found.tsx` with `<div className="wrap">` (matching `reference/prototype/404.html`) when `main#main` changed from a width-constrained container to a full-bleed `<main>` for the full-width hero blueprint grid.
 - S2: After reviewing the initial `hero-1024.png`, `hero-1280.png`, and `hero-1440.png` screenshots, adjusted `.proof-grid` to use 2 columns at `600–1023 px` and 4 columns at `>= 1024 px` and set `.stat .big` font-size to `clamp(1.4rem, 1rem + 0.95vw, 2rem)` so `1024 px` does not leave an orphan 3+1 row and `"18.8 s → 3.35 s"` / `"45–60 s → 2–3 s"` do not wrap a trailing `"s"` onto a second line.
+- S3: Rendered the decorative `aria-hidden="true"` chapter number (`.num`, coloured `--line-2` `#363e4a`) via an inline decorative `<svg>` `<text>` element because axe-core's `color-contrast` check flags HTML DOM text nodes in `--line-2` (`1.72:1` against `--bg` `#0b0d10`), even when `aria-hidden="true"` is present.
+- S3: After reviewing the initial chapter screenshots, adjusted `.results` (`minmax(min(100%, 145px), 1fr)` and `grid-column: 1 / -1` on the 3rd odd cell at `<= 420 px`) and `.results strong` (`clamp(1.1rem, 0.95rem + 0.45vw, 1.35rem)`) so all 3 result cells sit in a single row at `768–1440 px` without orphan empty grid cells or 2-line wraps on `"45–60 s → 2–3 s"` and `"18.8 s → 3.35 s"`.
