@@ -1,7 +1,7 @@
 # Status: Portfolio site
 
 Current step: S7b (Four small fixes after quality pass), done.
-Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-011).
+Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-012).
 Done since last update:
 - Merged `feat/quality` (S7) into `main` (`4bcf608`) with `git merge --no-ff` and created branch `feat/quality-fixes`.
 - Item 1 (HSTS): Removed `Strict-Transport-Security` header in `next.config.ts` (Vercel manages HSTS natively) and updated `e2e/headers.spec.ts` removing the HSTS assertion while retaining CSP and COOP assertions across all routes.
@@ -11,7 +11,7 @@ Done since last update:
 - Item 5 (Verification & Production Lighthouse): Ran full test suite (84 / 84 Playwright tests passing, typecheck, lint, vitest, check:flat all passing). Production Lighthouse verified on Home (Mobile 94, Desktop 100) and Restart Options (3 mobile runs: 98, 95, 97 -> median 97; Desktop 100).
 Next step (awaiting owner approval): S8 (Deploy and live verification).
 Blockers / questions for the owner:
-- Web3Forms access key (free) needed before real email delivery can be verified (currently TEST-010 is mocked and marked PENDING OWNER CHECK for live delivery).
+- Resend API key and contact recipient email configured in .env.local for server-side contact delivery (DEC-012); delivery pending owner inbox check in S8.
 - Owner placed `resume.pdf` in `public/` on disk (link is in contact section, live verification pending owner check in S8).
 - Real site address (custom domain or the Vercel one) before S8.
 
