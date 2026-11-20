@@ -578,9 +578,10 @@ section.block {
 
 .results strong {
   display: block;
-  font: 600 clamp(1.1rem, 0.95rem + 0.45vw, 1.35rem)/1.15 var(--serif);
+  font: 600 clamp(1.05rem, 0.9rem + 0.4vw, 1.35rem)/1.2 var(--serif);
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .results span {
@@ -694,15 +695,124 @@ section.block {
   }
 }
 
-/* 404 layout */
+/* Story pages & 404 */
 .case-hero {
   padding: calc(var(--head-h) + 64px) 0 48px;
   border-bottom: 1px solid var(--line);
 }
 
+.crumbs {
+  font: 500 0.8rem/1.4 var(--mono);
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+
+.crumbs a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.crumbs a:hover {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.crumbs span[aria-current="page"] {
+  color: var(--text);
+}
+
 .case-hero h1 {
   margin-top: 12px;
   max-width: 18ch;
+}
+
+.case-hero .hook {
+  margin-top: 24px;
+  max-width: 44ch;
+}
+
+.case-hero .chips {
+  margin-top: 24px;
+}
+
+.case-body {
+  display: grid;
+  gap: 48px;
+  padding: 48px 0 80px;
+}
+
+.case-body section {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .case-body section {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 8fr);
+    gap: 48px;
+  }
+}
+
+.case-body h2 {
+  font: 600 0.8rem var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+.case-body p {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.case-body ul {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 12px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.pager {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  grid-template-columns: 1fr 1fr;
+}
+
+.pager a {
+  background: var(--panel);
+  padding: 20px 24px;
+  text-decoration: none;
+  display: grid;
+  gap: 4px;
+  color: var(--text);
+  min-height: 44px;
+}
+
+.pager a:hover {
+  background: var(--panel-2);
+}
+
+.pager a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pager small {
+  font: 500 0.75rem var(--mono);
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pager .next {
+  text-align: right;
 }
 
 /* Footer */
@@ -869,6 +979,15 @@ dialog.palette::backdrop {
 
   .results {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .results div {
+    padding: 12px;
+  }
+
+  .results strong {
+    font-size: clamp(0.85rem, 0.78rem + 0.35vw, 1.05rem);
+    white-space: nowrap;
   }
 
   .results > div:last-child:nth-child(odd) {
