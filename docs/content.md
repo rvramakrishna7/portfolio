@@ -156,7 +156,11 @@ Label: Skills. Heading: What I work with. Intro: I use AI coding tools (Claude, 
 
 ## SEO text
 - Home title: Ramakrishna | Full-stack and AI automation developer
-- Home description: Ramakrishna is a full-stack and AI automation developer in Mumbai. Four projects told as problems solved, with the numbers: strike shifting cut from 45-60 s to 2-3 s, an AI review cut from 18.8 s to 3.35 s, and 1,212 passing tests.
+- Home description: Full-stack and AI automation developer in Mumbai. Four projects told as problems solved: strike shifting in 2-3 s, AI review in 3.35 s, 1,212 passing tests.
 - Story page title pattern: <Project title>: <tag> | Ramakrishna
 - 404 title: Page not found | Ramakrishna. Text: That page is not on this sheet. The link may be old. Start from the top, or jump straight to the work.
 
+
+## Form messages (added by the planner on 2026-11-20, approved microcopy; use exactly these, nothing else)
+- Field errors: "Your name is required" | "Name must be at most 80 characters" | "Your email is required" | "Email must be at most 254 characters" | "Please enter a valid email address" | "Message must be at least 10 characters" | "Message must be at most 4000 characters"
+- Any send failure (rate limit, server, network, timeout): show only the error text from the contact section above. Never show server error strings in the page.

@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { _resetRateLimitsForTesting, GET, POST } from "./route";
+import {
+  _getRateLimitMapSizeForTesting,
+  _resetRateLimitsForTesting,
+  _setRateLimitEntryForTesting,
+  GET,
+  MAX_RATE_LIMIT_ENTRIES,
+  POST,
+  pruneRateLimitMap,
+} from "./route";
 
 describe("Contact API route (/api/contact)", () => {
   const originalEnv = process.env;
@@ -166,11 +174,13 @@ describe("Contact API route (/api/contact)", () => {
   });
 
   it("sixth request in the window gives 429", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -297,6 +307,59 @@ describe("Contact API route (/api/contact)", () => {
     );
 
     consoleError.mockRestore();
+  });
+
+  it("Web3Forms answering HTTP 200 with success: false gives 502", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: false, message: "Invalid key" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new Request("http://localhost:3000/api/contact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Alice",
+        email: "alice@example.com",
+        message: "Hello Ramakrishna, interested in your work!",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(502);
+
+    const data = await res.json();
+    expect(data.error).toBe(
+      "That did not send. Please try again, or message me on LinkedIn."
+    );
+  });
+
+  it("pruneRateLimitMap removes expired timestamps and drops oldest when capping at MAX_RATE_LIMIT_ENTRIES", () => {
+    const now = 1000000;
+    const windowMs = 10 * 60 * 1000;
+
+    // 1. Expired timestamps entry
+    _setRateLimitEntryForTesting("192.168.1.1", [now - windowMs - 1000]);
+    // 2. Active timestamps entry
+    _setRateLimitEntryForTesting("192.168.1.2", [now - 5000]);
+
+    pruneRateLimitMap(now);
+
+    expect(_getRateLimitMapSizeForTesting()).toBe(1);
+
+    // 3. Test capping when map exceeds MAX_RATE_LIMIT_ENTRIES
+    _resetRateLimitsForTesting();
+    for (let i = 0; i < MAX_RATE_LIMIT_ENTRIES + 10; i++) {
+      _setRateLimitEntryForTesting(`10.0.0.${i}`, [now]);
+    }
+    expect(_getRateLimitMapSizeForTesting()).toBe(MAX_RATE_LIMIT_ENTRIES + 10);
+
+    pruneRateLimitMap(now);
+
+    expect(_getRateLimitMapSizeForTesting()).toBe(MAX_RATE_LIMIT_ENTRIES);
   });
 
   it("GET gives 405", async () => {

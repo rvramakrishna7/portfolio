@@ -8,7 +8,6 @@ export default function NotFound() {
         name="description"
         content="That page is not on this sheet. The link may be old. Start from the top, or jump straight to the work."
       />
-      <meta name="robots" content="noindex" />
       <div className="case-hero">
         <div className="wrap">
           <p className="eyebrow">404</p>

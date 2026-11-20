@@ -3,13 +3,45 @@ import { z } from "zod";
 const MAX_BODY_BYTES = 10 * 1024; // 10 KB
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_REQUESTS_PER_WINDOW = 5;
+export const MAX_RATE_LIMIT_ENTRIES = 5000;
 
 // In-memory rate limiting map: ip -> timestamps[]
 // Note: In serverless environments, this is best-effort per instance.
 const ipRateLimitMap = new Map<string, number[]>();
 
-export function _resetRateLimitsForTesting() {
+export function pruneRateLimitMap(now: number = Date.now()): void {
+  // 1. Remove entries with no timestamps in the active window
+  for (const [ip, timestamps] of ipRateLimitMap.entries()) {
+    const active = timestamps.filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+    if (active.length === 0) {
+      ipRateLimitMap.delete(ip);
+    } else if (active.length !== timestamps.length) {
+      ipRateLimitMap.set(ip, active);
+    }
+  }
+
+  // 2. Cap the map at MAX_RATE_LIMIT_ENTRIES by dropping oldest entries
+  if (ipRateLimitMap.size > MAX_RATE_LIMIT_ENTRIES) {
+    const excess = ipRateLimitMap.size - MAX_RATE_LIMIT_ENTRIES;
+    let dropped = 0;
+    for (const key of ipRateLimitMap.keys()) {
+      ipRateLimitMap.delete(key);
+      dropped++;
+      if (dropped >= excess) break;
+    }
+  }
+}
+
+export function _resetRateLimitsForTesting(): void {
   ipRateLimitMap.clear();
+}
+
+export function _getRateLimitMapSizeForTesting(): number {
+  return ipRateLimitMap.size;
+}
+
+export function _setRateLimitEntryForTesting(ip: string, timestamps: number[]): void {
+  ipRateLimitMap.set(ip, timestamps);
 }
 
 function stripControlChars(str: string): string {
@@ -148,6 +180,7 @@ export async function POST(req: Request): Promise<Response> {
   // 4. Rate limiting per IP
   const ip = getClientIp(req);
   const now = Date.now();
+  pruneRateLimitMap(now);
   const timestamps = (ipRateLimitMap.get(ip) || []).filter(
     (ts) => now - ts < RATE_LIMIT_WINDOW_MS
   );
@@ -255,6 +288,23 @@ export async function POST(req: Request): Promise<Response> {
     clearTimeout(timeoutId);
 
     if (!forwardResponse.ok) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "That did not send. Please try again, or message me on LinkedIn.",
+        }),
+        {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const forwardData = (await forwardResponse.json().catch(() => null)) as {
+      success?: boolean;
+    } | null;
+
+    if (!forwardData || forwardData.success !== true) {
       return new Response(
         JSON.stringify({
           error:

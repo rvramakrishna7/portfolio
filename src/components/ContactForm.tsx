@@ -39,8 +39,7 @@ export function ContactForm() {
 
       if (response.ok && data?.success) {
         setStatusMessage(
-          data.message ||
-            "Thanks. Your message is on its way, and I'll reply soon."
+          "Thanks. Your message is on its way, and I'll reply soon."
         );
         setStatusType("ok");
         setName("");
@@ -51,8 +50,7 @@ export function ContactForm() {
         setFieldErrors(data.errors);
       } else {
         setStatusMessage(
-          data?.error ||
-            "That did not send. Please try again, or message me on LinkedIn."
+          "That did not send. Please try again, or message me on LinkedIn."
         );
         setStatusType("err");
       }

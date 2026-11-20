@@ -12,3 +12,4 @@
 | DEC-008 | 2026-11-20 | Name on the site is "Ramakrishna" only. No photo, no phone number. | Accepted |
 | DEC-009 | 2026-11-20 | Motion: CSS scroll-driven animation where supported, IntersectionObserver fallback, nothing under reduced motion. No animation library. | Accepted |
 | DEC-010 | 2026-11-20 | Open question for the owner: a site he remembers where something opens as you scroll. Not found yet. The chapter-opening effect is the current answer. | Proposed |
+| DEC-011 | 2026-11-20 | Without JavaScript the contact form cannot send; LinkedIn and GitHub links sit beside it. Accepted by the planner. | Accepted |

@@ -301,26 +301,26 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
     );
   });
 
-  test("Contact form: API 502 shows error text from content.md (TEST-010)", async ({
+  test("Contact form: API 502, 500, or 429 with server error strings shows content.md error text and never server string (TEST-010)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/");
 
+    // 1. Mocked 429 with server string
     await page.route("**/api/contact", async (route) => {
       await route.fulfill({
-        status: 502,
+        status: 429,
         contentType: "application/json",
         body: JSON.stringify({
-          error:
-            "That did not send. Please try again, or message me on LinkedIn.",
+          error: "Too many requests. Please try again later.",
         }),
       });
     });
 
     await page.locator("#contact-name").fill("Jane Doe");
     await page.locator("#contact-email").fill("jane@example.com");
-    await page.locator("#contact-message").fill("Hello Ramakrishna, wanted to reach out!");
+    await page.locator("#contact-message").fill("Hello Ramakrishna, testing rate limit error handling!");
 
     const submitBtn = page.locator('section#contact button[type="submit"]');
     await submitBtn.click();
@@ -329,6 +329,46 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
     await expect(statusMsg).toHaveText(
       "That did not send. Please try again, or message me on LinkedIn."
     );
+    await expect(statusMsg).not.toContainText("Too many requests");
+    await expect(statusMsg).toHaveClass(/err/);
+
+    // 2. Mocked 500 with an internal server error string
+    await page.route("**/api/contact", async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Internal database crashed or secret key missing on host",
+        }),
+      });
+    });
+
+    await submitBtn.click();
+
+    await expect(statusMsg).toHaveText(
+      "That did not send. Please try again, or message me on LinkedIn."
+    );
+    await expect(statusMsg).not.toContainText("Internal database crashed");
+    await expect(statusMsg).not.toContainText("secret key missing");
+    await expect(statusMsg).toHaveClass(/err/);
+
+    // 3. Mocked 502 (Web3Forms network/service failure)
+    await page.route("**/api/contact", async (route) => {
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Upstream gateway bad response 502",
+        }),
+      });
+    });
+
+    await submitBtn.click();
+
+    await expect(statusMsg).toHaveText(
+      "That did not send. Please try again, or message me on LinkedIn."
+    );
+    await expect(statusMsg).not.toContainText("Upstream gateway");
     await expect(statusMsg).toHaveClass(/err/);
   });
 
