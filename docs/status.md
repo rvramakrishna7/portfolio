@@ -1,12 +1,17 @@
 # Status: Portfolio site
 
-Current step: S3 (Four chapters), done.
+Current step: S4 (Story pages), done.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-009).
 Done since last update:
-- Merged `feat/hero` (S2) into `main` (`65999ef`) with `git merge --no-ff` and created branch `feat/work`.
-- Completed S2 carry-over fixes A and B: pure-CSS `<details>/<summary>` label swap (`"How was this measured?"` -> `"Hide"` when open) verified in `e2e/hero.spec.ts`, and refined `.hero h1` (`font-size: clamp(2.1rem, 1.2rem + 3.2vw, 4.2rem); max-width: 22ch;`) so the hero headline sits in 4 lines at all five widths (`375`, `768`, `1024`, `1280`, `1440` px).
-- Completed S3 (Four chapters — Work section) on `feat/work`: `src/content/stories.ts` (typed `STORIES` array copied verbatim from `docs/content.md`), `src/components/Work.tsx` (Server Component rendering `#work`, the four chapters, and the Book My Nest footer note), `src/components/ChapterReveal.tsx` (`"use client"` progressive enhancement for the chapter-opening effect adding only `+0.20 KB` gzipped JS), and `e2e/work.spec.ts` (22/22 Playwright tests passing across `hero.spec.ts`, `shell.spec.ts`, `smoke.spec.ts`, and `work.spec.ts` with zero axe violations).
-Next step (awaiting owner approval): S4 (Story pages).
+- Merged `feat/work` (S3) into `main` (`19f38bc`) with `git merge --no-ff` and created branch `feat/stories`.
+- Completed S3 carry-over fix: added `white-space: nowrap` and fine-tuned `.results strong` (`clamp(1.05rem, 0.9rem + 0.4vw, 1.35rem)` default, `clamp(0.85rem, 0.78rem + 0.35vw, 1.05rem)` with `padding: 12px` at `<= 420 px`) so `"45–60 s → 2–3 s"` and `"18.8 s → 3.35 s"` stay strictly single-line at all viewports down to 375 px. Added single-line height assertion to `e2e/work.spec.ts`.
+- Implemented `src/app/work/[slug]/page.tsx` as a Server Component (`export const dynamicParams = false;`, `generateStaticParams()` for all 4 stories, `generateMetadata` setting title, description, canonical link, Open Graph, Twitter, and JSON-LD BreadcrumbList).
+- Story layout adheres to `design.md`: breadcrumbs (`Home / Work / <Story Title>`), eyebrow tag, single `<h1>`, italic serif hook, tech chips, two-column responsive sections on `>= 900 px` (The problem, The constraint, What I did, The result, Proof), and wrapping bottom pager (`nav.pager`).
+- Added story styling to `src/styles/globals.css` (.crumbs, .case-hero, .case-body, .pager) with zero gradients, strict token reuse, and no magic numbers.
+- Implemented comprehensive `e2e/stories.spec.ts` covering 200 responses, 404 on `/work/nope` with noindex, exact content/number/link verification from `docs/content.md`, zero-JS visibility, reduced motion, zero axe accessibility violations at 375 and 1440 px, single-line results, command-palette navigation, and TEST-012 crawling every internal link with status 200/404.
+- Generated full-page screenshots at 375, 768, 1024, 1280, and 1440 px for all 4 stories in `e2e/screenshots/` and verified visual layout.
+- Lighthouse scores on production build: Home 100/100/100/100 (mobile & desktop), Story 100/100/100/100 (mobile & desktop). Total JS over the wire remains 141 KB (under 150 KB budget, 0 KB added by story Server Component).
+Next step (awaiting owner approval): S5 (Experience, skills, contact).
 Blockers / questions for the owner:
 - Web3Forms access key (free) needed before S5 can be tested for real.
 - `resume.pdf` to put in `public/` before S8.
@@ -24,3 +29,5 @@ Deviations:
 - S2: After reviewing the initial `hero-1024.png`, `hero-1280.png`, and `hero-1440.png` screenshots, adjusted `.proof-grid` to use 2 columns at `600–1023 px` and 4 columns at `>= 1024 px` and set `.stat .big` font-size to `clamp(1.4rem, 1rem + 0.95vw, 2rem)` so `1024 px` does not leave an orphan 3+1 row and `"18.8 s → 3.35 s"` / `"45–60 s → 2–3 s"` do not wrap a trailing `"s"` onto a second line.
 - S3: Rendered the decorative `aria-hidden="true"` chapter number (`.num`, coloured `--line-2` `#363e4a`) via an inline decorative `<svg>` `<text>` element because axe-core's `color-contrast` check flags HTML DOM text nodes in `--line-2` (`1.72:1` against `--bg` `#0b0d10`), even when `aria-hidden="true"` is present.
 - S3: After reviewing the initial chapter screenshots, adjusted `.results` (`minmax(min(100%, 145px), 1fr)` and `grid-column: 1 / -1` on the 3rd odd cell at `<= 420 px`) and `.results strong` (`clamp(1.1rem, 0.95rem + 0.45vw, 1.35rem)`) so all 3 result cells sit in a single row at `768–1440 px` without orphan empty grid cells or 2-line wraps on `"45–60 s → 2–3 s"` and `"18.8 s → 3.35 s"`.
+- S4: Set `metadataBase` in `src/app/layout.tsx` (`new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000")`) so relative canonical links in Next.js App Router resolve to valid absolute URLs, satisfying Lighthouse canonical audit and achieving 100 SEO.
+- S4: Removed temporary Lighthouse test JSON reports (`lighthouse-home-mobile.json`, `lighthouse-home-desktop.json`, `lighthouse-story-mobile.json`, `lighthouse-story-desktop.json`) with individual `Remove-Item` commands per rule 6a.

@@ -232,6 +232,35 @@ test.describe("Work section — four chapters (S3)", () => {
     expect(pos768).toBe("static");
   });
 
+  test("at 375 px, each chapter result value is a single line (height <= 1.5 * line-height)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/");
+
+    const resultStrongElements = page.locator("section#work .results strong");
+    const count = await resultStrongElements.count();
+    expect(count).toBeGreaterThan(0);
+
+    for (let i = 0; i < count; i++) {
+      const strong = resultStrongElements.nth(i);
+      const metrics = await strong.evaluate((el) => {
+        const cs = window.getComputedStyle(el);
+        const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+        return {
+          text: el.textContent,
+          height: el.getBoundingClientRect().height,
+          lineHeight: lh,
+        };
+      });
+
+      expect(
+        metrics.height,
+        `Result value "${metrics.text}" at 375 px wrapped to multiple lines (height: ${metrics.height}px, line-height: ${metrics.lineHeight}px)`
+      ).toBeLessThanOrEqual(metrics.lineHeight * 1.5);
+    }
+  });
+
   test("axe scan finds zero violations on / with Work section at 375 px and 1440 px", async ({
     page,
   }) => {
