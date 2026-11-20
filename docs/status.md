@@ -1,17 +1,17 @@
 # Status: Portfolio site
 
-Current step: S7b and S7c merged into main; S8 (Deploy) next.
+Current step: S8a (Deploy prep), done. S8b (GitHub + Vercel deploy) next.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-012).
 Done since last update:
-- Merged `feat/quality-fixes` (S7b) into `main` (`4eb93e4`) with `git merge --no-ff`.
-- Merged `feat/contact-resend` (S7c) into `main` (`2060eaf`) with `git merge --no-ff`.
-- Verified clean build and test suite on `main`: `npm run lint`, `npm run typecheck`, `npm test` (16 tests passed), `npm run check:flat` (29 files scanned), `npm run build` (12 static/SSG routes rendered).
-- Contact form server delivery switched from Web3Forms to Resend (DEC-012) via plain `fetch` to `https://api.resend.com/emails`; verified real dispatch returning 200 OK.
-Next step (awaiting owner approval): S8 (Deploy and live verification).
+- Created branch `feat/deploy-prep` from `main`.
+- Item 1 (OG image): Updated `src/app/opengraph-image.tsx` to render the tagline as a single plain string in one element with zero per-word spans, justify, or flex gaps. Rebuilt and saved `e2e/screenshots/og.png`.
+- Item 2 (Resume): Tracked `public/resume.pdf` in git and updated `e2e/stories.spec.ts` removing the `/resume.pdf` exclusion from TEST-012, asserting status 200 and `application/pdf` content-type.
+- Item 3 (Safety checks): `git ls-files | findstr /i ".env"` confirmed only `.env.example` is tracked; `npm audit --omit=dev` reported 0 vulnerabilities; confirmed `.gitignore` ignores `.env*` except `.env.example`.
+- Item 4 (Verification suite): `npm run lint` passed (code 0), `npm run typecheck` passed (code 0), `npm test` passed 16/16 tests (code 0), `npm run check:flat` passed across 29 files (code 0), `npm run build` generated 12 static/SSG pages successfully (code 0), and `npm run e2e` passed all 84/84 tests in 2.4m (code 0).
+Next step (awaiting owner approval): S8b (GitHub repository creation, push, Vercel deployment, and live verification).
 Blockers / questions for the owner:
-- Resend API key and contact recipient email configured in .env.local for server-side contact delivery (DEC-012); delivery pending owner inbox check in S8.
-- Owner placed `resume.pdf` in `public/` on disk (link is in contact section, live verification pending owner check in S8).
-- Real site address (custom domain or the Vercel one) before S8.
+- Owner to configure Vercel environment variables (`RESEND_API_KEY`, `CONTACT_TO_EMAIL`, `NEXT_PUBLIC_SITE_URL`).
+- Production domain / Vercel URL to set as `NEXT_PUBLIC_SITE_URL`.
 
 Deviations:
 - S0: `main` was created at `ca8ab6c` prior to S1 because S0 was committed on `chore/scaffold`.
