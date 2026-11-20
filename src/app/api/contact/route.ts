@@ -203,20 +203,7 @@ export async function POST(req: Request): Promise<Response> {
   timestamps.push(now);
   ipRateLimitMap.set(ip, timestamps);
 
-  // 5. Check server access key
-  const accessKey = process.env.WEB3FORMS_ACCESS_KEY;
-  if (!accessKey) {
-    console.error("WEB3FORMS_ACCESS_KEY is not configured");
-    return new Response(
-      JSON.stringify({ error: "Server configuration error" }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-
-  // 6. Parse JSON and validate
+  // 5. Parse JSON and validate
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(rawBody);
@@ -250,7 +237,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const { name, email, message, website } = validationResult.data;
 
-  // 7. Honeypot check: if filled, return success silently without forwarding
+  // 6. Honeypot check: if filled, return success silently without forwarding
   if (website && website.trim().length > 0) {
     return new Response(
       JSON.stringify({
@@ -264,23 +251,41 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  // 8. Forward to Web3Forms
+  // 7. Check server environment variables
+  const apiKey = process.env.RESEND_API_KEY;
+  const toEmail = process.env.CONTACT_TO_EMAIL;
+  if (!apiKey || !toEmail) {
+    return new Response(
+      JSON.stringify({
+        error:
+          "That did not send. Please try again, or message me on LinkedIn.",
+      }),
+      {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  // 8. Forward to Resend
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    const forwardResponse = await fetch("https://api.web3forms.com/submit", {
+    const cleanName = name.replace(/[\r\n]+/g, " ").trim();
+
+    const forwardResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        Accept: "application/json",
       },
       body: JSON.stringify({
-        access_key: accessKey,
-        name,
-        email,
-        message,
-        subject: `Portfolio message from ${name}`,
+        from: "Portfolio <onboarding@resend.dev>",
+        to: [toEmail],
+        reply_to: email,
+        subject: `Portfolio message from ${cleanName}`,
+        text: `Name: ${cleanName}\nEmail: ${email}\n\nMessage:\n${message}`,
       }),
       signal: controller.signal,
     });
@@ -288,23 +293,6 @@ export async function POST(req: Request): Promise<Response> {
     clearTimeout(timeoutId);
 
     if (!forwardResponse.ok) {
-      return new Response(
-        JSON.stringify({
-          error:
-            "That did not send. Please try again, or message me on LinkedIn.",
-        }),
-        {
-          status: 502,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const forwardData = (await forwardResponse.json().catch(() => null)) as {
-      success?: boolean;
-    } | null;
-
-    if (!forwardData || forwardData.success !== true) {
       return new Response(
         JSON.stringify({
           error:
