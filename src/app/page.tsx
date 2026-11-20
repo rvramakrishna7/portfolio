@@ -9,7 +9,7 @@ import { absoluteUrl } from "@/lib/site";
 
 const title = "Ramakrishna | Full-stack and AI automation developer";
 const description =
-  "Ramakrishna is a full-stack and AI automation developer in Mumbai. Four projects told as problems solved, with the numbers: strike shifting cut from 45-60 s to 2-3 s, an AI review cut from 18.8 s to 3.35 s, and 1,212 passing tests.";
+  "Full-stack and AI automation developer in Mumbai. Four projects told as problems solved: strike shifting in 2-3 s, AI review in 3.35 s, 1,212 passing tests.";
 
 export const metadata: Metadata = {
   title,

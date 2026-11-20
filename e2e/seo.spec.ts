@@ -55,18 +55,18 @@ test.describe("SEO, Metadata, JSON-LD, Robots, and Sitemap (S6)", () => {
       const titleElements = page.locator("head > title");
       await expect(titleElements).toHaveCount(1);
 
-      // Description check
+      // Description check: every page must have description under 160 chars
       const descLocator = page.locator('head > meta[name="description"]');
       await expect(descLocator).toHaveCount(1);
       const descContent = await descLocator.getAttribute("content");
       expect(descContent).toBeTruthy();
+      expect(descContent!.length).toBeLessThan(160);
 
       if (p.isStory && p.story) {
         expect(descContent).toBe(p.story.seoDescription);
-        expect(descContent!.length).toBeLessThan(160);
       } else {
         expect(descContent).toBe(
-          "Ramakrishna is a full-stack and AI automation developer in Mumbai. Four projects told as problems solved, with the numbers: strike shifting cut from 45-60 s to 2-3 s, an AI review cut from 18.8 s to 3.35 s, and 1,212 passing tests."
+          "Full-stack and AI automation developer in Mumbai. Four projects told as problems solved: strike shifting in 2-3 s, AI review in 3.35 s, 1,212 passing tests."
         );
       }
 
