@@ -17,7 +17,8 @@ describe("Contact API route (/api/contact)", () => {
     _resetRateLimitsForTesting();
     process.env = {
       ...originalEnv,
-      WEB3FORMS_ACCESS_KEY: "test-fake-key-for-unit-test",
+      RESEND_API_KEY: "re_test_fake_key_for_unit_test",
+      CONTACT_TO_EMAIL: "owner@example.com",
     };
   });
 
@@ -27,7 +28,7 @@ describe("Contact API route (/api/contact)", () => {
 
   it("valid request forwards once with the right body and returns success", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ success: true }), {
+      new Response(JSON.stringify({ id: "resend-msg-123" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       })
@@ -57,14 +58,18 @@ describe("Contact API route (/api/contact)", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [targetUrl, options] = fetchMock.mock.calls[0];
-    expect(targetUrl).toBe("https://api.web3forms.com/submit");
+    expect(targetUrl).toBe("https://api.resend.com/emails");
     expect(options.method).toBe("POST");
+    expect(options.headers).toEqual({
+      Authorization: "Bearer re_test_fake_key_for_unit_test",
+      "Content-Type": "application/json",
+    });
     expect(JSON.parse(options.body)).toEqual({
-      access_key: "test-fake-key-for-unit-test",
-      name: "Alice Tester",
-      email: "alice@example.com",
-      message: "Hello Ramakrishna, interested in your work!",
+      from: "Portfolio <onboarding@resend.dev>",
+      to: ["owner@example.com"],
+      reply_to: "alice@example.com",
       subject: "Portfolio message from Alice Tester",
+      text: "Name: Alice Tester\nEmail: alice@example.com\n\nMessage:\nHello Ramakrishna, interested in your work!",
     });
   });
 
@@ -223,9 +228,9 @@ describe("Contact API route (/api/contact)", () => {
     expect(res6.headers.get("Retry-After")).toBe("600");
   });
 
-  it("Web3Forms failure gives 502", async () => {
+  it("Resend non-2xx failure gives 502", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: "Rate limited" }), {
+      new Response(JSON.stringify({ message: "Rate limit exceeded" }), {
         status: 429,
         headers: { "Content-Type": "application/json" },
       })
@@ -251,7 +256,7 @@ describe("Contact API route (/api/contact)", () => {
     );
   });
 
-  it("Web3Forms timeout gives 502", async () => {
+  it("Resend timeout gives 502", async () => {
     const fetchMock = vi
       .fn()
       .mockRejectedValue(new Error("The operation was aborted"));
@@ -276,46 +281,10 @@ describe("Contact API route (/api/contact)", () => {
     );
   });
 
-  it("missing key gives 500 and the key value never appears in any response", async () => {
-    delete process.env.WEB3FORMS_ACCESS_KEY;
+  it("missing env var gives 502 with content.md error text and never leaks key or message", async () => {
+    delete process.env.RESEND_API_KEY;
 
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
-
-    const req = new Request("http://localhost:3000/api/contact", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: "Alice",
-        email: "alice@example.com",
-        message: "Hello Ramakrishna, interested in your work!",
-      }),
-    });
-
-    const res = await POST(req);
-    expect(res.status).toBe(500);
-
-    const data = await res.json();
-    expect(data.error).toBe("Server configuration error");
-    expect(JSON.stringify(data)).not.toContain("WEB3FORMS_ACCESS_KEY");
-    expect(consoleError).toHaveBeenCalledWith(
-      "WEB3FORMS_ACCESS_KEY is not configured"
-    );
-
-    consoleError.mockRestore();
-  });
-
-  it("Web3Forms answering HTTP 200 with success: false gives 502", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ success: false, message: "Invalid key" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    );
     vi.stubGlobal("fetch", fetchMock);
 
     const req = new Request("http://localhost:3000/api/contact", {
@@ -335,6 +304,66 @@ describe("Contact API route (/api/contact)", () => {
     expect(data.error).toBe(
       "That did not send. Please try again, or message me on LinkedIn."
     );
+    expect(JSON.stringify(data)).not.toContain("RESEND_API_KEY");
+    expect(JSON.stringify(data)).not.toContain("Alice");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("missing CONTACT_TO_EMAIL gives 502", async () => {
+    delete process.env.CONTACT_TO_EMAIL;
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new Request("http://localhost:3000/api/contact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Alice",
+        email: "alice@example.com",
+        message: "Hello Ramakrishna, interested in your work!",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(502);
+
+    const data = await res.json();
+    expect(data.error).toBe(
+      "That did not send. Please try again, or message me on LinkedIn."
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("strips CR and LF from name in email subject", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "resend-msg-crlf" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const req = new Request("http://localhost:3000/api/contact", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Alice\r\nTester",
+        email: "alice@example.com",
+        message: "Testing CRLF stripping in subject",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const [, options] = fetchMock.mock.calls[0];
+    const parsedBody = JSON.parse(options.body);
+    expect(parsedBody.subject).toBe("Portfolio message from Alice Tester");
+    expect(parsedBody.subject).not.toContain("\r");
+    expect(parsedBody.subject).not.toContain("\n");
   });
 
   it("pruneRateLimitMap removes expired timestamps and drops oldest when capping at MAX_RATE_LIMIT_ENTRIES", () => {
