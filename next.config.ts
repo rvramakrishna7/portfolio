@@ -39,13 +39,6 @@ const securityHeaders = [
   },
 ];
 
-if (process.env.NODE_ENV === "production") {
-  securityHeaders.push({
-    key: "Strict-Transport-Security",
-    value: "max-age=63072000; includeSubDomains; preload",
-  });
-}
-
 const nextConfig: NextConfig = {
   async headers() {
     return [
