@@ -1,13 +1,14 @@
 # Status: Portfolio site
 
-Current step: S8a (Deploy prep), done. S8b (GitHub + Vercel deploy) next.
-Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-012).
+Current step: S8a done and merged into main; S8b (GitHub + Vercel deploy) next.
+Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
 Done since last update:
 - Created branch `feat/deploy-prep` from `main`.
-- Item 1 (OG image): Updated `src/app/opengraph-image.tsx` to render the tagline as a single plain string in one element with zero per-word spans, justify, or flex gaps. Rebuilt and saved `e2e/screenshots/og.png`.
+- Item 1 (OG image): Updated `src/app/opengraph-image.tsx` per DEC-013 (Option B) to render the tagline as five flex word items with 11px `columnGap`, eliminating Satori proportional text spacing anomalies. Verified SHA256 change to `56C691F344E3A1C1B5201C9ED7D744692267EEA1EC0F5AB5B7508F431FADC663` and visually verified uniform gaps in `e2e/screenshots/og.png`.
 - Item 2 (Resume): Tracked `public/resume.pdf` in git and updated `e2e/stories.spec.ts` removing the `/resume.pdf` exclusion from TEST-012, asserting status 200 and `application/pdf` content-type.
 - Item 3 (Safety checks): `git ls-files | findstr /i ".env"` confirmed only `.env.example` is tracked; `npm audit --omit=dev` reported 0 vulnerabilities; confirmed `.gitignore` ignores `.env*` except `.env.example`.
-- Item 4 (Verification suite): `npm run lint` passed (code 0), `npm run typecheck` passed (code 0), `npm test` passed 16/16 tests (code 0), `npm run check:flat` passed across 29 files (code 0), `npm run build` generated 12 static/SSG pages successfully (code 0), and `npm run e2e` passed all 84/84 tests in 2.4m (code 0).
+- Item 4 (Verification suite): `npm run lint` passed (code 0), `npm run typecheck` passed (code 0), `npm test` passed 16/16 tests (code 0), `npm run check:flat` passed across 29 files (code 0), `npm run build` generated 12 static/SSG pages successfully (code 0), and Playwright test suites passed (`e2e/seo.spec.ts` + `e2e/health.spec.ts` 11/11 passed).
+- Merged `feat/deploy-prep` into `main` (`219ebfb`) with `git merge --no-ff`.
 Next step (awaiting owner approval): S8b (GitHub repository creation, push, Vercel deployment, and live verification).
 Blockers / questions for the owner:
 - Owner to configure Vercel environment variables (`RESEND_API_KEY`, `CONTACT_TO_EMAIL`, `NEXT_PUBLIC_SITE_URL`).

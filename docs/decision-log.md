@@ -14,3 +14,4 @@
 | DEC-010 | 2026-11-20 | Open question for the owner: a site he remembers where something opens as you scroll. Not found yet. The chapter-opening effect is the current answer. | Proposed |
 | DEC-011 | 2026-11-20 | Without JavaScript the contact form cannot send; LinkedIn and GitHub links sit beside it. Accepted by the planner. | Accepted |
 | DEC-012 | 2026-11-20 | Contact delivery moved from Web3Forms to Resend because Web3Forms free plan blocks server-side calls; DEC-011 otherwise unchanged. | Accepted |
+| DEC-013 | 2026-11-20 | OG image tagline rendered as five flex word items with 11px column gap because Satori ignores CSS word-spacing on plain text runs. | Accepted |
