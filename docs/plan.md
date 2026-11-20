@@ -23,7 +23,7 @@ One step at a time. Do not start a step until the owner approves the previous on
 - TEST-006 Visible text never contains `undefined`, `null`, `NaN`, `[object Object]`, `Lorem`, `TODO`, `YOUR_`.
 - TEST-007 Keyboard: Ctrl/Cmd+K opens the palette, typing filters, Enter navigates, Escape closes and returns focus. Tab order is logical and focus is always visible.
 - TEST-008 Accessibility: axe finds no violations on every page at 375 and 1440 px.
-- TEST-009 SEO check on every built page: unique title under 60 chars, description under 160, one h1, canonical, Open Graph and Twitter tags, valid JSON-LD, listed in `sitemap.xml`.
+- TEST-009 SEO check on every built page: unique title (home under 60 chars; story pages under 75, project name first), description under 160, one h1, canonical, Open Graph and Twitter tags, valid JSON-LD, listed in `sitemap.xml`.
 - TEST-010 Contact form: valid input shows the success text (API mocked in the test); invalid input shows field errors; a filled honeypot is accepted silently and never forwarded; over-limit requests are refused. Real email delivery is `PENDING OWNER CHECK`.
 - TEST-011 Lighthouse on a production build meets the targets in `AGENTS.md` section 7c, mobile and desktop, with the real scores pasted.
 - TEST-012 Every internal link returns 200. Every external link is listed in the report.
