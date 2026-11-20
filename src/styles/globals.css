@@ -1276,6 +1276,7 @@ dialog.palette::backdrop {
 }
 
 @media print {
+  .skip,
   .site-head,
   .progress,
   .totop,
