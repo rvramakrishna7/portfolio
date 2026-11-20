@@ -5,13 +5,12 @@ import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { ReadingProgress } from "@/components/ReadingProgress";
 import { SkipLink } from "@/components/SkipLink";
+import { getSiteUrl } from "@/lib/site";
 import "@/styles/tokens.css";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
-  ),
+  metadataBase: new URL(getSiteUrl()),
 };
 
 export const viewport: Viewport = {

@@ -2,6 +2,7 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { STORIES } from "../src/content/stories";
+import { absoluteUrl } from "../src/lib/site";
 import { FORBIDDEN_VISIBLE_TOKENS, VIEWPORTS } from "./helpers";
 
 test.describe("Story pages — /work/[slug] (S4)", () => {
@@ -42,13 +43,13 @@ test.describe("Story pages — /work/[slug] (S4)", () => {
       const jsonLdContent = JSON.parse(await jsonLdScript.innerText());
       expect(jsonLdContent["@type"]).toBe("BreadcrumbList");
       expect(jsonLdContent.itemListElement).toEqual([
-        { "@type": "ListItem", position: 1, name: "Home", item: "/" },
-        { "@type": "ListItem", position: 2, name: "Work", item: "/#work" },
+        { "@type": "ListItem", position: 1, name: "Home", item: absoluteUrl("/") },
+        { "@type": "ListItem", position: 2, name: "Work", item: absoluteUrl("/#work") },
         {
           "@type": "ListItem",
           position: 3,
           name: story.title,
-          item: `/work/${story.slug}`,
+          item: absoluteUrl(`/work/${story.slug}`),
         },
       ]);
 
@@ -113,7 +114,7 @@ test.describe("Story pages — /work/[slug] (S4)", () => {
       await expect(sections.nth(4).locator("h2")).toHaveText("Proof");
       const proofLinks = sections.nth(4).locator(".links a");
       if (story.liveUrl) {
-        await expect(proofLinks).toHaveCount(3);
+        await expect(proofLinks).toHaveCount(2);
         await expect(proofLinks.nth(0)).toHaveText("Open the live site");
         await expect(proofLinks.nth(0)).toHaveAttribute("href", story.liveUrl);
         await expect(proofLinks.nth(0)).toHaveAttribute(
@@ -129,12 +130,9 @@ test.describe("Story pages — /work/[slug] (S4)", () => {
           "noopener noreferrer"
         );
         await expect(proofLinks.nth(1)).toHaveAttribute("target", "_blank");
-
-        await expect(proofLinks.nth(2)).toHaveText("Ask me about it");
-        await expect(proofLinks.nth(2)).toHaveAttribute("href", "/#contact");
       } else {
         // No live site (e.g. MCP Gateway)
-        await expect(proofLinks).toHaveCount(2);
+        await expect(proofLinks).toHaveCount(1);
         await expect(proofLinks.nth(0)).toHaveText("See the code");
         await expect(proofLinks.nth(0)).toHaveAttribute("href", story.codeUrl);
         await expect(proofLinks.nth(0)).toHaveAttribute(
@@ -142,9 +140,6 @@ test.describe("Story pages — /work/[slug] (S4)", () => {
           "noopener noreferrer"
         );
         await expect(proofLinks.nth(0)).toHaveAttribute("target", "_blank");
-
-        await expect(proofLinks.nth(1)).toHaveText("Ask me about it");
-        await expect(proofLinks.nth(1)).toHaveAttribute("href", "/#contact");
       }
 
       // Pager
