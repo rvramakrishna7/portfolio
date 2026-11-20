@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Hero } from "@/components/Hero";
+import { ProofStrip } from "@/components/ProofStrip";
 
 export const metadata: Metadata = {
   title: "Ramakrishna | Full-stack and AI automation developer",
@@ -8,8 +10,9 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <main id="main" className="home-shell-placeholder" tabIndex={-1}>
-      <h1>Ramakrishna</h1>
+    <main id="main" tabIndex={-1}>
+      <Hero />
+      <ProofStrip />
     </main>
   );
 }
