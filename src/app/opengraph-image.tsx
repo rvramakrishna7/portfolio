@@ -37,7 +37,7 @@ export default function OpenGraphImage() {
               marginBottom: "32px",
             }}
           >
-            {"Mumbai, India"}
+            Mumbai, India
           </div>
           <div
             style={{
@@ -48,7 +48,7 @@ export default function OpenGraphImage() {
               marginBottom: "28px",
             }}
           >
-            {"Ramakrishna"}
+            Ramakrishna
           </div>
           <div
             style={{
@@ -57,7 +57,7 @@ export default function OpenGraphImage() {
               lineHeight: 1.3,
             }}
           >
-            {"Full-stack and AI automation developer"}
+            Full-stack and AI automation developer
           </div>
         </div>
 
