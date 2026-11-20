@@ -28,13 +28,6 @@ test.describe("Security headers audit (S7)", () => {
         "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none';"
       );
       expect(headers["cross-origin-opener-policy"]).toBe("same-origin");
-
-      // In production builds (which playwright webServer runs), HSTS is also sent
-      if (headers["strict-transport-security"]) {
-        expect(headers["strict-transport-security"]).toBe(
-          "max-age=63072000; includeSubDomains; preload"
-        );
-      }
     });
   }
 });

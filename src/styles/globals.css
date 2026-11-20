@@ -1295,3 +1295,126 @@ dialog.palette::backdrop {
     transform: none !important;
   }
 }
+
+@media (forced-colors: active) {
+  :root {
+    --bg: Canvas;
+    --panel: Canvas;
+    --panel-2: Canvas;
+    --text: CanvasText;
+    --muted: CanvasText;
+    --faint: CanvasText;
+    --line: CanvasText;
+    --line-2: CanvasText;
+    --accent: Highlight;
+    --accent-ink: HighlightText;
+    --accent-focus: Highlight;
+    --ok: CanvasText;
+  }
+
+  body,
+  main,
+  section,
+  article,
+  header,
+  footer,
+  .hero,
+  .proof,
+  .chapter,
+  .experience,
+  .skills,
+  .contact,
+  .panel,
+  .meta,
+  .titleblock,
+  .titleblock th,
+  .titleblock td,
+  .stat,
+  .results,
+  .card,
+  .nda,
+  dialog {
+    color: CanvasText !important;
+    background-color: Canvas !important;
+    border-color: CanvasText !important;
+  }
+
+  p,
+  span,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  li,
+  dt,
+  dd,
+  th,
+  td,
+  time,
+  strong,
+  code {
+    color: CanvasText !important;
+  }
+
+  a,
+  a:visited {
+    color: LinkText !important;
+    text-decoration: underline !important;
+  }
+
+  a:hover,
+  a:focus {
+    color: Highlight !important;
+  }
+
+  button,
+  .btn,
+  .contact-submit {
+    color: ButtonText !important;
+    background-color: ButtonFace !important;
+    border: 1px solid ButtonText !important;
+  }
+
+  input,
+  textarea {
+    color: FieldText !important;
+    background-color: Field !important;
+    border: 1px solid CanvasText !important;
+  }
+
+  input:focus,
+  textarea:focus,
+  button:focus,
+  a:focus {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px !important;
+  }
+
+  .js .reveal .panel {
+    clip-path: none !important;
+  }
+
+  .js .reveal .meta {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  svg text {
+    fill: CanvasText !important;
+  }
+
+  svg line,
+  svg rect,
+  svg path {
+    stroke: CanvasText !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+}

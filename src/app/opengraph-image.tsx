@@ -34,10 +34,10 @@ export default function OpenGraphImage() {
               color: "#f2b705",
               textTransform: "uppercase",
               letterSpacing: "0.15em",
-              marginBottom: "28px",
+              marginBottom: "32px",
             }}
           >
-            Mumbai, India
+            {"Mumbai, India"}
           </div>
           <div
             style={{
@@ -45,10 +45,10 @@ export default function OpenGraphImage() {
               fontWeight: 700,
               color: "#ece8df",
               lineHeight: 1.1,
-              marginBottom: "24px",
+              marginBottom: "28px",
             }}
           >
-            Ramakrishna
+            {"Ramakrishna"}
           </div>
           <div
             style={{
@@ -57,7 +57,7 @@ export default function OpenGraphImage() {
               lineHeight: 1.3,
             }}
           >
-            Full-stack and AI automation developer
+            {"Full-stack and AI automation developer"}
           </div>
         </div>
 
@@ -65,13 +65,10 @@ export default function OpenGraphImage() {
           style={{
             display: "flex",
             borderTop: "1px solid #262c35",
-            paddingTop: "24px",
-            fontSize: "20px",
-            color: "#ece8df",
+            width: "100%",
+            height: "1px",
           }}
-        >
-          Ramakrishna
-        </div>
+        />
       </div>
     ),
     {
