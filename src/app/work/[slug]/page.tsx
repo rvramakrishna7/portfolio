@@ -212,7 +212,12 @@ export default async function StoryPage({ params }: PageProps) {
         <section>
           <h2>Results</h2>
           <div>
-            <div className="case-results-wrap">
+            <div
+              className="case-results-wrap"
+              tabIndex={0}
+              role="region"
+              aria-label="Results table"
+            >
               <table className="case-results-table">
                 <thead>
                   <tr>

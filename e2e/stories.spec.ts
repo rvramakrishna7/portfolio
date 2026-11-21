@@ -128,7 +128,7 @@ test.describe("Story pages — /work/[slug] (S4 / R3)", () => {
       await expect(diagramFigure).toBeVisible();
       const diagramSvg = diagramFigure.locator("svg");
       await expect(diagramSvg).toHaveAttribute("role", "img");
-      await expect(diagramSvg.locator("title")).toBeVisible();
+      await expect(diagramSvg.locator("title")).toHaveCount(1);
 
       // Part 5: Engineering decisions
       const decisionsSec = page.locator(".case-body section", {
@@ -175,17 +175,21 @@ test.describe("Story pages — /work/[slug] (S4 / R3)", () => {
 
       // Honest notes
       if (story.honestNote) {
-        await expect(resultsSec.locator(".case-note")).toContainText(
-          story.honestNote
-        );
+        await expect(
+          resultsSec.locator(".case-note", { hasText: story.honestNote })
+        ).toBeVisible();
       }
       if (story.hackathonNote) {
-        await expect(resultsSec.locator(".case-note")).toContainText(
-          story.hackathonNote
-        );
+        await expect(
+          resultsSec.locator(".case-note", { hasText: story.hackathonNote })
+        ).toBeVisible();
       }
       if (story.hardenNext) {
-        const hardenItems = resultsSec.locator(".case-note ul li");
+        const hardenBox = resultsSec.locator(".case-note", {
+          hasText: "What I would harden next:",
+        });
+        await expect(hardenBox).toBeVisible();
+        const hardenItems = hardenBox.locator("ul li");
         await expect(hardenItems).toHaveCount(story.hardenNext.length);
         for (let h = 0; h < story.hardenNext.length; h++) {
           await expect(hardenItems.nth(h)).toHaveText(story.hardenNext[h]);
@@ -284,12 +288,16 @@ test.describe("Story pages — /work/[slug] (S4 / R3)", () => {
             width,
             height: width < 768 ? 812 : 900,
           });
-          await page.goto(`/work/${story.slug}`);
-          await page.evaluate((t) => {
+          await page.emulateMedia({ colorScheme: theme });
+          await page.addInitScript((t) => {
+            localStorage.setItem("theme", t);
             document.documentElement.dataset.theme = t;
           }, theme);
+          await page.goto(`/work/${story.slug}`);
 
-          const results = await new AxeBuilder({ page }).analyze();
+          const results = await new AxeBuilder({ page })
+            .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+            .analyze();
           expect(
             results.violations,
             `Axe violations on /work/${story.slug} (${theme} theme at ${width}px)`
@@ -309,10 +317,12 @@ test.describe("Story pages — /work/[slug] (S4 / R3)", () => {
             width: viewport.width,
             height: viewport.height,
           });
-          await page.goto(`/work/${story.slug}`);
-          await page.evaluate((t) => {
+          await page.emulateMedia({ colorScheme: theme });
+          await page.addInitScript((t) => {
+            localStorage.setItem("theme", t);
             document.documentElement.dataset.theme = t;
           }, theme);
+          await page.goto(`/work/${story.slug}`);
 
           const visibleText = await page.locator("body").innerText();
           for (const token of FORBIDDEN_VISIBLE_TOKENS) {

@@ -4,7 +4,7 @@ export function BeforeAfterBars() {
       <svg
         role="img"
         aria-labelledby="before-after-title before-after-desc"
-        viewBox="0 0 560 140"
+        viewBox="0 0 580 140"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
@@ -24,17 +24,17 @@ export function BeforeAfterBars() {
         >
           Manual
         </text>
-        {/* Midpoint 52.5 s scaled bar */}
+        {/* Midpoint 52.5 s scaled bar: 357 px */}
         <rect
           x="105"
           y="28"
-          width="378"
+          width="357"
           height="30"
           rx="6"
           fill="var(--border)"
         />
         <text
-          x="494"
+          x="474"
           y="48"
           fill="var(--text)"
           fontSize="13"
@@ -55,17 +55,17 @@ export function BeforeAfterBars() {
         >
           Automated
         </text>
-        {/* Midpoint 2.5 s scaled bar: 378 * (2.5 / 52.5) = 18 px */}
+        {/* Midpoint 2.5 s scaled bar: 357 * (2.5 / 52.5) = 17 px */}
         <rect
           x="105"
           y="82"
-          width="18"
+          width="17"
           height="30"
           rx="4"
           fill="var(--accent)"
         />
         <text
-          x="133"
+          x="132"
           y="102"
           fill="var(--accent)"
           fontSize="13"
