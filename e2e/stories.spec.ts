@@ -126,9 +126,13 @@ test.describe("Story pages — /work/[slug] (S4 / R3)", () => {
 
       const diagramFigure = builtSec.locator("figure.case-diagram");
       await expect(diagramFigure).toBeVisible();
-      const diagramSvg = diagramFigure.locator("svg");
-      await expect(diagramSvg).toHaveAttribute("role", "img");
-      await expect(diagramSvg.locator("title")).toHaveCount(1);
+      const desktopSvg = diagramFigure.locator("svg.diag-desktop");
+      const mobileSvg = diagramFigure.locator("svg.diag-mobile");
+      await expect(desktopSvg).toBeVisible();
+      await expect(desktopSvg).toHaveAttribute("role", "img");
+      await expect(desktopSvg.locator("title")).toHaveCount(1);
+      await expect(mobileSvg).toHaveAttribute("role", "img");
+      await expect(mobileSvg.locator("title")).toHaveCount(1);
 
       // Part 5: Engineering decisions
       const decisionsSec = page.locator(".case-body section", {
@@ -275,7 +279,9 @@ test.describe("Story pages — /work/[slug] (S4 / R3)", () => {
       await expect(page.locator("h1")).toHaveText(story.title);
       await expect(page.locator(".case-hero .hook")).toHaveText(story.headline);
       await expect(page.locator(".case-body")).toBeVisible();
-      await expect(page.locator("figure.case-diagram svg")).toBeVisible();
+      await expect(
+        page.locator("figure.case-diagram svg.diag-desktop")
+      ).toBeVisible();
       await context.close();
     });
 
