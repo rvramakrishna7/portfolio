@@ -8,12 +8,19 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
+    let rafId = 0;
     const onScroll = () => {
-      setScrolled(document.documentElement.scrollTop > 20);
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        setScrolled(document.documentElement.scrollTop > 20);
+      });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", onScroll);
+    };
   }, []);
 
   const handleOpenPalette = (e: React.MouseEvent<HTMLButtonElement>) => {

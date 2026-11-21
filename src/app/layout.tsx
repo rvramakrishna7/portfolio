@@ -39,7 +39,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.addEventListener('DOMContentLoaded',function(){setTimeout(function(){document.documentElement.classList.add('theme-ready');},50);});`,
+            __html: `window.addEventListener('DOMContentLoaded',function(){requestAnimationFrame(function(){setTimeout(function(){document.documentElement.classList.add('theme-ready');},150);});});`,
           }}
         />
       </head>

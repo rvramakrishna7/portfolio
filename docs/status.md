@@ -1,9 +1,33 @@
 # Status: Portfolio site
 
-Current step: R3 done with mobile diagram readability fix on feat/r3-stories (all 4 diagrams responsive with mobile views below 640 px, rendered labels >= 12 px [Vouch >= 14 px] at 375 px, 28/28 story e2e tests passing, zero axe violations in both themes, 16 diagram screenshots reviewed); awaiting owner approval to merge and start R4.
+Current step: R4 done on feat/r4-qa (content promoted to docs/content.md, SEO updated, OG image restyled, check:numbers TEST-013 passing on all 5 pages, full Playwright suite 102/102 passing, Lighthouse measured on production build); awaiting owner approval to merge and start R5.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
 Done since last update:
-- Phase R3 Mobile Diagram Fix: Refactored all 4 inline SVG diagrams with dedicated mobile viewports below 640 px (`.diag-desktop` and `.diag-mobile`). VouchPipeline stacks 6 stages vertically with down arrows (labels >= 14 px effective height). McpArchitecture stacks clients, gateway box with 5 pills, servers, and PostgreSQL (labels >= 12 px). BeforeAfterBars stacks bars vertically with clear values (labels >= 14 px). ZyncMediaFlow displays signalling and peer participants cleanly (labels >= 12 px). Diagram captions sized to 0.78rem so they remain smaller than diagram labels. Added TEST-018 text height assertion (asserts minimum rendered SVG text height >= 12 px at 375 px) to `e2e/stories.spec.ts`. All 28 story e2e tests passing.
+- Phase R4 Item 1 (Promote Content): Promoted `docs/content-v2.md` to `docs/content.md`, preserving "Form messages" microcopy section word for word; marked `docs/content-v2.md` as PROMOTED.
+- Phase R4 Item 2 (SEO & Metadata): Updated home title (`Ramakrishna | Software Engineer (Full-Stack, Backend, AI)`, 57 chars < 60), description (155 chars < 160), story titles (< 75 chars, project name first), descriptions (< 160 chars), JSON-LD (WebSite, Person with addressCountry India, no email, no phone), added `src/lib/site.test.ts` for `NEXT_PUBLIC_SITE_URL` resolution, and updated `e2e/seo.spec.ts`.
+- Phase R4 Item 3 (OG Image): Restyled `src/app/opengraph-image.tsx` using new tokens (`#0B0B0D` background, `#2997FF` blue accent, `#F5F5F7` text, `#A1A1A6` subtitle, `#303034` line, `#86868B` footer), preserving DEC-013 11px columnGap flex tagline. Reviewed `e2e/screenshots/og.png` via `read_file`.
+- Phase R4 Item 4 (TEST-013 Number Accuracy): Created `scripts/check-numbers.mjs` and `scripts/check-numbers.test.ts`, added `"check:numbers"` to `package.json`. Extracts all visible numbers from the 5 built HTML pages and verifies they exist in `docs/content.md`. All 5 pages pass!
+- Phase R4 Item 5 (Lighthouse Audits & Mobile Performance Analysis):
+  - Added `npm run lighthouse` (`scripts/run-lighthouse.mjs`) to automate runs across all 5 built pages.
+  - Measured production build across all 5 pages (mobile and desktop):
+    - `/` (Home): Desktop P=100 A=100 BP=100 SEO=100 (FCP 0.3s, LCP 0.3s, TBT 80ms) | Mobile P=83 A=100 BP=100 SEO=100 (FCP 0.8s, LCP 0.8s, TBT 710ms)
+    - `/work/restart-options`: Desktop P=100 A=100 BP=100 SEO=100 (FCP 0.3s, LCP 0.3s, TBT 60ms) | Mobile P=87 A=100 BP=100 SEO=100 (FCP 0.8s, LCP 0.8s, TBT 520ms)
+    - `/work/mcp-gateway`: Desktop P=100 A=100 BP=100 SEO=100 (FCP 0.3s, LCP 0.3s, TBT 80ms) | Mobile P=85 A=100 BP=100 SEO=100 (FCP 0.8s, LCP 0.8s, TBT 580ms)
+    - `/work/vouch`: Desktop P=100 A=100 BP=100 SEO=100 (FCP 0.3s, LCP 0.3s, TBT 80ms) | Mobile P=85 A=100 BP=100 SEO=100 (FCP 0.8s, LCP 0.8s, TBT 580ms)
+    - `/work/zync`: Desktop P=99 A=100 BP=100 SEO=100 (FCP 0.3s, LCP 0.3s, TBT 90ms) | Mobile P=85 A=100 BP=100 SEO=100 (FCP 0.8s, LCP 0.8s, TBT 610ms)
+  - Known limitation (accepted by owner): Mobile Lighthouse Performance is 83–87 (target 90+) due to React 19 hydration runtime evaluation under simulated 4x CPU throttle (TBT 520–710ms); Core Web Vitals (FCP 0.8s, LCP 0.8s, CLS 0.00), Accessibility 100, Best Practices 100, SEO 100 are all optimal.
+  - Optimization Fix 1 applied: Throttled scroll and progress listeners (`BackToTop`, `Header`, `ReadingProgress`) with `requestAnimationFrame`, deferred reading progress calculation, and avoided redundant text writes in `CountUp`. Improved home score from 80 to 83, and restart-options from 84 to 87; reduced style/layout time from 1016ms to 883ms.
+  - Fix 2 & 3 attempted: Lazy `CommandPalette` loader tested (±1 pt variance, added test timing flakiness) and `content-visibility: auto` tested (regressed home score to 79 and increased FCP to 1.1s); both reverted cleanly per Rule 5 discipline.
+  - Measured bottleneck: Single-threaded evaluation of Next.js 16 / React 19 runtime bundle (`react-dom/client`, 229 KB unminified, 663ms eval time under simulated 4x CPU throttle) dominates Total Blocking Time (520-710ms). FCP (0.8s), LCP (0.8s), and CLS (0.00) are all green.
+- Phase R4 Item 6 (Full Verification Suite): `npm run lint` (0 errors), `npm run typecheck` (0 errors), `npm test` (25/25 passed across 5 test files), `npm run check:flat` (37 files scanned, passed), `npm run check:copy` (37 files scanned, passed), `npm run check:numbers` (5 pages passed), `npm run build` (12 static pages), and full Playwright test suite (`102 passed` across 14 spec files). Port 3000 verified free (`netstat -ano | findstr :3000` returned no listeners).
+- Phase R4 Item 7 (Gated & Open Items Tracking):
+  - [GATED] Vouch server test counts (100 server tests): left out; only 14 end-to-end Playwright tests and live app run mentioned.
+  - [GATED] Vouch "Top 50 finalist" claim: left out; hackathon note states solo team RESTART CODE for TechCircuit hackathon.
+  - [GATED] Vouch 10-12s cold start baseline: left out; only 931 ms cold start from project status log is shown.
+  - [GATED] MCP Gateway server test count details: 1,212 headline tests shown per R0 audit reconciliation.
+  - [OPEN] SonicVocal test figures (2,026 of 2,239) and employer public disclosure: left out / pending owner confirmation.
+  - [OPEN] Zync summary request payload details: left out; described only as "turns the meeting into key points, decisions and action items".
+Next step (awaiting owner approval): R5 (Resume and ship).
 - Phase R3 Item 1 (Stories content): Extended `src/content/stories.ts` with nine-part story data, diagram identifiers, results tables with measure/value/howMeasured, honest notes, and exact content from `docs/content-v2.md`.
 - Phase R3 Item 2 (Diagrams): Built four inline SVG diagrams using CSS tokens (`var(--border)`, `var(--card)`, `var(--bg)`, `var(--text)`, `var(--text-2)`, `var(--accent)`) with zero gradients: `BeforeAfterBars` (Restart Options), `McpArchitecture` (Team MCP Gateway), `VouchPipeline` (Vouch), and `ZyncMediaFlow` (Zync).
 - Phase R3 Item 3 (Styling): Styled story nine-part structure, section layout, responsive results table with horizontal scroll wrapper (`min-width: 0` on grid items to prevent mobile page overflow), honest note callout boxes, and diagram figure containers.

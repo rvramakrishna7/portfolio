@@ -11,7 +11,9 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "check:flat": "node scripts/check-flat.mjs",
-    "check:copy": "node scripts/check-copy.mjs"
+    "check:copy": "node scripts/check-copy.mjs",
+    "check:numbers": "node scripts/check-numbers.mjs",
+    "lighthouse": "node scripts/run-lighthouse.mjs"
   },
   "dependencies": {
     "next": "16.4.6",

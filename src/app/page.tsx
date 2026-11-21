@@ -8,9 +8,9 @@ import { Skills } from "@/components/Skills";
 import { Work } from "@/components/Work";
 import { absoluteUrl } from "@/lib/site";
 
-const title = "Ramakrishna | Full-stack and AI automation developer";
+const title = "Ramakrishna | Software Engineer (Full-Stack, Backend, AI)";
 const description =
-  "Full-stack and AI automation developer in Mumbai. Four projects told as problems solved: strike shifting in 2-3 s, AI review in 3.35 s, 1,212 passing tests.";
+  "Software engineer in India (BITS Pilani, 2026). Four projects told as problems solved: options automation, AI claim checks, an MCP gateway, video meetings.";
 
 export const metadata: Metadata = {
   title,
@@ -49,7 +49,7 @@ const homeJsonLd = {
       "@type": "Person",
       "@id": absoluteUrl("/#person"),
       name: "Ramakrishna",
-      jobTitle: "Full-stack and AI automation developer",
+      jobTitle: "Software Engineer",
       url: absoluteUrl("/"),
       sameAs: [
         "https://www.linkedin.com/in/rvramakrishna",
@@ -57,7 +57,6 @@ const homeJsonLd = {
       ],
       address: {
         "@type": "PostalAddress",
-        addressLocality: "Mumbai",
         addressCountry: "India",
       },
     },
