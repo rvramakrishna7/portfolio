@@ -21,8 +21,8 @@ One step at a time. Do not start a step until the owner approves the previous on
 | R1 | Tokens, Theme, Shell | Light/dark theme tokens, toggle, system sans headings, header responsive fix | DONE (merged) |
 | R2 | Home Page | Rebuild hero, chapters, proof strip, experience, skills, about, contact with new copy | DONE (merged) |
 | R3 | Story Pages | Nine-part structure, responsive SVG diagrams, pager traversal, mobile diagram readability | DONE (merged) |
-| R4 | SEO, QA, Content Promotion | Promote docs/content.md, update SEO metadata, OG image restyle, check:numbers (TEST-013), full e2e suite (102 tests), Lighthouse | DONE |
-| R5 | Resume & Ship | Final checks, resume validation, deploy preparation | PENDING |
+| R4 | SEO, QA, Content Promotion | Promote docs/content.md, update SEO metadata, OG image restyle, check:numbers (TEST-013), full e2e suite (102 tests), Lighthouse | DONE (merged) |
+| R5 | Resume & Ship | Final checks, resume validation, deploy preparation | IN PROGRESS (Part A: docs & checks) |
 
 ## Acceptance tests (a step only claims the tests it actually touches)
 - TEST-001 `npm run lint`, `npm run typecheck`, `npm run build` all exit 0.
