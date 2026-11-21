@@ -35,7 +35,9 @@ One step at a time. Do not start a step until the owner approves the previous on
 - TEST-008 Accessibility: axe finds no violations on every page at 375 and 1440 px.
 - TEST-009 SEO check on every built page: unique title (home under 60 chars; story pages under 75, project name first), description under 160, one h1, canonical, Open Graph and Twitter tags, valid JSON-LD, listed in `sitemap.xml`.
 - TEST-010 Contact form: valid input shows the success text (API mocked in the test); invalid input shows field errors; a filled honeypot is accepted silently and never forwarded; over-limit requests are refused. Real email delivery is `PENDING OWNER CHECK`.
-- TEST-011 Lighthouse on a production build meets the targets in `AGENTS.md` section 7c, mobile and desktop, with the real scores pasted.
+- TEST-011 Lighthouse on a production build meets the targets in `AGENTS.md` section 7c, mobile and desktop, with the real scores pasted:
+  - Desktop: Performance 99-100, Accessibility 100, Best Practices 100, SEO 100 across all 5 pages (PASS).
+  - Mobile: Performance 83-87 (FAIL vs >= 90 target; root cause is React 19 hydration runtime under simulated 4x CPU slowdown causing 520-710ms TBT; FCP 0.8s, LCP 0.8s, CLS 0.00), Accessibility 100, Best Practices 100, SEO 100 across all 5 pages.
 - TEST-012 Every internal link returns 200. Every external link is listed in the report.
 - TEST-013 Every number on the site matches `docs/content.md` exactly (the planner checks this by reading the built HTML).
 - TEST-014 Theme system (e2e/theme.spec.ts): OS preference applies without saved choice; toggle switches theme, saves in localStorage, and survives reload and cross-page navigation; inline head script prevents flash of unstyled content; toggle has correct aria-label for next state and responds to Space and Enter; OS theme applies cleanly with JavaScript disabled.
