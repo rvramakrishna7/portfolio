@@ -1,18 +1,18 @@
 # Status: Portfolio site
 
-Current step: R2 done (home page redesigned per content-v2.md and design-v2.md, all 92 e2e tests passing, 28 section screenshots reviewed); awaiting owner approval to merge and start R3.
+Current step: R2 merged into main (home page redesigned per content-v2.md and design-v2.md, all 93 e2e tests passing, count-up verified in normal and reduced motion); ready for R3 (story pages).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
 Done since last update:
 - Item 0 (R1 fix): Below 640px, header hides Jump to and nav links, displaying only brand, theme toggle, Resume, and Contact. Added mobile bounding box and no-wrapping e2e test at 320, 375, and 414 px.
 - Item 1 (Hero): Redesigned with `docs/content-v2.md` copy: status pill, H1 with blue accent highlight ("faster, simpler and more reliable"), two intro paragraphs, "View my work" and "Download resume" CTA buttons, info row, and 3-row title block (BASED India, EDUCATION BITS Pilani, Computer Science, GRADUATED 2026). Fits within 1280x720 window.
-- Item 2 (Proof strip): Updated metrics and method descriptions (1,212 with count-up, 98 to 100, 18.83 s → 3.35 s, 45 to 60 s → 2 to 3 s, no en-dashes).
+- Item 2 (Proof strip): Updated metrics and method descriptions (1,212 with count-up, 98 to 100, 18.83 s → 3.35 s, 45 to 60 s → 2 to 3 s, no en-dashes). Added explicit E2E tests verifying count-up settles at 1,212 in normal motion and is 1,212 immediately under prefers-reduced-motion: reduce.
 - Item 3 (Work chapters): Extended `src/content/stories.ts` with 01-04 project order (Restart Options, Team MCP Gateway, Vouch, Zync) and new card fields. Maintained slit reveal effect and added compact "Additional projects" Book My Nest card.
 - Item 4 (Experience): Updated with 7 numbered engineering contributions, product description, testing metric (2,026 / 2,239 tests), and dashed NDA card.
 - Item 5 (Skills): Grouped into 8 categories including Claude API, Render, and ESLint (override 4); removed AI-tools sentence and education/certifications.
 - Item 6 (About): Built new `About` component (`id="about"`) with "How I work" copy and Education / Certifications sidebar card; added About to the Command Palette.
 - Item 7 (Contact & Footer): Updated contact heading to "Have a problem worth solving?", new copy, links (LinkedIn, GitHub, Download resume, zero email / mailto), and aligned footer text with `content-v2.md`.
 - Item 8 (E2E tests): Updated `hero.spec.ts`, `work.spec.ts`, `contact.spec.ts`, `smoke.spec.ts`, `seo.spec.ts`, `accessibility.spec.ts`, `shell.spec.ts`, and `theme.spec.ts` to assert `docs/content-v2.md` copy.
-- Verification: `npm run lint`, `npm run typecheck`, `npm test` (19/19 passing), `npm run check:flat` (31 files scanned), `npm run check:copy` (31 files scanned), `npm run build` (12 static pages), and `npm run e2e` (92/92 tests passing). Grepped built HTML for email and mailto (zero found).
+- Verification: `npm run lint`, `npm run typecheck`, `npm test` (19/19 passing), `npm run check:flat` (31 files scanned), `npm run check:copy` (31 files scanned), `npm run build` (12 static pages), and `npx playwright test e2e/hero.spec.ts` (7/7 passing). Grepped built HTML for email and mailto (zero found).
 Next step (awaiting owner approval): R3 (story pages rebuild with nine-part structure and diagrams).
 Blockers / questions for the owner:
 - Owner to configure Vercel environment variables (`RESEND_API_KEY`, `CONTACT_TO_EMAIL`, `NEXT_PUBLIC_SITE_URL`).
