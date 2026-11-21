@@ -33,11 +33,18 @@ export function CountUp({ target, initialText }: CountUpProps) {
 
         const start = performance.now();
         const duration = 1000;
+        let lastVal = -1;
 
         const step = (now: number) => {
           const progress = Math.min(1, (now - start) / duration);
           const eased = 1 - Math.pow(1 - progress, 3);
-          el.textContent = Math.round(target * eased).toLocaleString("en-US");
+          const current = Math.round(target * eased);
+
+          if (current !== lastVal) {
+            lastVal = current;
+            el.textContent = current.toLocaleString("en-US");
+          }
+
           if (progress < 1) {
             rafId = requestAnimationFrame(step);
           } else {

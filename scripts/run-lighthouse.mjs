@@ -1,3 +1,11 @@
+/**
+ * scripts/run-lighthouse.mjs
+ * Production Lighthouse audit automation script for Portfolio site.
+ * Audits all 5 pages (home, restart-options, mcp-gateway, vouch, zync)
+ * in desktop mode and mobile mode (median of 3 mobile runs).
+ * Collects and outputs Performance, Accessibility, Best Practices, and SEO scores.
+ */
+
 import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

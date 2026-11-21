@@ -6,12 +6,20 @@ export function BackToTop() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    let rafId = 0;
     const onScroll = () => {
-      setVisible(document.documentElement.scrollTop > 700);
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        setVisible(document.documentElement.scrollTop > 700);
+      });
     };
+
     window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", onScroll);
+    };
   }, []);
 
   const handleClick = () => {
