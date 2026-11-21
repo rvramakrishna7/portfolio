@@ -244,33 +244,64 @@ test.describe("Theme system and tokens (TEST-014 to TEST-016)", () => {
           // Header screenshot
           const header = page.locator("header.site-head");
           await header.screenshot({
-            path: path.join(
-              SCREENSHOTS_DIR,
-              `header-${theme}-${width}.png`
-            ),
+            path: path.join(SCREENSHOTS_DIR, `header-${theme}-${width}.png`),
+          });
+
+          // Hero screenshot
+          await page.evaluate(() => window.scrollTo(0, 0));
+          const hero = page.locator("section.hero");
+          await hero.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `hero-${theme}-${width}.png`),
+          });
+
+          // Proof strip screenshot
+          const proof = page.locator("section#proof");
+          await proof.scrollIntoViewIfNeeded();
+          await proof.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `proof-${theme}-${width}.png`),
+          });
+
+          // One chapter screenshot
+          const chapter = page.locator("article#restart-options");
+          await chapter.scrollIntoViewIfNeeded();
+          await chapter.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `chapter-${theme}-${width}.png`),
+          });
+
+          // Experience screenshot
+          const exp = page.locator("section#experience");
+          await exp.scrollIntoViewIfNeeded();
+          await exp.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `experience-${theme}-${width}.png`),
+          });
+
+          // Skills screenshot
+          const skills = page.locator("section#skills");
+          await skills.scrollIntoViewIfNeeded();
+          await skills.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `skills-${theme}-${width}.png`),
+          });
+
+          // About screenshot
+          const about = page.locator("section#about");
+          await about.scrollIntoViewIfNeeded();
+          await about.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `about-${theme}-${width}.png`),
+          });
+
+          // Contact screenshot
+          const contact = page.locator("section#contact");
+          await contact.scrollIntoViewIfNeeded();
+          await contact.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `contact-${theme}-${width}.png`),
           });
 
           // Footer screenshot
           const footer = page.locator("footer.site-footer");
           await footer.scrollIntoViewIfNeeded();
           await footer.screenshot({
-            path: path.join(
-              SCREENSHOTS_DIR,
-              `footer-${theme}-${width}.png`
-            ),
+            path: path.join(SCREENSHOTS_DIR, `footer-${theme}-${width}.png`),
           });
-
-          // Hero screenshot (at 1280)
-          if (width === 1280) {
-            await page.evaluate(() => window.scrollTo(0, 0));
-            const hero = page.locator("section.hero");
-            await hero.screenshot({
-              path: path.join(
-                SCREENSHOTS_DIR,
-                `hero-${theme}-1280.png`
-              ),
-            });
-          }
         }
       }
     }
