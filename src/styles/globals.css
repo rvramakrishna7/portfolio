@@ -1288,12 +1288,8 @@ dialog.palette::backdrop {
 }
 
 @media (max-width: 600px) {
-  .head-actions .jump-btn {
-    display: none;
-  }
-
   .site-head {
-    padding: 4px 6px 4px 12px;
+    padding: 3px 6px 3px 12px;
   }
 
   .head-actions {
@@ -1301,8 +1297,13 @@ dialog.palette::backdrop {
   }
 
   .head-actions .btn {
-    padding: 6px 10px;
-    font-size: 0.82rem;
+    padding: 6px 8px;
+    font-size: 0.8rem;
+    min-height: 40px;
+  }
+
+  .jump-label {
+    font-size: 0.8rem;
   }
 }
 

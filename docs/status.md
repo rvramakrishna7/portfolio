@@ -1,18 +1,16 @@
 # Status: Portfolio site
 
-Current step: S8b-1 done (main pushed to GitHub); S8b-2 (Vercel deploy & live verification) next.
+Current step: R1 done (tokens, theme, shell implemented, tested, and verified); awaiting owner approval to merge and start R2.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
 Done since last update:
-- S8b-1: Verified zero secrets tracked in git (`git ls-files | findstr /i /c:".env" /c:"key" /c:"secret"` confirmed only `.env.example`).
-- S8b-1: Configured origin remote to `https://github.com/rvramakrishna7/portfolio.git`.
-- S8b-1: Received owner approval and pushed `main` to GitHub with tracking (`git push -u origin main`).
-- Created branch `feat/deploy-prep` from `main`.
-- Item 1 (OG image): Updated `src/app/opengraph-image.tsx` per DEC-013 (Option B) to render the tagline as five flex word items with 11px `columnGap`, eliminating Satori proportional text spacing anomalies. Verified SHA256 change to `56C691F344E3A1C1B5201C9ED7D744692267EEA1EC0F5AB5B7508F431FADC663` and visually verified uniform gaps in `e2e/screenshots/og.png`.
-- Item 2 (Resume): Tracked `public/resume.pdf` in git and updated `e2e/stories.spec.ts` removing the `/resume.pdf` exclusion from TEST-012, asserting status 200 and `application/pdf` content-type.
-- Item 3 (Safety checks): `git ls-files | findstr /i ".env"` confirmed only `.env.example` is tracked; `npm audit --omit=dev` reported 0 vulnerabilities; confirmed `.gitignore` ignores `.env*` except `.env.example`.
-- Item 4 (Verification suite): `npm run lint` passed (code 0), `npm run typecheck` passed (code 0), `npm test` passed 16/16 tests (code 0), `npm run check:flat` passed across 29 files (code 0), `npm run build` generated 12 static/SSG pages successfully (code 0), and Playwright test suites passed (`e2e/seo.spec.ts` + `e2e/health.spec.ts` 11/11 passed).
-- Merged `feat/deploy-prep` into `main` (`219ebfb`) with `git merge --no-ff`.
-Next step (awaiting owner approval): S8b (GitHub repository creation, push, Vercel deployment, and live verification).
+- R0: Completed audit and codebase inventory, documented in `docs/audit-v1.md`, and committed redesign spec overrides (`docs/content-v2.md`, `docs/design-v2.md`, `docs/prompts/R-master.md`). Merged `feat/r0-audit` into `main`.
+- R1: Added `scripts/check-copy.mjs` and unit tests in `scripts/check-copy.test.ts` with npm script `npm run check:copy` to detect banned buzzwords and raw em dashes.
+- R1: Updated `src/styles/tokens.css` with light and dark mode tokens, system sans font stacks, and `--accent: #006CE3` (light) / `#2997FF` (dark) with WCAG AA compliance.
+- R1: Implemented theme system with flash-prevention script in `src/app/layout.tsx`, `localStorage` key `"theme"`, and `src/components/ThemeToggle.tsx` (using `useSyncExternalStore` for reactive cross-tab updates without hydration mismatch).
+- R1: Added Resume link (`/resume.pdf`) and ThemeToggle to `src/components/Header.tsx`, updated `src/components/CommandPalette.tsx` to include Resume, and restyled headings and shell components in `src/styles/globals.css`.
+- R1: Added comprehensive theme E2E tests in `e2e/theme.spec.ts` (TEST-014 OS preference, toggle persistence, no-flash, keyboard navigation; TEST-015 axe accessibility scan in light and dark modes across 6 routes; TEST-016 no horizontal scroll at 375, 768, 1024, 1280, 1440 px in light and dark modes). Added TEST-014 through TEST-017 to `docs/plan.md`.
+- R1: Ran full verification suite (`check:copy`, `lint`, `typecheck`, `test`, `check:flat`, `e2e` 91/91 passing, `build`). Captured and verified 10 screenshots in `e2e/screenshots/`.
+Next step (awaiting owner approval): R2 (hero and proof strip rewrite per content-v2.md).
 Blockers / questions for the owner:
 - Owner to configure Vercel environment variables (`RESEND_API_KEY`, `CONTACT_TO_EMAIL`, `NEXT_PUBLIC_SITE_URL`).
 - Production domain / Vercel URL to set as `NEXT_PUBLIC_SITE_URL`.
@@ -37,3 +35,4 @@ Deviations:
 - S6: Removed temporary Lighthouse test JSON reports (`lighthouse-s6-home-mobile.json`, `lighthouse-s6-home-desktop.json`, `lighthouse-s6-vouch-mobile.json`, `lighthouse-s6-vouch-desktop.json`) with individual `Remove-Item` commands per rule 6a.
 - S7: Removed temporary Lighthouse test JSON reports (`lh-home-mobile.json`, `lh-home-desktop.json`, `lh-restart-mobile.json`, `lh-restart-desktop.json`, `lh-zync-mobile.json`, `lh-zync-desktop.json`, `lh-vouch-mobile.json`, `lh-vouch-desktop.json`, `lh-mcp-mobile.json`, `lh-mcp-desktop.json`, `lh-nope-mobile.json`, `lh-nope-desktop.json`) with individual `Remove-Item` commands per rule 6a.
 - S7b: Removed temporary Lighthouse test JSON reports (`lh-s7b-home-m.json`, `lh-s7b-home-d.json`, `lh-s7b-restart-m1.json`, `lh-s7b-restart-m2.json`, `lh-s7b-restart-m3.json`, `lh-s7b-restart-d.json`) with individual `Remove-Item` commands per rule 6a.
+- R1: Darkened light mode `--accent` token minimally from `#0071E3` (4.31:1 contrast on `#F5F5F7`, failing WCAG AA normal text threshold of 4.5:1) to `#006CE3` (4.53:1 on `#F5F5F7`, 4.93:1 on `#FFFFFF`), per the instruction in `docs/design-v2.md` ("If a token fails, darken it minimally, record the new value in tokens.css and in the report").

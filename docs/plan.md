@@ -28,3 +28,7 @@ One step at a time. Do not start a step until the owner approves the previous on
 - TEST-011 Lighthouse on a production build meets the targets in `AGENTS.md` section 7c, mobile and desktop, with the real scores pasted.
 - TEST-012 Every internal link returns 200. Every external link is listed in the report.
 - TEST-013 Every number on the site matches `docs/content.md` exactly (the planner checks this by reading the built HTML).
+- TEST-014 Theme system (e2e/theme.spec.ts): OS preference applies without saved choice; toggle switches theme, saves in localStorage, and survives reload and cross-page navigation; inline head script prevents flash of unstyled content; toggle has correct aria-label for next state and responds to Space and Enter; OS theme applies cleanly with JavaScript disabled.
+- TEST-015 Accessibility in both themes: axe scan finds zero violations across all built pages (home, 4 stories, not-found) in both light and dark themes; computed color contrast asserts WCAG AA compliance.
+- TEST-016 Responsive in both themes: zero horizontal scroll at 375, 768, 1024, 1280, 1440 px in both light and dark themes; header, footer, and hero screenshots captured.
+- TEST-017 Copy and character audit: `npm run check:copy` exits 0 (no em dash character `\u2014` and no banned buzzwords in `src/` or content specs).
