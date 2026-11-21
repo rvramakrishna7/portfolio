@@ -13,7 +13,7 @@ interface PageItem {
 const PAGES: PageItem[] = [
   {
     path: "/",
-    expectedTitle: "Ramakrishna | Full-stack and AI automation developer",
+    expectedTitle: "Ramakrishna | Software Engineer (Full-Stack, Backend, AI)",
     titleMaxLen: 60,
     expectedH1:
       "I build software that makes complex work faster, simpler and more reliable.",
@@ -21,7 +21,7 @@ const PAGES: PageItem[] = [
   },
   ...STORIES.map((story) => ({
     path: `/work/${story.slug}`,
-    expectedTitle: `${story.title}: ${story.tag} | Ramakrishna`,
+    expectedTitle: story.seoTitle,
     titleMaxLen: 75,
     expectedH1: story.title,
     isStory: true,
@@ -66,7 +66,7 @@ test.describe("SEO, Metadata, JSON-LD, Robots, and Sitemap (S6)", () => {
         expect(descContent).toBe(p.story.seoDescription);
       } else {
         expect(descContent).toBe(
-          "Full-stack and AI automation developer in Mumbai. Four projects told as problems solved: strike shifting in 2-3 s, AI review in 3.35 s, 1,212 passing tests."
+          "Software engineer in India (BITS Pilani, 2026). Four projects told as problems solved: options automation, AI claim checks, an MCP gateway, video meetings."
         );
       }
 
@@ -168,16 +168,13 @@ test.describe("SEO, Metadata, JSON-LD, Robots, and Sitemap (S6)", () => {
           const person = graph.find((node) => node["@type"] === "Person");
           expect(person).toBeDefined();
           expect(person?.name).toBe("Ramakrishna");
-          expect(person?.jobTitle).toBe(
-            "Full-stack and AI automation developer"
-          );
+          expect(person?.jobTitle).toBe("Software Engineer");
           expect(person?.sameAs).toEqual([
             "https://www.linkedin.com/in/rvramakrishna",
             "https://github.com/rvramakrishna7",
           ]);
           expect(person?.address).toEqual({
             "@type": "PostalAddress",
-            addressLocality: "Mumbai",
             addressCountry: "India",
           });
 

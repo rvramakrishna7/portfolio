@@ -55,7 +55,7 @@ export async function generateMetadata({
           url: absoluteUrl("/opengraph-image"),
           width: 1200,
           height: 630,
-          alt: "Ramakrishna | Full-stack and AI automation developer",
+          alt: "Ramakrishna | Software Engineer (Full-Stack, Backend, AI)",
         },
       ],
     },
