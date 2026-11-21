@@ -4,11 +4,13 @@ import { expect, test } from "@playwright/test";
 import { FORBIDDEN_VISIBLE_TOKENS, VIEWPORTS } from "./helpers";
 
 const EXPECTED_EXPERIENCE_ITEMS = [
-  "Built the part that follows every call through its states, and ignores late messages so a finished call never flips back to active.",
-  "Built 8 voice tools for the agent (booking, availability, leads, opt-outs, transfer and more) with replay protection, so a retried call never books twice. Connected Cal.com so the agent books live; 2 staging calls ended in real bookings.",
-  "Added checks before any call is placed: number format, consent, the suppression list and the recipient's own 9am to 6pm window. That stops wasted credits and carrier trouble.",
-  "Found a gateway that answered 200 with no login token, and added JWT and role checks.",
-  "Chose hosting from numbers: FastAPI on Cloudflare Workers took 4 s to start but answered warm requests in 110 to 130 ms. Backed the work with 2,000+ automated tests.",
+  "Stopped finished calls from flipping back to active. I built the call-state handling for Vapi webhooks, so a late or out-of-order event cannot reopen a call that has ended.",
+  "Made the agent's tools safe to retry. I worked on eight tools (booking, availability, leads, contacts, opt-outs, callbacks, transfers and more) and added idempotency checks so a retried request cannot book or record the same thing twice.",
+  "Connected Cal.com v2 for live availability and booking. Two staging calls ended in confirmed bookings.",
+  "Added checks before every outbound call: phone number format, consent, suppression list, the recipient's local calling window, and capacity limits.",
+  "Worked on campaign pause, resume and cancel, and added protection against duplicate campaign jobs.",
+  "Closed an authorization gap in the Cloudflare Worker gateway, which answered requests that carried no login token, by adding JWT and role checks.",
+  "Measured FastAPI on Cloudflare Workers before choosing it: about 4 seconds for a cold start and 110 to 130 ms for warm requests in the benchmark I ran.",
 ] as const;
 
 const EXPECTED_SKILLS = [
@@ -17,19 +19,30 @@ const EXPECTED_SKILLS = [
     skills: "JavaScript, TypeScript, Python, SQL, HTML, CSS",
   },
   {
-    category: "Frontend and backend",
-    skills:
-      "React, Next.js, Vite, Node.js, Express, FastAPI, Tailwind CSS, REST, JWT",
+    category: "Frontend",
+    skills: "React, Next.js, Vite, Tailwind CSS",
   },
   {
-    category: "Real-time and AI",
-    skills:
-      "WebSocket, Socket.io, WebRTC, Vapi, Telnyx, Cal.com API, Groq, Gemini, Claude API, MCP, LLM tool calling, webhooks",
+    category: "Backend",
+    skills: "Node.js, Express, FastAPI, REST APIs, JWT",
   },
   {
-    category: "Data and DevOps",
+    category: "Real-time systems",
+    skills: "WebSocket, Socket.io, WebRTC, webhooks",
+  },
+  {
+    category: "AI and integrations",
     skills:
-      "MongoDB, PostgreSQL (Supabase, pgvector), Docker, Kubernetes, Helm, Cloudflare Workers, Vercel, Render, Git",
+      "Claude API, Groq, Gemini, Vapi, Telnyx, Cal.com API, MCP, pgvector, LLM tool calling",
+  },
+  {
+    category: "Databases",
+    skills: "MongoDB, PostgreSQL, Supabase",
+  },
+  {
+    category: "Infrastructure",
+    skills:
+      "Docker, Kubernetes, Helm, Cloudflare Workers, Render, Vercel, Git",
   },
   {
     category: "Testing",
@@ -38,7 +51,7 @@ const EXPECTED_SKILLS = [
 ] as const;
 
 test.describe("Experience, Skills, and Contact (S5)", () => {
-  test("Experience and Skills sections match docs/content.md verbatim (TEST-003, TEST-013)", async ({
+  test("Experience, Skills, and About sections match docs/content-v2.md verbatim (TEST-003, TEST-013)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -46,29 +59,30 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
 
     // Experience section
     const exp = page.locator("section#experience");
-    await expect(exp.locator(".eyebrow")).toHaveText(
-      "Experience · Aug 2026 – Nov 2026, remote"
-    );
+    await expect(exp.locator(".eyebrow")).toHaveText("Experience");
     await expect(exp.locator("#exp-title")).toHaveText(
-      "AI and Automation Engineer Intern"
+      "A business shouldn't lose a customer just because nobody can answer the phone."
     );
     await expect(exp.locator(".company-tag")).toHaveText(
-      "Luxecurio Pvt Ltd (SonicVocal)"
+      "AI and Automation Engineer Intern, Luxecurio Pvt Ltd (SonicVocal). Remote. August 2026 to November 2026."
     );
     await expect(exp.locator(".intro")).toHaveText(
-      "I worked on an AI phone-calling product for US businesses. The agent books appointments over the phone, so the product has to be right even when a call is retried, late or dropped."
+      "Businesses lose opportunities when calls go unanswered because the owner or staff are busy. Someone has to pick up, understand the request, check the calendar and book the appointment by hand."
+    );
+    await expect(exp.locator(".product-desc")).toHaveText(
+      "SonicVocal is an AI voice platform for businesses. Its agent answers real phone calls, understands what the caller needs, answers common questions from a knowledge base, checks availability and books appointments through Cal.com, records leads and contacts, takes callback and opt-out requests, and transfers to a human when needed. It also runs outbound calling campaigns."
     );
 
     // NDA note
     const ndaNote = exp.locator(".nda");
     await expect(ndaNote).toBeVisible();
     await expect(ndaNote).toHaveText(
-      "This work is under NDA, so there is no public link. I'm happy to walk through it in an interview."
+      "Some implementation details are confidential. I'm happy to walk through my engineering contributions and the architecture in an interview."
     );
 
     // Numbered items
     const expItems = exp.locator("ol li");
-    await expect(expItems).toHaveCount(5);
+    await expect(expItems).toHaveCount(7);
     for (let i = 0; i < EXPECTED_EXPERIENCE_ITEMS.length; i++) {
       await expect(expItems.nth(i)).toHaveText(EXPECTED_EXPERIENCE_ITEMS[i]);
       await expect(expItems.nth(i)).toHaveAttribute(
@@ -76,6 +90,11 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
         String(i + 1).padStart(2, "0")
       );
     }
+
+    // Testing line
+    await expect(exp.locator(".exp-testing")).toHaveText(
+      "2,026 automated tests in the modules I owned, out of 2,239 in the full repository suite as reported."
+    );
 
     // Verify NDA rule: no links anywhere pointing to SonicVocal product website
     const allLinks = await page.locator("a[href]").evaluateAll((els) =>
@@ -94,14 +113,13 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
 
     // Skills section
     const skills = page.locator("section#skills");
-    await expect(skills.locator(".sec-head .eyebrow")).toHaveText("Skills");
-    await expect(skills.locator("#skills-title")).toHaveText("What I work with.");
-    await expect(skills.locator(".sec-head p").nth(1)).toHaveText(
-      "I use AI coding tools (Claude, Google Antigravity and ChatGPT), and I read, review and test everything they write before it ships."
+    await expect(skills.locator(".sec-head .eyebrow")).toHaveText(
+      "Engineering capabilities"
     );
+    await expect(skills.locator("#skills-title")).toHaveText("What I work with");
 
     const rows = skills.locator("dl .row");
-    await expect(rows).toHaveCount(5);
+    await expect(rows).toHaveCount(8);
     for (let i = 0; i < EXPECTED_SKILLS.length; i++) {
       await expect(rows.nth(i).locator("dt")).toHaveText(
         EXPECTED_SKILLS[i].category
@@ -111,17 +129,24 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
       );
     }
 
-    // Education & Certifications
-    const edu = skills.locator(".edu > div").nth(0);
-    await expect(edu.locator(".eyebrow")).toHaveText("Education");
-    await expect(edu.locator("p").nth(1)).toContainText(
-      "BSc in Computer Science, BITS Pilani. Graduated 2026."
+    // About section (Education & Certifications)
+    const about = page.locator("section#about");
+    await expect(about.locator(".eyebrow")).toHaveText("About");
+    await expect(about.locator("#about-title")).toHaveText("How I work");
+    await expect(about.locator(".about-degree")).toContainText(
+      "BSc Computer Science, BITS Pilani, 2026."
     );
 
-    const certs = skills.locator(".edu > div").nth(1);
-    await expect(certs.locator(".eyebrow")).toHaveText("Certifications");
-    await expect(certs.locator("p").nth(1)).toHaveText(
-      "NISM Series VIII: Equity Derivatives (SEBI). Meta Backend Developer Professional Certificate. Google IT Automation with Python."
+    const certItems = about.locator(".about-certs li");
+    await expect(certItems).toHaveCount(3);
+    await expect(certItems.nth(0)).toHaveText(
+      "NISM Series VIII Equity Derivatives (SEBI)"
+    );
+    await expect(certItems.nth(1)).toHaveText(
+      "Meta Backend Developer Professional Certificate"
+    );
+    await expect(certItems.nth(2)).toHaveText(
+      "Google IT Automation with Python"
     );
   });
 
@@ -166,10 +191,10 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
     const contact = page.locator("section#contact");
     await expect(contact.locator(".eyebrow")).toHaveText("Contact");
     await expect(contact.locator("#contact-title")).toHaveText(
-      "Got a role, or a hard problem?"
+      "Have a problem worth solving?"
     );
     await expect(contact.locator(".sub-text")).toHaveText(
-      "Send a message and it lands straight in my inbox. I reply fast."
+      "I'm open to software engineering opportunities. Tell me about your team, the role or the problem you're working on."
     );
 
     // Big links
@@ -184,7 +209,7 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
     await expect(github).toHaveAttribute("rel", "noopener noreferrer");
 
     const resume = contact.locator('a[href="/resume.pdf"]');
-    await expect(resume).toHaveText("Resume (PDF) →");
+    await expect(resume).toHaveText("Download resume →");
 
     // Form fields
     await expect(contact.locator('label[for="contact-name"]')).toHaveText(

@@ -5,19 +5,18 @@ import { STORIES } from "../src/content/stories";
 import { FORBIDDEN_VISIBLE_TOKENS, VIEWPORTS } from "./helpers";
 
 test.describe("Work section — four chapters (S3)", () => {
-  test("section heading, intro, four chapters, and Book My Nest footer note match docs/content.md", async ({
+  test("section heading, four chapters, and Book My Nest match docs/content-v2.md", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/");
 
     const workSection = page.locator("section#work");
-    await expect(workSection.locator(".sec-head .eyebrow")).toHaveText("Work");
-    await expect(workSection.locator("#work-title")).toHaveText(
-      "Four problems, and what happened next."
+    await expect(workSection.locator(".sec-head .eyebrow")).toHaveText(
+      "Selected work"
     );
-    await expect(workSection.locator(".sec-head p").nth(1)).toHaveText(
-      "Each one starts with a person who had a real problem. Scroll, and each story opens."
+    await expect(workSection.locator("#work-title")).toHaveText(
+      "Four problems, what I built, and what I measured."
     );
 
     const chapters = workSection.locator("article.chapter");
@@ -30,61 +29,79 @@ test.describe("Work section — four chapters (S3)", () => {
       await expect(chapter).toHaveAttribute("id", story.slug);
       await expect(chapter.locator(".meta .num")).toHaveText(story.number);
       await expect(chapter.locator(".meta h3")).toHaveText(story.title);
-      await expect(chapter.locator(".meta .tag")).toHaveText(story.tag);
+      await expect(chapter.locator(".meta .tag")).toHaveText(story.category);
 
       const chipItems = chapter.locator(".meta ul.chips li");
-      await expect(chipItems).toHaveCount(story.chips.length);
-      for (let c = 0; c < story.chips.length; c++) {
-        await expect(chipItems.nth(c)).toHaveText(story.chips[c]);
+      await expect(chipItems).toHaveCount(story.tags.length);
+      for (let c = 0; c < story.tags.length; c++) {
+        await expect(chipItems.nth(c)).toHaveText(story.tags[c]);
       }
 
-      await expect(chapter.locator(".panel .hook")).toHaveText(story.hook);
+      await expect(chapter.locator(".panel .hook")).toHaveText(story.headline);
       await expect(
         chapter.locator(".panel div").filter({ hasText: "The problem" }).first()
-      ).toContainText(story.problem);
+      ).toContainText(story.problemShort);
 
-      const whatIDidItems = chapter.locator(".panel ul li");
-      await expect(whatIDidItems).toHaveCount(story.whatIDid.length);
-      for (let w = 0; w < story.whatIDid.length; w++) {
-        await expect(whatIDidItems.nth(w)).toHaveText(story.whatIDid[w]);
-      }
+      await expect(
+        chapter.locator(".panel div").filter({ hasText: "What I built" }).first()
+      ).toContainText(story.builtShort);
 
       const resultCells = chapter.locator(".panel .results > div");
-      await expect(resultCells).toHaveCount(story.results.length);
-      for (let r = 0; r < story.results.length; r++) {
+      await expect(resultCells).toHaveCount(story.metrics.length);
+      for (let r = 0; r < story.metrics.length; r++) {
         await expect(resultCells.nth(r).locator("strong")).toHaveText(
-          story.results[r].value
+          story.metrics[r].value
         );
         await expect(resultCells.nth(r).locator("span")).toHaveText(
-          story.results[r].label
+          story.metrics[r].label
         );
       }
 
       const links = chapter.locator(".panel .links a");
-      await expect(links).toHaveCount(story.links.length);
-      for (let l = 0; l < story.links.length; l++) {
-        await expect(links.nth(l)).toHaveText(story.links[l].label);
-        await expect(links.nth(l)).toHaveAttribute("href", story.links[l].href);
-        if (story.links[l].external) {
-          await expect(links.nth(l)).toHaveAttribute(
-            "rel",
-            "noopener noreferrer"
-          );
-          await expect(links.nth(l)).toHaveAttribute("target", "_blank");
-        }
+      const expectedLinkCount = story.live ? 3 : 2;
+      await expect(links).toHaveCount(expectedLinkCount);
+
+      await expect(links.nth(0)).toHaveText("Read the story");
+      await expect(links.nth(0)).toHaveAttribute("href", `/work/${story.slug}`);
+
+      if (story.live) {
+        await expect(links.nth(1)).toHaveText("Open the live site");
+        await expect(links.nth(1)).toHaveAttribute("href", story.live);
+        await expect(links.nth(1)).toHaveAttribute(
+          "rel",
+          "noopener noreferrer"
+        );
+        await expect(links.nth(1)).toHaveAttribute("target", "_blank");
+
+        await expect(links.nth(2)).toHaveText("See the code");
+        await expect(links.nth(2)).toHaveAttribute("href", story.code);
+        await expect(links.nth(2)).toHaveAttribute(
+          "rel",
+          "noopener noreferrer"
+        );
+        await expect(links.nth(2)).toHaveAttribute("target", "_blank");
+      } else {
+        await expect(links.nth(1)).toHaveText("See the code");
+        await expect(links.nth(1)).toHaveAttribute("href", story.code);
+        await expect(links.nth(1)).toHaveAttribute(
+          "rel",
+          "noopener noreferrer"
+        );
+        await expect(links.nth(1)).toHaveAttribute("target", "_blank");
       }
     }
 
-    const workNote = workSection.locator(".work-note");
-    await expect(workNote).toContainText(
-      "Earlier work: Book My Nest, a property listing site built with Node.js, Express, MongoDB, Passport.js, Cloudinary and Mapbox."
+    const addCard = workSection.locator(".additional-card");
+    await expect(addCard).toContainText(
+      "Book My Nest: A property listing site where people browse listings and view property details. Node.js, Express, MongoDB, Passport.js, Cloudinary, Mapbox."
     );
-    const bookMyNestLink = workNote.locator("a");
+    const bookMyNestLink = addCard.locator("a");
     await expect(bookMyNestLink).toHaveAttribute(
       "href",
       "https://bookmynest.onrender.com"
     );
     await expect(bookMyNestLink).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(bookMyNestLink).toHaveText("Live");
   });
 
   test("with JavaScript disabled, every chapter's text, numbers, and links are present and visible (not clipped)", async ({
@@ -105,8 +122,8 @@ test.describe("Work section — four chapters (S3)", () => {
       const meta = chapter.locator(".meta");
 
       await expect(chapter).toContainText(story.title);
-      await expect(chapter).toContainText(story.hook);
-      await expect(chapter).toContainText(story.problem);
+      await expect(chapter).toContainText(story.headline);
+      await expect(chapter).toContainText(story.problemShort);
 
       const panelBox = await panel.boundingBox();
       expect(panelBox).not.toBeNull();

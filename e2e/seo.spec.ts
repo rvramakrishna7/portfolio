@@ -16,7 +16,7 @@ const PAGES: PageItem[] = [
     expectedTitle: "Ramakrishna | Full-stack and AI automation developer",
     titleMaxLen: 60,
     expectedH1:
-      "Traders lost a minute every time they moved a strike. Now it takes a few seconds.",
+      "I build software that makes complex work faster, simpler and more reliable.",
     isStory: false,
   },
   ...STORIES.map((story) => ({
