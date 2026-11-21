@@ -1,4 +1,4 @@
-# Content v2: the only source of words, numbers and links for the redesigned site
+# Content v2 (PROMOTED to docs/content.md in Phase R4)
 
 Status: written by the planner on 2026-11-21 from the owner's brief. It replaces docs/content.md ONLY when phase R4 promotes it (copy this file over docs/content.md, keep the old file in git history).
 
