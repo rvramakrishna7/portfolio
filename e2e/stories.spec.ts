@@ -357,6 +357,38 @@ test.describe("Story pages — /work/[slug] (S4 / R3)", () => {
         }
       }
     });
+
+    test(`story ${story.number} (${story.slug}): TEST-018 - at 375 px diagram labels are at least 12 px effective size`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.goto(`/work/${story.slug}`);
+
+      const metrics = await page.evaluate(() => {
+        const svgs = Array.from(
+          document.querySelectorAll("figure.case-diagram svg")
+        );
+        const visibleSvg = svgs.find((s) => {
+          const style = window.getComputedStyle(s);
+          return style.display !== "none" && s.getBoundingClientRect().height > 0;
+        });
+        if (!visibleSvg) return { count: 0, minHeight: 0, items: [] };
+
+        const texts = Array.from(visibleSvg.querySelectorAll("text"));
+        const items = texts.map((t) => ({
+          text: t.textContent?.trim() || "",
+          height: Math.round(t.getBoundingClientRect().height * 10) / 10,
+        }));
+        const minHeight = Math.min(...items.map((i) => i.height));
+        return { count: items.length, minHeight, items };
+      });
+
+      expect(metrics.count).toBeGreaterThan(0);
+      expect(
+        metrics.minHeight,
+        `Expected all diagram labels at 375 px to be >= 12 px height, but min was ${metrics.minHeight} px`
+      ).toBeGreaterThanOrEqual(12);
+    });
   }
 
   test("TEST-018: pager order traverses restart-options > mcp-gateway > vouch > zync > restart-options", async ({
