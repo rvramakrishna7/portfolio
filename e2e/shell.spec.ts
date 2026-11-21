@@ -224,7 +224,7 @@ test.describe("Shell and design system (S1)", () => {
     );
     await expect(
       page.locator("footer.site-footer")
-    ).toContainText("Ramakrishna. Built by hand with Next.js and plain CSS.");
+    ).toContainText("Ramakrishna. Built with Next.js and plain CSS.");
     await expect(page.locator(".progress")).toBeHidden();
 
     await page.goto("/nope");
