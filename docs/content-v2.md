@@ -2,6 +2,28 @@
 
 Status: written by the planner on 2026-11-21 from the owner's brief. It replaces docs/content.md ONLY when phase R4 promotes it (copy this file over docs/content.md, keep the old file in git history).
 
+## OWNER OVERRIDES 2026-11-21 (these win over anything below)
+1. NO email address anywhere on the site (reverses the earlier request). Contact = the form, LinkedIn, GitHub and the resume. Remove every mailto and every Email link from this file's plan. JSON-LD has no email.
+2. Project order everywhere (cards, chapters, palette, pager, sitemap order): 1 Restart Options, 2 Team MCP Gateway, 3 Vouch, 4 Zync. Chapter numbers 01 to 04 follow this order. (Sections below are written in the old order; reorder them when building.)
+3. Keep the old site's structure and identity; only clean it up (see docs/design-v2.md overrides). So KEEP the "short version" proof strip, in the new copy given in "Proof strip" below. Chapters stay chapters (not a card grid).
+4. Facts reconciled by the R0 audit (docs/audit-v1.md) and approved by the owner:
+   - MCP gateway tests: 1,212 total. 900 run without a database (185 gateway + 396 dashboard + 225 WooCommerce server + 94 FX server). The gateway has 312 more integration tests that need PostgreSQL (497 in total with them). Say exactly that in the "How was this measured?" text. Show 1,212 as the headline number.
+   - Vouch cold start: show "931 ms" as "cold-start launch after 20 minutes idle, from my project status log". Do NOT show the "10 to 12 seconds" baseline (no source exists).
+   - Vouch hackathon line allowed: "Built solo for the TechCircuit hackathon, on the Inkloom AI problem statement (brand-governance content review), as team RESTART CODE." Do NOT write "Top 50 finalist" until the owner confirms.
+   - Vouch tests: show "14 end-to-end Playwright tests, all passing, plus a run against the live app". Do not show a server test count (one server test failed in the audit run on a test-database row count). Do not claim all server tests pass.
+   - Skills: restore Claude API (AI and integrations), Render (Infrastructure) and ESLint (Testing).
+5. SonicVocal: owner approved the 2,026 of 2,239 test figures and the seven contribution points as written.
+
+## Proof strip (home, after the hero; keep the "How was this measured?" toggle on each)
+Label: The short version. Heading: Four numbers, and how I got them.
+- 1,212 | automated tests passing (integer count-up allowed). How measured: In the MCP gateway project. 900 run without a database: 185 in the gateway, 396 in the dashboard, 225 and 94 in two tool servers. 312 more gateway tests need PostgreSQL, which gives 1,212. The full 1,212 run was on 2026-11-19; the 900 figure was re-run in the R0 audit on 2026-11-21.
+- 98 to 100 | Lighthouse on three live apps. How measured: Desktop preset. Zync 100, Restart Options 99, Vouch 98. Measured 2026-11-19. (static text)
+- 18.83 s → 3.35 s | AI review time in Vouch. How measured: The first number is one measurement before the change. The second is the average of 10 runs after, with all 50 claim verdicts correct. (static text)
+- 45 to 60 s → 2 to 3 s | moving a strike in Restart Options. How measured: Timed with a stopwatch: by hand before, automatic after. (static text)
+
+## Hero title block (blueprint style, bottom right, replaces the old stats table)
+Three rows: BASED India | EDUCATION BITS Pilani, Computer Science | GRADUATED 2026. No test count, no project count.
+
 ## Rules for this file
 - Copy text exactly. Never invent, round or add a number, a feature or a claim.
 - No em dashes (the long dash character) anywhere in site copy. Use a full stop, a comma, or the word "to" for ranges in prose. A small arrow (the right-arrow character) is allowed inside metric values.
@@ -17,7 +39,7 @@ Status: written by the planner on 2026-11-21 from the owner's brief. It replaces
 - Status pill: Open to software engineering opportunities
 - GitHub: https://github.com/rvramakrishna7
 - LinkedIn: https://www.linkedin.com/in/rvramakrishna
-- Email: rv.ramakrishna7@gmail.com (shown in the contact section as a plain mailto link; owner asked for it on 2026-11-21, this reverses the earlier "no email" rule, see DEC-014)
+- Email: NOT shown on the site (owner decision 2026-11-21)
 - Resume: /resume.pdf
 - Site address: the REAL live address is https://rramakrishna.vercel.app (two r). NEXT_PUBLIC_SITE_URL must equal it. See phase R0.
 
@@ -37,7 +59,7 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 ## Home: selected work
 - Label: Selected work
 - Heading: Four problems, what I built, and what I measured.
-- Order: Restart Options, Vouch, Team MCP Gateway, Zync.
+- Order: Restart Options, Team MCP Gateway, Vouch, Zync.
 - Each card shows: number, category, headline, "The problem" (1 to 2 sentences), "What I built" (1 to 2 sentences), one or two metrics with a one-line method label, tech tags, links (Read the story, Live site if any, Code).
 
 ### Card 1: Restart Options (slug: restart-options)
@@ -123,7 +145,7 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 ## Home: contact
 - Heading: Have a problem worth solving?
 - Text: I'm open to software engineering opportunities. Tell me about your team, the role or the problem you're working on.
-- Links: Email (mailto), LinkedIn, GitHub, Download resume.
+- Links: LinkedIn, GitHub, Download resume. No email.
 - Form: keep the existing form, fields, validation, honeypot and error texts exactly as in docs/content.md "Form messages". Success text stays as today.
 
 ## Footer
@@ -138,7 +160,7 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 6. Reliability, security and failure handling (omit a heading if a project has nothing real to say)
 7. Results (table: measure | value | how it was measured)
 8. Built with, then links (live site, code)
-9. Pager (previous and next story, order: Restart Options, Vouch, MCP Gateway, Zync, wrapping around)
+9. Pager (previous and next story, order: Restart Options, MCP Gateway, Vouch, Zync, wrapping around)
 Use short paragraphs and short bullet lists. No API-doc tone.
 
 ### Story: Restart Options
@@ -170,8 +192,8 @@ Use short paragraphs and short bullet lists. No API-doc tone.
 - Honest note (show it): The model does not guarantee that a claim is true. The code checks the evidence it is given.
 - Results: First review measurement 18.83 s. Average after optimising, 3.35 s over 10 runs (do not call 18.83 s an average). Every claim judged correctly in 10 of 10 runs (50 verdicts). Lighthouse performance 98 (desktop).
 - Testing line: Automated server tests, Playwright end-to-end tests and a live acceptance run. [GATED: show exact test counts only after the owner confirms them; the old site said 100 server tests and 14 Playwright tests, the owner's notes disagree]
-- [GATED] Cold-start launch time "about 10 to 12 seconds to 931 ms". Show only after the owner gives the benchmark source.
-- [GATED] Hackathon line: "TechCircuit hackathon, Inkloom AI problem statement, solo team RESTART CODE, Top 50 finalist". Show only after the owner confirms the exact wording.
+- Cold start: see override 4 (show 931 ms only).
+- (see override 4, do not write Top 50 finalist) Hackathon line: "TechCircuit hackathon, Inkloom AI problem statement, solo team RESTART CODE, Top 50 finalist". Show only after the owner confirms the exact wording.
 
 ### Story: Team MCP Gateway
 - Problem: A team using several MCP servers had every member configure each one separately. Credentials were scattered, access was hard to manage in one place, and nobody could see which tools were being used. A slow or broken upstream service also got in the way of people's work.

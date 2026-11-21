@@ -2,6 +2,12 @@
 
 Status: written by the planner on 2026-11-21. Supersedes docs/design.md for look and motion. Keep from docs/design.md: system fonts only (no webfont downloads), zero gradients, the skip link, the Ctrl+K palette, the contact form, works-without-JS for all content. The earlier blueprint grid, amber accent, serif headings and slit-opening chapters are retired (owner decision 2026-11-21, DEC-014).
 
+## OWNER OVERRIDES 2026-11-21 (these win over anything below)
+The owner said "Apple style" means clean and appealing, NOT a full redesign. Keep the old site's identity and structure. Change only what is listed here.
+KEEP from the current site: the blueprint-grid hero (inline SVG pattern lines, no gradient) with the title block at the bottom right; the chapter layout in the Work section (sticky left column on 900px and wider, panel on the right) with the slit-opening reveal and its fallbacks; the proof strip with "How was this measured?" toggles and the integer count-up on the test number; the Ctrl+K palette; the floating pill header; mono labels; the italic serif hook line at the top of each chapter panel (system serif stack, this is the ONLY serif use); the reading-progress bar; the sticky layout of Experience, Skills and Contact; the 404 style.
+CHANGE: (1) Colours move to the tokens below, with a real light and dark theme and a toggle. (2) The accent is blue (#0071E3 light, #2997FF dark) everywhere amber was used; amber is removed (it fails contrast on white). (3) Headings use the system sans stack, weight 650, tighter tracking, instead of serif. (4) Slightly more whitespace and a calmer rhythm: section padding clamp(4rem, 9vw, 8rem), card radius 18px, 1px borders, no shadows in dark. (5) The blueprint grid lines use --border at low opacity so they work in both themes and stay subtle in light mode. (6) New copy and the new project order from docs/content-v2.md. (7) The status dot stays green (--ok).
+Ignore any later line in this file that tells you to delete ProofStrip, CountUp or ChapterReveal, to build a card grid (WorkGrid, ProjectCard), or to remove the blueprint hero. Work stays as chapters: left column (number, title, category, tags), right panel (italic hook, The problem, What I built, results, links). Story pages keep the old layout but with the nine-part structure.
+
 ## Tokens (src/styles/tokens.css; nothing else may hard-code a colour)
 | Token | Light | Dark |
 |---|---|---|

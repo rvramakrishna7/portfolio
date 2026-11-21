@@ -4,6 +4,13 @@ PROGRESS  [░░░░░░] Redesign: 0 of 6 phases (0%)  |  Site v1 is live;
 
 You are Antigravity, the builder. The planner (Claude) wrote the specs. You build exactly what they say. Read in this order before anything else: AGENTS.md (all of it, including 6a), docs/content-v2.md, docs/design-v2.md, docs/plan.md, docs/decision-log.md, docs/status.md, then the current code.
 
+## OWNER OVERRIDES 2026-11-21 (these win over anything below, read docs/content-v2.md and docs/design-v2.md overrides first)
+- This is a CLEAN-UP, not a rewrite. Keep the old site's structure, blueprint hero, chapters, proof strip, palette idea and motion. Add: light and dark theme with toggle, the blue accent, new copy, new project order, the new story-page structure.
+- NO email anywhere on the site. Project order: Restart Options, Team MCP Gateway, Vouch, Zync.
+- Where this file says delete ProofStrip or CountUp, build WorkGrid or ProjectCard, or remove the blueprint hero: DO NOT. Keep and restyle them.
+- The gated items were resolved by the owner, see content-v2.md override 4. Everything else gated stays out.
+- The live address is https://rramakrishna.vercel.app. Phase R0 is done (docs/audit-v1.md). Start at the phase the owner names.
+
 ## Objective
 Turn the live portfolio into a recruiter-focused, Apple-style (restrained, light and dark) software engineer portfolio. First 30 seconds: who I am, what kind of engineer, the problems I solve, that I am open to roles. Each project is told as problem, what I built, measured result. Do not rewrite what already works. Keep Next.js 16, App Router, TypeScript, zod, Vitest, Playwright, plain CSS, system fonts, free Vercel hosting. No new runtime dependencies. If you believe one is needed, STOP and ask.
 
