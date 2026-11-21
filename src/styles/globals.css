@@ -1199,7 +1199,10 @@ section.block {
 
 .case-hero .hook {
   margin-top: 24px;
-  max-width: 44ch;
+  max-width: 54ch;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: var(--text);
 }
 
 .case-hero .chips {
@@ -1210,11 +1213,18 @@ section.block {
   display: grid;
   gap: 48px;
   padding: 48px 0 80px;
+  min-width: 0;
 }
 
 .case-body section {
   display: grid;
   gap: 12px;
+  min-width: 0;
+}
+
+.case-body section > div {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (min-width: 900px) {
@@ -1225,8 +1235,8 @@ section.block {
 }
 
 .case-body h2 {
-  font: 600 0.8rem var(--mono);
-  letter-spacing: 0.14em;
+  font: 600 0.85rem var(--mono);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--accent);
   margin: 0;
@@ -1236,6 +1246,7 @@ section.block {
   margin: 0;
   line-height: 1.6;
   color: var(--text);
+  overflow-wrap: break-word;
 }
 
 .case-body ul {
@@ -1247,26 +1258,163 @@ section.block {
   line-height: 1.6;
 }
 
+.case-results-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  margin-top: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.case-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.case-results-table th,
+.case-results-table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  line-height: 1.5;
+  vertical-align: top;
+}
+
+.case-results-table thead th {
+  background: var(--bg);
+  font: 600 0.78rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.case-results-table tbody tr:last-child th,
+.case-results-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.case-results-table tbody th {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.case-results-table tbody td strong {
+  color: var(--accent);
+  font-weight: 650;
+  font-size: 1.05rem;
+  white-space: nowrap;
+}
+
+.case-note {
+  margin-top: 20px;
+  padding: 18px 22px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+.case-note p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.case-note strong {
+  color: var(--text);
+}
+
+.case-note ul {
+  margin-top: 10px;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+
+.case-diagram {
+  margin: 24px 0 0;
+  padding: clamp(12px, 3vw, 24px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.case-diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+
+.case-diagram svg.diag-desktop {
+  display: block;
+}
+
+.case-diagram svg.diag-mobile {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .case-diagram svg.diag-desktop {
+    display: none;
+  }
+
+  .case-diagram svg.diag-mobile {
+    display: block;
+  }
+}
+
+.case-diagram figcaption {
+  margin-top: 14px;
+  font: 500 0.78rem var(--mono);
+  color: var(--text-2);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.case-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}
+
 .pager {
   display: grid;
   gap: 1px;
-  background: var(--line);
-  border: 1px solid var(--line);
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
   grid-template-columns: 1fr 1fr;
 }
 
 .pager a {
-  background: var(--panel);
+  background: var(--card);
   padding: 20px 24px;
   text-decoration: none;
   display: grid;
   gap: 4px;
   color: var(--text);
   min-height: 44px;
+  transition: background 150ms ease;
 }
 
 .pager a:hover {
-  background: var(--panel-2);
+  background: var(--bg);
 }
 
 .pager a:focus-visible {
@@ -1276,9 +1424,14 @@ section.block {
 
 .pager small {
   font: 500 0.75rem var(--mono);
-  color: var(--muted);
+  color: var(--text-2);
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.pager span {
+  font: 600 1.05rem var(--sans);
+  color: var(--text);
 }
 
 .pager .next {

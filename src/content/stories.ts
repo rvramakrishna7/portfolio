@@ -1,3 +1,9 @@
+export interface StoryResultRow {
+  measure: string;
+  value: string;
+  howMeasured: string;
+}
+
 export interface StoryResult {
   value: string;
   label: string;
@@ -18,7 +24,6 @@ export interface Story {
   number: string;
   slug: string;
   title: string;
-  // New R2 fields
   category: string;
   headline: string;
   problemShort: string;
@@ -28,10 +33,23 @@ export interface Story {
   live?: string;
   code: string;
 
-  // Preserved fields for story pages until R3
+  // Nine-part structure fields
+  problem: string;
+  whyItFellShort?: string;
+  built: string;
+  deterministicChecks?: readonly string[];
+  decisions: readonly string[];
+  reliability?: string;
+  resultsTable: readonly StoryResultRow[];
+  honestNote?: string;
+  hardenNext?: readonly string[];
+  hackathonNote?: string;
+  diagram: "BeforeAfterBars" | "McpArchitecture" | "VouchPipeline" | "ZyncMediaFlow";
+  diagramCaption: string;
+
+  // Compatibility fields
   tag: string;
   hook: string;
-  problem: string;
   constraint: string;
   whatIDid: readonly string[];
   results: readonly StoryResult[];
@@ -39,6 +57,7 @@ export interface Story {
   liveUrl: string | null;
   codeUrl: string;
   links: readonly StoryLink[];
+  seoTitle: string;
   seoDescription: string;
 }
 
@@ -68,18 +87,52 @@ export const STORIES: readonly Story[] = [
     live: "https://restartoptions.vercel.app",
     code: "https://github.com/rvramakrishna7/restart",
 
-    // Old fields for story pages
+    // Nine-part story fields
+    problem:
+      "Options traders running strategies such as straddles, strangles, iron flies, debit spreads and calendar spreads often have to read the option chain and pick strikes by hand. When the market moves they have to do it again: search for the strikes, check them against their rules, then place the orders.",
+    whyItFellShort:
+      "Prices keep changing while the trader does this. One manual strike adjustment took about 45 to 60 seconds.",
+    built:
+      "Strategy-specific rules that pick the strikes automatically, one-click execution of the adjustment, and automatic exits when a configured loss limit is reached. Five strategies: debit spread, straddle, strangle, iron fly and calendar spread. Both paper and live modes.",
+    decisions: [
+      "The rules for each strategy choose the strikes, so the trader confirms an adjustment instead of calculating it.",
+      "Paper mode and live mode run the same workflow, so a strategy can be tried without real orders.",
+      "Open positions and P&L are stored in MongoDB, so a server restart does not lose them.",
+      "A short cooldown stops the same adjustment from firing twice in a row.",
+    ],
+    reliability:
+      "When the internet drops, the live feed reconnects and re-subscribes every open position, so monitoring carries on by itself. After a restart, positions and P&L are loaded back from MongoDB. Access uses JWT login with owner and user roles across 38 REST endpoints.",
+    resultsTable: [
+      {
+        measure: "Strike adjustment",
+        value: "45 to 60 s manual, 2 to 3 s automated",
+        howMeasured: "Timed with a stopwatch: by hand before, automatic after.",
+      },
+      {
+        measure: "REST endpoints",
+        value: "38",
+        howMeasured: "Codebase audit, with JWT login and owner and user roles.",
+      },
+      {
+        measure: "Lighthouse performance",
+        value: "99",
+        howMeasured: "Desktop preset. Measured 2026-11-19.",
+      },
+    ],
+    honestNote:
+      "This project automates execution. It does not predict markets, and I make no claim about trading returns.",
+    diagram: "BeforeAfterBars",
+    diagramCaption: "Timed with a stopwatch",
+
+    // Compatibility fields
     tag: "Options trading automation",
     hook: "Turned a manual options adjustment into a 2 to 3 second workflow.",
-    problem:
-      "Options traders shifted strikes by hand. Each shift took 45 to 60 seconds, and the market kept moving the whole time.",
-    constraint:
-      "Market data comes over a live feed that can drop. If the feed or the server restarts, open positions must not be lost or forgotten.",
+    constraint: "",
     whatIDid: [
-      "Automated adjustments and exits for 5 NIFTY and BANKNIFTY strategies: debit spread, straddle, strangle, iron fly and calendar spread. Each runs in paper mode and live mode.",
-      "When the internet drops, the live feed reconnects and re-subscribes every open position, so monitoring carries on by itself.",
-      "After a server restart, open positions and P&L come back from MongoDB.",
-      "Added a short cooldown between adjustments, so the same adjustment does not fire twice in a row.",
+      "The rules for each strategy choose the strikes, so the trader confirms an adjustment instead of calculating it.",
+      "Paper mode and live mode run the same workflow, so a strategy can be tried without real orders.",
+      "Open positions and P&L are stored in MongoDB, so a server restart does not lose them.",
+      "A short cooldown stops the same adjustment from firing twice in a row.",
     ],
     results: [
       {
@@ -88,7 +141,7 @@ export const STORIES: readonly Story[] = [
       },
       {
         value: "38",
-        label: "REST endpoints, with JWT login and owner/user roles",
+        label: "REST endpoints, with JWT login and owner and user roles",
       },
       {
         value: "99",
@@ -111,8 +164,9 @@ export const STORIES: readonly Story[] = [
         external: true,
       },
     ],
+    seoTitle: "Restart Options: Manual options adjustment to 2 to 3 s | Ramakrishna",
     seoDescription:
-      "How I took options strike shifting from 45 to 60 seconds by hand to 2 to 3 seconds, with a trading platform that survives network drops and restarts.",
+      "Turned manual options adjustments from 45 to 60 s into a 2 to 3 second workflow with strategy rules, one-click execution, and 38 REST endpoints.",
   },
   {
     number: "02",
@@ -148,39 +202,85 @@ export const STORIES: readonly Story[] = [
     ],
     code: "https://github.com/rvramakrishna7/urumi-mcp-gateway",
 
-    // Old fields for story pages
-    tag: "One secure front door for AI tools",
-    hook: "One controlled entry point for a team's AI tools.",
+    // Nine-part story fields
     problem:
-      "AI agents that call tools touching real stores need rules: who may call what, and a record of every call.",
-    constraint:
-      "It had to run the same way on a laptop cluster and on a small rented server with TLS, and it could not trust anything on the network by default.",
+      "A team using several MCP servers had every member configure each one separately. Credentials were scattered, access was hard to manage in one place, and nobody could see which tools were being used. A slow or broken upstream service also got in the way of people's work.",
+    built:
+      "A central MCP gateway. An admin registers the servers once. Members connect through a single gateway URL and use the tools their role allows. Upstream API credentials stay on the gateway, encrypted.",
+    decisions: [
+      "Tool discovery is served from a database-backed cache, so a slow upstream does not slow down listing tools.",
+      "Tool access is restricted by role, with separate admin and member permissions.",
+      "Upstream credentials are encrypted with AES-256-GCM. API keys are stored hashed. Passwords use Argon2id.",
+    ],
+    reliability:
+      "Session security and CSRF protection, network policies, SSRF protection (the web-fetch server has a drill that tries loopback, private and cloud-metadata addresses and redirects to them), Helm deployments, local k3d and remote k3s, TLS with Let's Encrypt.",
+    resultsTable: [
+      {
+        measure: "Tool-list lookup",
+        value: "22 ms",
+        howMeasured:
+          "Lookup with a deliberately slow upstream, served from the database cache.",
+      },
+      {
+        measure: "MCP servers",
+        value: "3",
+        howMeasured: "WooCommerce, currency exchange, web fetch behind one login.",
+      },
+      {
+        measure: "Tool call audit",
+        value: "Every call",
+        howMeasured: "Written to a PostgreSQL audit log.",
+      },
+      {
+        measure: "Automated tests",
+        value: "1,212",
+        howMeasured:
+          "900 run without a database: 185 in the gateway, 396 in the dashboard, 225 and 94 in two tool servers. 312 more gateway tests need PostgreSQL, which gives 1,212.",
+      },
+    ],
+    hardenNext: [
+      "A rate limit on the MCP endpoint",
+      "Some network-policy and security-context work",
+      "Rollback scenarios that I have not tested",
+      "Recording every admin action in the database audit table",
+    ],
+    diagram: "McpArchitecture",
+    diagramCaption:
+      "Members, Groq agent and dashboard connect through the Gateway to three MCP servers, with PostgreSQL for keys, audit and cache.",
+
+    // Compatibility fields
+    tag: "Infrastructure, security and AI tool integration",
+    hook: "One controlled entry point for a team's AI tools.",
+    constraint: "",
     whatIDid: [
-      "Put 3 MCP servers (WooCommerce, currency rates, web fetch) behind one gateway, with a React dashboard and a Groq chat agent.",
-      "Deployed with Helm, locally on k3d and on a k3s server with TLS.",
-      "Default-deny network policies, and stored credentials encrypted with AES-256-GCM.",
-      "The web-fetch server comes with an SSRF drill that tries loopback, private and cloud-metadata addresses, and redirects to them.",
+      "Tool discovery is served from a database-backed cache, so a slow upstream does not slow down listing tools.",
+      "Tool access is restricted by role, with separate admin and member permissions.",
+      "Upstream credentials are encrypted with AES-256-GCM. API keys are stored hashed. Passwords use Argon2id.",
+      "Default-deny network policies, SSRF drill, and Helm deployments locally on k3d and on remote k3s.",
     ],
     results: [
       {
         value: "1,212",
-        label: "Automated tests, all passing (run on 2026-11-19)",
+        label: "Automated tests passing (900 without a database, 312 with PostgreSQL)",
       },
       {
         value: "3",
         label: "Tool servers behind one login",
       },
       {
-        value: "Every call",
-        label: "Written to an audit log",
+        value: "22 ms",
+        label: "Tool-list lookup with a slow upstream",
       },
     ],
     chips: [
-      "Kubernetes",
-      "Helm",
       "TypeScript",
       "React",
       "PostgreSQL",
+      "Node.js",
+      "MCP",
+      "Docker",
+      "Kubernetes",
+      "Helm",
       "Groq",
     ],
     liveUrl: null,
@@ -193,8 +293,9 @@ export const STORIES: readonly Story[] = [
         external: true,
       },
     ],
+    seoTitle: "Team MCP Gateway: One controlled entry point for AI tools | Ramakrishna",
     seoDescription:
-      "A Kubernetes gateway that puts three AI tool servers behind one login with an audit log. 1,212 automated tests, all passing.",
+      "A central gateway for team MCP servers with role-based access, encrypted credentials, cached tool lookups in 22 ms, and 1,212 automated tests.",
   },
   {
     number: "03",
@@ -232,17 +333,73 @@ export const STORIES: readonly Story[] = [
     live: "https://vouch-app-beta.vercel.app",
     code: "https://github.com/rvramakrishna7/vouch",
 
-    // Old fields for story pages
-    tag: "Checking marketing claims against a brand's own facts",
-    hook: "An AI reviewer shouldn't approve a claim without being able to prove it.",
+    // Nine-part story fields
     problem:
-      'Brand teams publish claims like "India\'s No.1" or "keeps drinks cold for 48 hours". Generic AI checkers fix the tone, but they cannot say which approved fact proves a claim, and they make up citations.',
-    constraint:
-      "Built alone for a hackathon, on free tiers. The AI had to be fast, and it had to be checkable.",
+      'Marketing teams publish claims such as "India\'s No. 1 sustainable smart water bottle", "keeps drinks cold for 48 hours" and "made from 100% recycled ocean plastic". A brand reviewer needs to know whether each claim is backed by an approved fact, whether that fact has expired, whether the claim contradicts product data, whether the wording breaks a brand rule, and who approved the final text.',
+    whyItFellShort:
+      "Generic AI writing tools can produce a plausible citation that is made up. Nothing checks it.",
+    built:
+      "An evidence-first brand content review system. The AI can suggest and analyse. Deterministic backend code validates the final evidence.",
+    deterministicChecks: [
+      "The citation points to a fact that was actually retrieved",
+      "The quoted text exists in the source",
+      "The approved fact has not expired",
+      "Numeric claims agree",
+      "Regulated terms cannot get a \"supported\" verdict without the required evidence",
+    ],
+    decisions: [
+      "Brand Kit stores approved facts, their sources and expiry dates, and numbered brand rules.",
+      "pgvector semantic search finds the facts relevant to each claim.",
+      "Structured AI responses are validated with Zod, and suggested corrections are fact-checked before they are accepted, so a fix cannot add an unsupported claim, an expired fact or a banned term.",
+      "Groq is the primary AI provider with Gemini as fallback.",
+    ],
+    reliability:
+      "Creator, Reviewer and Brand Manager roles. Tenant isolation with PostgreSQL Row Level Security. An append-only audit log that blocks updates and deletes on audit rows. Performance timing is recorded per review.",
+    resultsTable: [
+      {
+        measure: "AI review time",
+        value: "18.83 s → 3.35 s",
+        howMeasured:
+          "The first number is one measurement before the change. The second is the average of 10 runs after, with all 50 claim verdicts correct.",
+      },
+      {
+        measure: "Claim verdict accuracy",
+        value: "10 of 10",
+        howMeasured: "Runs where every claim was judged correctly (50 verdicts).",
+      },
+      {
+        measure: "Lighthouse performance",
+        value: "98",
+        howMeasured: "Desktop preset. Measured 2026-11-19.",
+      },
+      {
+        measure: "Automated tests",
+        value: "14 Playwright tests",
+        howMeasured: "14 end-to-end Playwright tests, all passing, plus a run against the live app.",
+      },
+      {
+        measure: "Cold-start launch",
+        value: "931 ms",
+        howMeasured: "Cold-start launch after 20 minutes idle, from my project status log.",
+      },
+    ],
+    honestNote:
+      "The model does not guarantee that a claim is true. The code checks the evidence it is given.",
+    hackathonNote:
+      "Built solo for the TechCircuit hackathon, on the Inkloom AI problem statement (brand-governance content review), as team RESTART CODE.",
+    diagram: "VouchPipeline",
+    diagramCaption:
+      "Pipeline: Submitted content → Claim Ledger → AI suggested verdict → Deterministic checks → Approval → Audit trail",
+
+    // Compatibility fields
+    tag: "AI brand content verification",
+    hook: "An AI reviewer shouldn't approve a claim without being able to prove it.",
+    constraint: "",
     whatIDid: [
-      "The AI only suggests. Code checks every citation against the brand's approved facts and rules before anything is shown.",
-      "Moved the main AI call to Groq, with Gemini as an automatic fallback when Groq is slow or rate-limited.",
-      "Wrote 100 server tests and 14 end-to-end Playwright tests, plus a run against the live app with the real AI.",
+      "Brand Kit stores approved facts, their sources and expiry dates, and numbered brand rules.",
+      "pgvector semantic search finds the facts relevant to each claim.",
+      "Deterministic backend checks ensure every citation points to an active retrieved fact and quoted text matches.",
+      "Structured AI responses are validated with Zod, with Groq as primary and Gemini as fallback.",
     ],
     results: [
       {
@@ -258,7 +415,18 @@ export const STORIES: readonly Story[] = [
         label: "Lighthouse performance score, desktop",
       },
     ],
-    chips: ["React", "Express", "PostgreSQL", "Groq", "Gemini", "Playwright"],
+    chips: [
+      "React 19",
+      "TypeScript",
+      "Vite",
+      "Express",
+      "PostgreSQL",
+      "Supabase",
+      "pgvector",
+      "Groq",
+      "Gemini",
+      "Playwright",
+    ],
     liveUrl: "https://vouch-app-beta.vercel.app",
     codeUrl: "https://github.com/rvramakrishna7/vouch",
     links: [
@@ -274,8 +442,9 @@ export const STORIES: readonly Story[] = [
         external: true,
       },
     ],
+    seoTitle: "Vouch: Evidence-first AI brand content verification | Ramakrishna",
     seoDescription:
-      "An AI reviewer that checks marketing claims against approved facts, where code validates every citation. Review time cut from 18.83 s to 3.35 s.",
+      "An evidence-first review system checking citations against approved brand facts. Cut review time from 18.83 s to 3.35 s across 10 test runs.",
   },
   {
     number: "04",
@@ -308,13 +477,42 @@ export const STORIES: readonly Story[] = [
     live: "https://zync-video-conferencing.vercel.app",
     code: "https://github.com/rvramakrishna7/zync-video-conferencing",
 
-    // Old fields for story pages
-    tag: "Video meetings that write their own notes",
-    hook: "People came to meetings to participate, not to write minutes.",
+    // Nine-part story fields
     problem:
-      "In most meetings, someone has to take notes, and the notes are either missing or wrong.",
-    constraint:
-      "Video is heavy. The server had to stay small, so video should never pass through it.",
+      "In an online meeting, people take notes while they listen and speak. Important decisions and action items get missed.",
+    whyItFellShort:
+      "Notes are either missing or wrong, and the person taking them is not fully part of the conversation.",
+    built:
+      "A video meeting app that writes the notes when the call ends. The summary lists key points, decisions and action items and appears within about 3 seconds in my timed run. It also has real-time chat, reactions, raise hand, JWT login and Google login.",
+    decisions: [
+      "Audio and video go peer to peer over WebRTC. The application server only handles signalling, which means it only helps participants find and connect to each other. The media does not pass through it. That keeps the server small. I make no scale claims.",
+      "Groq with Llama 3.3 70B writes the summary.",
+    ],
+    resultsTable: [
+      {
+        measure: "Call end to summary",
+        value: "Under 3 s",
+        howMeasured: "From call end to summary on screen, timed by hand.",
+      },
+      {
+        measure: "Lighthouse performance",
+        value: "100",
+        howMeasured: "Desktop preset. Measured 2026-11-19.",
+      },
+      {
+        measure: "Largest contentful paint",
+        value: "0.3 s",
+        howMeasured: "Desktop preset measurement.",
+      },
+    ],
+    diagram: "ZyncMediaFlow",
+    diagramCaption:
+      "Peer-to-peer WebRTC media with Socket.io signalling",
+
+    // Compatibility fields
+    tag: "Real-time video meetings with AI notes",
+    hook: "People came to meetings to participate, not to write minutes.",
+    constraint: "",
     whatIDid: [
       "Video and audio go peer to peer over WebRTC. The server only passes the signals that connect people.",
       "When a call ends, Groq Llama 3.3 70B turns the meeting into key points, action items and decisions.",
@@ -350,7 +548,8 @@ export const STORIES: readonly Story[] = [
         external: true,
       },
     ],
+    seoTitle: "Zync: Peer-to-peer video meetings with AI notes | Ramakrishna",
     seoDescription:
-      "A peer-to-peer video meeting app that writes the meeting summary within 3 seconds of the call ending. Lighthouse 100.",
+      "Peer-to-peer WebRTC video meetings that generate action items, decisions and key points in under 3 seconds after call end. Desktop Lighthouse 100.",
   },
 ];
