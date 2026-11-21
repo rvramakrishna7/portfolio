@@ -164,7 +164,18 @@ test.describe("Hero and proof strip (S2)", () => {
     }
   });
 
-  test("with reducedMotion: 'reduce', the status dot has no animation and 1,212 is final immediately", async ({
+  test("proof strip count-up reaches final value '1,212' in normal motion after scrolling into view", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/");
+
+    const countSpan = page.locator('#proof [data-count="1212"]');
+    await countSpan.scrollIntoViewIfNeeded();
+    await expect(countSpan).toHaveText("1,212", { timeout: 3000 });
+  });
+
+  test("proof strip count-up displays final value '1,212' immediately with prefers-reduced-motion: reduce", async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -177,6 +188,7 @@ test.describe("Hero and proof strip (S2)", () => {
     expect(dotAnimationName).toBe("none");
 
     const countSpan = page.locator('#proof [data-count="1212"]');
+    await expect(countSpan).toHaveText("1,212");
     await countSpan.scrollIntoViewIfNeeded();
     await expect(countSpan).toHaveText("1,212");
   });
