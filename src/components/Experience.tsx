@@ -1,9 +1,11 @@
 const EXPERIENCE_ITEMS = [
-  "Built the part that follows every call through its states, and ignores late messages so a finished call never flips back to active.",
-  "Built 8 voice tools for the agent (booking, availability, leads, opt-outs, transfer and more) with replay protection, so a retried call never books twice. Connected Cal.com so the agent books live; 2 staging calls ended in real bookings.",
-  "Added checks before any call is placed: number format, consent, the suppression list and the recipient's own 9am to 6pm window. That stops wasted credits and carrier trouble.",
-  "Found a gateway that answered 200 with no login token, and added JWT and role checks.",
-  "Chose hosting from numbers: FastAPI on Cloudflare Workers took 4 s to start but answered warm requests in 110 to 130 ms. Backed the work with 2,000+ automated tests.",
+  "Stopped finished calls from flipping back to active. I built the call-state handling for Vapi webhooks, so a late or out-of-order event cannot reopen a call that has ended.",
+  "Made the agent's tools safe to retry. I worked on eight tools (booking, availability, leads, contacts, opt-outs, callbacks, transfers and more) and added idempotency checks so a retried request cannot book or record the same thing twice.",
+  "Connected Cal.com v2 for live availability and booking. Two staging calls ended in confirmed bookings.",
+  "Added checks before every outbound call: phone number format, consent, suppression list, the recipient's local calling window, and capacity limits.",
+  "Worked on campaign pause, resume and cancel, and added protection against duplicate campaign jobs.",
+  "Closed an authorization gap in the Cloudflare Worker gateway, which answered requests that carried no login token, by adding JWT and role checks.",
+  "Measured FastAPI on Cloudflare Workers before choosing it: about 4 seconds for a cold start and 110 to 130 ms for warm requests in the benchmark I ran.",
 ] as const;
 
 export function Experience() {
@@ -11,29 +13,50 @@ export function Experience() {
     <section className="block" id="experience" aria-labelledby="exp-title">
       <div className="wrap exp">
         <div>
-          <p className="eyebrow">Experience &middot; Aug 2026 – Nov 2026, remote</p>
-          <h2 id="exp-title">AI and Automation Engineer Intern</h2>
-          <p className="company-tag">Luxecurio Pvt Ltd (SonicVocal)</p>
-          <p className="intro">
-            I worked on an AI phone-calling product for US businesses. The agent
-            books appointments over the phone, so the product has to be right
-            even when a call is retried, late or dropped.
+          <p className="eyebrow">Experience</p>
+          <h2 id="exp-title">
+            A business shouldn&apos;t lose a customer just because nobody can
+            answer the phone.
+          </h2>
+          <p className="company-tag">
+            AI and Automation Engineer Intern, Luxecurio Pvt Ltd (SonicVocal).
+            Remote. August 2026 to November 2026.
           </p>
-          <p className="nda">
-            This work is under NDA, so there is no public link. I&apos;m happy
-            to walk through it in an interview.
+          <p className="intro">
+            Businesses lose opportunities when calls go unanswered because the
+            owner or staff are busy. Someone has to pick up, understand the
+            request, check the calendar and book the appointment by hand.
+          </p>
+          <p className="product-desc">
+            SonicVocal is an AI voice platform for businesses. Its agent answers
+            real phone calls, understands what the caller needs, answers common
+            questions from a knowledge base, checks availability and books
+            appointments through Cal.com, records leads and contacts, takes
+            callback and opt-out requests, and transfers to a human when needed.
+            It also runs outbound calling campaigns.
+          </p>
+          <div className="nda">
+            Some implementation details are confidential. I&apos;m happy to walk
+            through my engineering contributions and the architecture in an
+            interview.
+          </div>
+        </div>
+        <div>
+          <ol aria-label="Experience contributions">
+            {EXPERIENCE_ITEMS.map((item, idx) => {
+              const num = String(idx + 1).padStart(2, "0");
+              return (
+                <li key={num} data-n={num}>
+                  {item}
+                </li>
+              );
+            })}
+          </ol>
+          <p className="exp-testing">
+            2,026 automated tests in the modules I owned, out of 2,239 in the
+            full repository suite as reported.
           </p>
         </div>
-        <ol aria-label="Experience details">
-          {EXPERIENCE_ITEMS.map((item, idx) => {
-            const num = String(idx + 1).padStart(2, "0");
-            return (
-              <li key={num} data-n={num}>
-                {item}
-              </li>
-            );
-          })}
-        </ol>
       </div>
     </section>
   );
