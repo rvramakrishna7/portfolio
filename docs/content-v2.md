@@ -4,7 +4,7 @@ Status: written by the planner on 2026-11-21 from the owner's brief. It replaces
 
 ## OWNER OVERRIDES 2026-11-21 (these win over anything below)
 1. NO email address anywhere on the site (reverses the earlier request). Contact = the form, LinkedIn, GitHub and the resume. Remove every mailto and every Email link from this file's plan. JSON-LD has no email.
-2. Project order everywhere (cards, chapters, palette, pager, sitemap order): 1 Restart Options, 2 Team MCP Gateway, 3 Vouch, 4 Zync. Chapter numbers 01 to 04 follow this order. (Sections below are written in the old order; reorder them when building.)
+2. Project order everywhere (cards, chapters, palette, pager, sitemap order): 1 Restart Options, 2 Team MCP Gateway, 3 Vouch, 4 Zync. Chapter numbers 01, 02, 03, 04 follow this order. (Sections below are written in the old order; reorder them when building.)
 3. Keep the old site's structure and identity; only clean it up (see docs/design-v2.md overrides). So KEEP the "short version" proof strip, in the new copy given in "Proof strip" below. Chapters stay chapters (not a card grid).
 4. Facts reconciled by the R0 audit (docs/audit-v1.md) and approved by the owner:
    - MCP gateway tests: 1,212 total. 900 run without a database (185 gateway + 396 dashboard + 225 WooCommerce server + 94 FX server). The gateway has 312 more integration tests that need PostgreSQL (497 in total with them). Say exactly that in the "How was this measured?" text. Show 1,212 as the headline number.
