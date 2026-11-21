@@ -1,8 +1,14 @@
 # Status: Portfolio site
 
-Current step: R0 to R4 merged on main; R5 (Resume & Ship, Part A: documentation and validation) in progress on feat/r5-ship.
+Current step: R0 to R4 merged on main; R5 Part A & Part B complete on main (commit `d6cb417`, push pending).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Phase R5 Part B (Resume & Degree nomenclature fix):
+  - Verified `public/resume.pdf` hash `1DC676C9C37CEAD7813CF24D2588A8165E1F5EA7` and length `59511` bytes. Served on localhost:3000 returning HTTP 200 and application/pdf.
+  - Replaced "BSc Computer Science" with "BS Computer Science" across `src/components/About.tsx`, `docs/content.md`, `docs/content-v2.md`, and `e2e/contact.spec.ts`.
+  - Verified `git grep -n "BSc"` has zero results across the active site and tests (`reference/prototype/index.html` retained as historical reference).
+  - Committed as `d6cb417` ("R5-B: final resume PDF, BSc -> BS") covering exactly the 5 approved files.
+  - Ran full verification: lint (0), typecheck (0), vitest (25/25), check:flat (37 files), check:copy (37 files), build (12 pages), check:numbers (5 pages), and Playwright suite (102/102 passed). Port 3000 verified clean before and after.
 - Phase R5 Part A: Added DEC-014 (redesign styling & tokens), DEC-015 (no email anywhere on the site), and DEC-016 (owner-accepted mobile Lighthouse known limitation) to `docs/decision-log.md`.
 - Confirmed `public/resume.pdf` is tracked in git and links from header, hero, and palette are intact.
 - Gated and open items tracked:
