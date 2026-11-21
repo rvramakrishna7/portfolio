@@ -1,19 +1,15 @@
 # Status: Portfolio site
 
-Current step: R2 merged into main (home page redesigned per content-v2.md and design-v2.md, all 93 e2e tests passing, count-up verified in normal and reduced motion); ready for R3 (story pages).
+Current step: R3 done on feat/r3-stories (nine-part structure and diagrams rebuilt for all four stories, all 24 story e2e tests passing, axe zero violations in both themes, 16 diagram screenshots reviewed); awaiting owner approval to merge and start R4.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
 Done since last update:
-- Item 0 (R1 fix): Below 640px, header hides Jump to and nav links, displaying only brand, theme toggle, Resume, and Contact. Added mobile bounding box and no-wrapping e2e test at 320, 375, and 414 px.
-- Item 1 (Hero): Redesigned with `docs/content-v2.md` copy: status pill, H1 with blue accent highlight ("faster, simpler and more reliable"), two intro paragraphs, "View my work" and "Download resume" CTA buttons, info row, and 3-row title block (BASED India, EDUCATION BITS Pilani, Computer Science, GRADUATED 2026). Fits within 1280x720 window.
-- Item 2 (Proof strip): Updated metrics and method descriptions (1,212 with count-up, 98 to 100, 18.83 s → 3.35 s, 45 to 60 s → 2 to 3 s, no en-dashes). Added explicit E2E tests verifying count-up settles at 1,212 in normal motion and is 1,212 immediately under prefers-reduced-motion: reduce.
-- Item 3 (Work chapters): Extended `src/content/stories.ts` with 01-04 project order (Restart Options, Team MCP Gateway, Vouch, Zync) and new card fields. Maintained slit reveal effect and added compact "Additional projects" Book My Nest card.
-- Item 4 (Experience): Updated with 7 numbered engineering contributions, product description, testing metric (2,026 / 2,239 tests), and dashed NDA card.
-- Item 5 (Skills): Grouped into 8 categories including Claude API, Render, and ESLint (override 4); removed AI-tools sentence and education/certifications.
-- Item 6 (About): Built new `About` component (`id="about"`) with "How I work" copy and Education / Certifications sidebar card; added About to the Command Palette.
-- Item 7 (Contact & Footer): Updated contact heading to "Have a problem worth solving?", new copy, links (LinkedIn, GitHub, Download resume, zero email / mailto), and aligned footer text with `content-v2.md`.
-- Item 8 (E2E tests): Updated `hero.spec.ts`, `work.spec.ts`, `contact.spec.ts`, `smoke.spec.ts`, `seo.spec.ts`, `accessibility.spec.ts`, `shell.spec.ts`, and `theme.spec.ts` to assert `docs/content-v2.md` copy.
-- Verification: `npm run lint`, `npm run typecheck`, `npm test` (19/19 passing), `npm run check:flat` (31 files scanned), `npm run check:copy` (31 files scanned), `npm run build` (12 static pages), and `npx playwright test e2e/hero.spec.ts` (7/7 passing). Grepped built HTML for email and mailto (zero found).
-Next step (awaiting owner approval): R3 (story pages rebuild with nine-part structure and diagrams).
+- Phase R3 Item 1 (Stories content): Extended `src/content/stories.ts` with nine-part story data, diagram identifiers, results tables with measure/value/howMeasured, honest notes, and exact content from `docs/content-v2.md`.
+- Phase R3 Item 2 (Diagrams): Built four inline SVG diagrams using CSS tokens (`var(--border)`, `var(--card)`, `var(--bg)`, `var(--text)`, `var(--text-2)`, `var(--accent)`) with zero gradients: `BeforeAfterBars` (Restart Options), `McpArchitecture` (Team MCP Gateway), `VouchPipeline` (Vouch), and `ZyncMediaFlow` (Zync).
+- Phase R3 Item 3 (Styling): Styled story nine-part structure, section layout, responsive results table with horizontal scroll wrapper (`min-width: 0` on grid items to prevent mobile page overflow), honest note callout boxes, and diagram figure containers.
+- Phase R3 Item 4 (Rebuild /work/[slug]): Rebuilt story page template with 9-part structure (1. Header/chips, 2. The problem, 3. Why the usual way fell short, 4. What I built with diagram, 5. Engineering decisions, 6. Reliability/security, 7. Results table and honest notes, 8. Built with and links, 9. Pager). Added `tabIndex={0}` and `role="region"` to the results table wrapper for keyboard accessibility.
+- Phase R3 Item 5 (E2E Tests): Updated `e2e/stories.spec.ts` covering all 4 stories, metadata checks (title < 75 chars, description < 160 chars), 9-part sections, diagram presence, content safety (no email, no mailto, no Top 50), JavaScript disabled verification, axe accessibility in both light and dark themes at 375 px and 1440 px, responsive check at 5 widths with zero horizontal scroll, diagram screenshot capture at 375 and 1280 in both themes, bidirectional pager order traversal (`restart-options > mcp-gateway > vouch > zync > restart-options`), 404 template check on `/work/nope`, command palette navigation, and internal link crawl.
+- Phase R3 Verification: `npm run lint` (0 errors), `npm run typecheck` (0 errors), `npm test` (19/19 passing), `npm run check:flat` (36 files scanned, passed), `npm run check:copy` (36 files scanned, passed), `npm run build` (12 static pages), and `npx playwright test e2e/stories.spec.ts` (24/24 passing).
+Next step (awaiting owner approval): R4 (SEO, QA, content promotion).
 Blockers / questions for the owner:
 - Owner to configure Vercel environment variables (`RESEND_API_KEY`, `CONTACT_TO_EMAIL`, `NEXT_PUBLIC_SITE_URL`).
 - Production domain / Vercel URL to set as `NEXT_PUBLIC_SITE_URL`.
