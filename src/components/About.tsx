@@ -25,7 +25,7 @@ export function About() {
           <div className="about-card">
             <h3>Education</h3>
             <p className="about-degree">
-              <strong>BSc Computer Science</strong>, BITS Pilani, 2026.
+              <strong>BS Computer Science</strong>, BITS Pilani, 2026.
             </p>
           </div>
           <div className="about-card">

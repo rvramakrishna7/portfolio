@@ -35,7 +35,7 @@ Three rows: BASED India | EDUCATION BITS Pilani, Computer Science | GRADUATED 20
 - Name: Ramakrishna (only this name). No photo. No phone number.
 - Role line: Software Engineer. Full-stack, backend and AI systems.
 - Location: India
-- Education line: BSc Computer Science, BITS Pilani, 2026 graduate
+- Education line: BS Computer Science, BITS Pilani, 2026 graduate
 - Status pill: Open to software engineering opportunities
 - GitHub: https://github.com/rvramakrishna7
 - LinkedIn: https://www.linkedin.com/in/rvramakrishna
@@ -139,7 +139,7 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 - Paragraph 1: I like to understand how something works before I decide how to build it.
 - Paragraph 2: Most of my projects started with a workflow that took too much manual effort, or one that broke when something unexpected happened. I enjoy working through those details, building the system and testing it under real conditions.
 - Paragraph 3: I use AI coding tools too. I review the decisions they make, read the code, and check behaviour with tests and real runs.
-- Education: BSc Computer Science, BITS Pilani, 2026.
+- Education: BS Computer Science, BITS Pilani, 2026.
 - Certifications: NISM Series VIII Equity Derivatives (SEBI). Meta Backend Developer Professional Certificate. Google IT Automation with Python.
 
 ## Home: contact

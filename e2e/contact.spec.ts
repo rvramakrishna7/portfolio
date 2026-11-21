@@ -134,7 +134,7 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
     await expect(about.locator(".eyebrow")).toHaveText("About");
     await expect(about.locator("#about-title")).toHaveText("How I work");
     await expect(about.locator(".about-degree")).toContainText(
-      "BSc Computer Science, BITS Pilani, 2026."
+      "BS Computer Science, BITS Pilani, 2026."
     );
 
     const certItems = about.locator(".about-certs li");
