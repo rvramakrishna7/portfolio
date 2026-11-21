@@ -1287,23 +1287,78 @@ dialog.palette::backdrop {
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .site-head {
+    width: min(100% - 16px, 1020px);
     padding: 3px 6px 3px 12px;
+    gap: 6px;
+  }
+
+  .nav {
+    display: none;
   }
 
   .head-actions {
     gap: 4px;
   }
 
-  .head-actions .btn {
-    padding: 6px 8px;
-    font-size: 0.8rem;
-    min-height: 40px;
+  .head-actions .jump-btn {
+    display: none;
   }
 
-  .jump-label {
-    font-size: 0.8rem;
+  .head-actions .btn {
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .resume-link {
+    padding: 6px 8px;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .theme-toggle {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 360px) {
+  .site-head {
+    width: min(100% - 8px, 1020px);
+    padding: 2px 4px 2px 8px;
+    gap: 3px;
+  }
+
+  .brand {
+    font-size: 0.88rem;
+  }
+
+  .head-actions {
+    gap: 3px;
+  }
+
+  .head-actions .btn {
+    padding: 5px 7px;
+    font-size: 0.78rem;
+    min-height: 44px;
+  }
+
+  .resume-link {
+    padding: 5px 6px;
+    font-size: 0.78rem;
+    min-height: 44px;
+  }
+
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
   }
 }
 

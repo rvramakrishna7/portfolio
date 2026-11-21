@@ -275,4 +275,73 @@ test.describe("Theme system and tokens (TEST-014 to TEST-016)", () => {
       }
     }
   });
+
+  test("header fits fully without wrapping at 320, 375 and 414 px in both themes", async ({
+    page,
+  }) => {
+    const mobileWidths = [320, 375, 414];
+
+    for (const theme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await page.goto("/");
+      await page.evaluate((t) => {
+        document.documentElement.dataset.theme = t;
+        localStorage.setItem("theme", t);
+      }, theme);
+
+      for (const width of mobileWidths) {
+        await page.setViewportSize({ width, height: 812 });
+        await page.goto("/");
+
+        const header = page.locator("header.site-head");
+        await expect(header).toBeVisible();
+
+        // Check header bounding box is within viewport
+        const headerBox = await header.boundingBox();
+        expect(headerBox).not.toBeNull();
+        expect(headerBox!.x).toBeGreaterThanOrEqual(0);
+        expect(headerBox!.x + headerBox!.width).toBeLessThanOrEqual(width);
+
+        // Check every visible interactive child inside the header
+        const items = [
+          page.locator("header.site-head .brand"),
+          page.locator("header.site-head [data-theme-toggle]"),
+          page.locator("header.site-head .resume-link"),
+          page.locator("header.site-head a.btn.primary"),
+        ];
+
+        for (const item of items) {
+          await expect(item).toBeVisible();
+          const box = await item.boundingBox();
+          expect(box).not.toBeNull();
+          expect(box!.x).toBeGreaterThanOrEqual(0);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+
+          // Check no button / link text wraps onto multiple lines
+          const hasWrappedText = await item.evaluate((node) => {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const rects = range.getClientRects();
+            if (rects.length <= 1) return false;
+            const firstTop = rects[0].top;
+            for (let i = 1; i < rects.length; i++) {
+              if (Math.abs(rects[i].top - firstTop) > 3) return true;
+            }
+            return false;
+          });
+          expect(
+            hasWrappedText,
+            `Text in ${await item.getAttribute("class")} must not wrap at ${width}px in ${theme} theme`
+          ).toBe(false);
+        }
+
+        // Retake screenshots as required by ITEM 0
+        if (width === 375 || width === 320) {
+          await header.screenshot({
+            path: path.join(SCREENSHOTS_DIR, `header-${theme}-${width}.png`),
+          });
+        }
+      }
+    }
+  });
 });
