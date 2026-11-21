@@ -44,52 +44,66 @@ export function Hero() {
 
       <div className="wrap">
         <p className="status">
-          <span className="dot" aria-hidden="true" /> Open to full-stack and AI
-          automation roles
+          <span className="dot" aria-hidden="true" /> Open to software
+          engineering opportunities
         </p>
         <h1 id="hero-title">
-          Traders lost a minute every time they moved a strike. Now it takes{" "}
-          <span className="accent">a few seconds</span>.
+          I build software that makes complex work{" "}
+          <span className="accent">faster, simpler and more reliable</span>.
         </h1>
         <p className="lede">
-          <strong>I&apos;m Ramakrishna.</strong> I make AI-powered products work
-          in the real world, and I keep the numbers to prove it. Below are four
-          of them, told as problems that got solved.
+          I take workflows that are slow, repetitive or easy to get wrong and turn
+          them into software people can rely on.
+        </p>
+        <p className="lede-sub">
+          My work covers full-stack apps, backend systems, real-time
+          communication, AI automation and infrastructure. I start with the
+          problem, make sensible engineering decisions, and measure whether the
+          result is actually better.
         </p>
         <div className="cta">
           <a className="btn primary" href="#work">
-            Read the four stories
+            View my work
           </a>
-          <a className="btn" href="#contact">
-            Get in touch
+          <a
+            className="btn"
+            href="/resume.pdf"
+            download="Ramakrishna-Resume.pdf"
+          >
+            Download resume
           </a>
+        </div>
+        <div className="hero-info" aria-label="Quick facts">
+          <span>India</span>
+          <span className="sep" aria-hidden="true">
+            |
+          </span>
+          <span>BITS Pilani, Computer Science</span>
+          <span className="sep" aria-hidden="true">
+            |
+          </span>
+          <span>2026 graduate</span>
         </div>
       </div>
 
-      <table className="titleblock" aria-label="Summary of the work">
+      <table className="titleblock" aria-label="Overview facts">
         <tbody>
           <tr>
-            <th scope="row">DEVELOPER</th>
+            <th scope="row">BASED</th>
             <td>
-              <b>Ramakrishna</b>
+              <b>India</b>
             </td>
           </tr>
           <tr>
-            <th scope="row">BASE</th>
+            <th scope="row">EDUCATION</th>
             <td>
-              <b>Mumbai, India</b>
+              <b>BITS Pilani, Computer Science</b>
             </td>
           </tr>
           <tr>
-            <th scope="row">PROJECTS</th>
+            <th scope="row">GRADUATED</th>
             <td>
-              <b>04 shipped</b>
-            </td>
-          </tr>
-          <tr>
-            <th scope="row">TESTS PASSING</th>
-            <td>
-              <b>1,212</b>
+              <b>2026</b>
             </td>
           </tr>
         </tbody>
