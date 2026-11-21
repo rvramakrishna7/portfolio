@@ -58,7 +58,7 @@ test.describe("Keyboard and screen-reader accessibility pass (S7)", () => {
     const brandIndex = texts.findIndex((t) => t.includes("Ramakrishna"));
     const workLinkIndex = texts.findIndex((t) => t === "Work");
     const jumpBtnIndex = texts.findIndex((t) => t.includes("Jump to"));
-    const heroBtnIndex = texts.findIndex((t) => t.includes("Read the four stories"));
+    const heroBtnIndex = texts.findIndex((t) => t.includes("View my work"));
     const contactNameIndex = focusStops.findIndex((s) => s.id === "contact-name");
     const submitIndex = texts.findIndex((t) => t === "Send message");
 

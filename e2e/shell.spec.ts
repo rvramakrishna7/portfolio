@@ -135,7 +135,12 @@ test.describe("Shell and design system (S1)", () => {
       });
 
       await page.goto("/");
-      await page.locator("[data-open-palette]").click();
+      const opener = page.locator("[data-open-palette]");
+      if (await opener.isVisible()) {
+        await opener.click();
+      } else {
+        await page.keyboard.press("Control+k");
+      }
       await expect(page.locator("dialog#palette")).toBeVisible();
       await page.screenshot({
         path: path.join(
@@ -219,7 +224,7 @@ test.describe("Shell and design system (S1)", () => {
     );
     await expect(
       page.locator("footer.site-footer")
-    ).toContainText("Ramakrishna. Built by hand with Next.js and plain CSS.");
+    ).toContainText("Ramakrishna. Built with Next.js and plain CSS.");
     await expect(page.locator(".progress")).toBeHidden();
 
     await page.goto("/nope");

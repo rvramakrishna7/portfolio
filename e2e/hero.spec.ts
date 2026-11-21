@@ -4,36 +4,35 @@ import { expect, test } from "@playwright/test";
 import { FORBIDDEN_VISIBLE_TOKENS, VIEWPORTS } from "./helpers";
 
 const HERO_H1_TEXT =
-  "Traders lost a minute every time they moved a strike. Now it takes a few seconds.";
+  "I build software that makes complex work faster, simpler and more reliable.";
 
 const HERO_INTRO_TEXT =
-  "I'm Ramakrishna. I make AI-powered products work in the real world, and I keep the numbers to prove it. Below are four of them, told as problems that got solved.";
+  "I take workflows that are slow, repetitive or easy to get wrong and turn them into software people can rely on.";
 
 const TITLE_BLOCK_ROWS = [
-  ["DEVELOPER", "Ramakrishna"],
-  ["BASE", "Mumbai, India"],
-  ["PROJECTS", "04 shipped"],
-  ["TESTS PASSING", "1,212"],
+  ["BASED", "India"],
+  ["EDUCATION", "BITS Pilani, Computer Science"],
+  ["GRADUATED", "2026"],
 ] as const;
 
 const PROOF_CARDS_EXPECTED = [
   {
     value: "1,212",
     meaning: "automated tests passing",
-    how: "In the MCP gateway project. I ran all of them on 2026-11-19: 497 in the gateway, 396 in the dashboard, 225 and 94 in two tool servers.",
+    how: "In the MCP gateway project. 900 run without a database: 185 in the gateway, 396 in the dashboard, 225 and 94 in two tool servers. 312 more gateway tests need PostgreSQL, which gives 1,212. The full 1,212 run was on 2026-11-19; the 900 figure was re-run in the R0 audit on 2026-11-21.",
   },
   {
-    value: "98–100",
+    value: "98 to 100",
     meaning: "Lighthouse on three live apps",
     how: "Desktop preset. Zync 100, Restart Options 99, Vouch 98. Measured 2026-11-19.",
   },
   {
-    value: "18.8 s → 3.35 s",
+    value: "18.83 s → 3.35 s",
     meaning: "AI review time in Vouch",
-    how: "The first number is one run before the change. The second is the average of 10 runs after, with all 50 claim verdicts correct.",
+    how: "The first number is one measurement before the change. The second is the average of 10 runs after, with all 50 claim verdicts correct.",
   },
   {
-    value: "45–60 s → 2–3 s",
+    value: "45 to 60 s → 2 to 3 s",
     meaning: "moving a strike in Restart Options",
     how: "Timed with a stopwatch: by hand before, automatic after.",
   },
@@ -52,7 +51,7 @@ function boxesOverlap(
 }
 
 test.describe("Hero and proof strip (S2)", () => {
-  test("renders single h1 with accent span, intro, CTA buttons, and four-row title block table", async ({
+  test("renders single h1 with accent span, intro, CTA buttons, and three-row title block table", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -64,25 +63,25 @@ test.describe("Hero and proof strip (S2)", () => {
 
     const accentSpan = h1.locator("span.accent");
     await expect(accentSpan).toHaveCount(1);
-    await expect(accentSpan).toHaveText("a few seconds");
+    await expect(accentSpan).toHaveText("faster, simpler and more reliable");
 
     await expect(page.locator(".hero .status")).toContainText(
-      "Open to full-stack and AI automation roles"
+      "Open to software engineering opportunities"
     );
     await expect(page.locator(".hero .lede")).toHaveText(HERO_INTRO_TEXT);
 
     const primaryCta = page.locator(".hero .cta a.btn.primary");
-    await expect(primaryCta).toHaveText("Read the four stories");
+    await expect(primaryCta).toHaveText("View my work");
     await expect(primaryCta).toHaveAttribute("href", "#work");
 
     const secondaryCta = page.locator(".hero .cta a.btn").nth(1);
-    await expect(secondaryCta).toHaveText("Get in touch");
-    await expect(secondaryCta).toHaveAttribute("href", "#contact");
+    await expect(secondaryCta).toHaveText("Download resume");
+    await expect(secondaryCta).toHaveAttribute("href", "/resume.pdf");
 
     await expect(page.locator(".hero .scrollcue")).toHaveText("Scroll down");
 
     const rows = page.locator("table.titleblock tbody tr");
-    await expect(rows).toHaveCount(4);
+    await expect(rows).toHaveCount(3);
     for (let i = 0; i < TITLE_BLOCK_ROWS.length; i++) {
       const [label, value] = TITLE_BLOCK_ROWS[i];
       await expect(rows.nth(i).locator("th")).toHaveText(label);
@@ -165,7 +164,18 @@ test.describe("Hero and proof strip (S2)", () => {
     }
   });
 
-  test("with reducedMotion: 'reduce', the status dot has no animation and 1,212 is final immediately", async ({
+  test("proof strip count-up reaches final value '1,212' in normal motion after scrolling into view", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/");
+
+    const countSpan = page.locator('#proof [data-count="1212"]');
+    await countSpan.scrollIntoViewIfNeeded();
+    await expect(countSpan).toHaveText("1,212", { timeout: 3000 });
+  });
+
+  test("proof strip count-up displays final value '1,212' immediately with prefers-reduced-motion: reduce", async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -178,6 +188,7 @@ test.describe("Hero and proof strip (S2)", () => {
     expect(dotAnimationName).toBe("none");
 
     const countSpan = page.locator('#proof [data-count="1212"]');
+    await expect(countSpan).toHaveText("1,212");
     await countSpan.scrollIntoViewIfNeeded();
     await expect(countSpan).toHaveText("1,212");
   });

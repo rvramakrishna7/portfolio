@@ -8,12 +8,8 @@ export function Work() {
       <ChapterReveal />
       <div className="wrap">
         <div className="sec-head">
-          <p className="eyebrow">Work</p>
-          <h2 id="work-title">Four problems, and what happened next.</h2>
-          <p>
-            Each one starts with a person who had a real problem. Scroll, and
-            each story opens.
-          </p>
+          <p className="eyebrow">Selected work</p>
+          <h2 id="work-title">Four problems, what I built, and what I measured.</h2>
         </div>
 
         {STORIES.map((story) => (
@@ -43,77 +39,80 @@ export function Work() {
                 </svg>
               </span>
               <h3>{story.title}</h3>
-              <p className="tag">{story.tag}</p>
+              <p className="tag">{story.category}</p>
               <ul className="chips" aria-label="Built with">
-                {story.chips.map((chip) => (
-                  <li key={chip}>{chip}</li>
+                {story.tags.map((tag) => (
+                  <li key={tag}>{tag}</li>
                 ))}
               </ul>
             </div>
 
             <div className="panel">
-              <p className="hook">{story.hook}</p>
+              <p className="hook">{story.headline}</p>
 
               <div>
                 <h4>The problem</h4>
-                <p>{story.problem}</p>
+                <p>{story.problemShort}</p>
               </div>
 
               <div>
-                <h4>What I did</h4>
-                <ul>
-                  {story.whatIDid.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
+                <h4>What I built</h4>
+                <p>{story.builtShort}</p>
               </div>
 
               <div>
-                <h4>The result</h4>
+                <h4>Results</h4>
                 <div className="results">
-                  {story.results.map((res) => (
-                    <div key={res.label}>
-                      <strong>{res.value}</strong>
-                      <span>{res.label}</span>
+                  {story.metrics.map((m) => (
+                    <div key={m.label}>
+                      <strong>{m.value}</strong>
+                      <span>{m.label}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="links">
-                {story.links.map((link) =>
-                  link.external ? (
-                    <a
-                      key={link.href}
-                      href={link.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {link.label}
-                    </a>
-                  ) : (
-                    <Link key={link.href} href={link.href}>
-                      {link.label}
-                    </Link>
-                  )
-                )}
+                <Link href={`/work/${story.slug}`}>Read the story</Link>
+                {story.live ? (
+                  <a
+                    href={story.live}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open the live site
+                  </a>
+                ) : null}
+                <a
+                  href={story.code}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  See the code
+                </a>
               </div>
             </div>
           </article>
         ))}
 
-        <p className="form-note work-note">
-          Earlier work: Book My Nest, a property listing site built with
-          Node.js, Express, MongoDB, Passport.js, Cloudinary and Mapbox.{" "}
-          <a
-            href="https://bookmynest.onrender.com"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            See it live
-          </a>{" "}
-          (the free host can take a moment to wake up).
-        </p>
+        <div className="additional-projects" aria-label="Additional projects">
+          <p className="eyebrow">Additional projects</p>
+          <div className="additional-card">
+            <p>
+              <strong>Book My Nest</strong>: A property listing site where people
+              browse listings and view property details. Node.js, Express,
+              MongoDB, Passport.js, Cloudinary, Mapbox.{" "}
+              <a
+                href="https://bookmynest.onrender.com"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Live
+              </a>{" "}
+              (free host, can take a moment to wake).
+            </p>
+          </div>
+        </div>
       </div>
     </section>
   );

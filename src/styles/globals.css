@@ -158,6 +158,14 @@ summary:focus-visible {
   left: 8px;
 }
 
+/* Ensure anchor jumps and scrollIntoView land below the floating header */
+.block,
+.proof,
+section[id],
+article[id] {
+  scroll-margin-top: calc(var(--head-h) + 24px);
+}
+
 /* Reading-progress bar */
 .progress {
   position: fixed;
@@ -321,10 +329,11 @@ main#main {
 .hero {
   position: relative;
   min-height: 100svh;
-  display: grid;
-  align-content: center;
-  padding: calc(var(--head-h) + 48px) 0 160px;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: calc(var(--head-h) + 24px) 0 80px;
+  border-bottom: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -377,9 +386,10 @@ main#main {
 }
 
 .hero h1 {
-  font-size: clamp(2.1rem, 1.2rem + 3.2vw, 4.2rem);
-  max-width: 22ch;
+  font-size: clamp(2.1rem, 1.2rem + 3vw, 3.8rem);
+  max-width: 24ch;
   text-wrap: balance;
+  margin-bottom: 18px;
 }
 
 .hero h1 .accent,
@@ -388,22 +398,57 @@ main#main {
   color: var(--accent);
 }
 
+.hero .lede {
+  font-size: 1.12rem;
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 58ch;
+  margin-bottom: 10px;
+}
+
+.hero .lede-sub {
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 62ch;
+  margin-bottom: 22px;
+}
+
+.hero .cta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.hero-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font: 500 0.82rem var(--mono);
+  color: var(--text-2);
+}
+
+.hero-info .sep {
+  opacity: 0.4;
+}
+
 .titleblock {
   position: absolute;
   right: var(--pad);
   bottom: 24px;
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--border);
   border-collapse: collapse;
   background: var(--bg);
   font: 500 0.7rem/1.5 var(--mono);
-  color: var(--muted);
+  color: var(--text-2);
   min-width: min(340px, calc(100% - 2 * var(--pad)));
 }
 
 .titleblock th,
 .titleblock td {
   padding: 4px 12px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
   text-align: left;
   font-weight: 500;
 }
@@ -414,7 +459,7 @@ main#main {
 }
 
 .titleblock th {
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--border);
 }
 
 .titleblock b {
@@ -475,9 +520,10 @@ main#main {
 }
 
 .stat .big {
-  font: 650 clamp(1.4rem, 1rem + 0.95vw, 2rem)/1.1 var(--sans);
+  font: 650 clamp(1.2rem, 0.9rem + 0.8vw, 1.85rem)/1.1 var(--sans);
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .stat .what {
@@ -691,6 +737,36 @@ section.block {
   color: var(--text);
 }
 
+.additional-projects {
+  margin-top: 48px;
+  padding-top: 32px;
+  border-top: 1px solid var(--border);
+}
+
+.additional-card {
+  margin-top: 12px;
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.additional-card strong {
+  color: var(--text);
+}
+
+.additional-card a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 /* Experience section */
 .exp {
   display: grid;
@@ -723,10 +799,18 @@ section.block {
   margin: 0;
 }
 
+.exp .product-desc {
+  color: var(--text-2);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 16px 0 0;
+}
+
 .nda {
-  border: 1px dashed var(--line-2);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
   padding: 16px 20px;
-  color: var(--muted);
+  color: var(--text-2);
   font-size: 0.95rem;
   line-height: 1.5;
   margin-top: 24px;
@@ -759,6 +843,15 @@ section.block {
   top: 16px;
   font: 500 0.8rem var(--mono);
   color: var(--accent);
+}
+
+.exp-testing {
+  font: 500 0.82rem var(--mono);
+  color: var(--text-2);
+  margin-top: 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 /* Skills section */
@@ -820,6 +913,68 @@ section.block {
 
 .edu div .eyebrow {
   margin-bottom: 12px;
+}
+
+/* About section */
+.about-grid {
+  display: grid;
+  gap: 32px;
+}
+
+@media (min-width: 900px) {
+  .about-grid {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 48px;
+    align-items: start;
+  }
+}
+
+.about-copy p {
+  color: var(--text);
+  line-height: 1.6;
+  margin: 0 0 16px;
+  max-width: 62ch;
+}
+
+.about-copy p:last-child {
+  margin-bottom: 0;
+}
+
+.about-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.about-card {
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}
+
+.about-card h3 {
+  font: 600 0.82rem var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 12px;
+}
+
+.about-degree {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.about-certs {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-2);
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Contact section */
@@ -1287,23 +1442,78 @@ dialog.palette::backdrop {
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .site-head {
+    width: min(100% - 16px, 1020px);
     padding: 3px 6px 3px 12px;
+    gap: 6px;
+  }
+
+  .nav {
+    display: none;
   }
 
   .head-actions {
     gap: 4px;
   }
 
-  .head-actions .btn {
-    padding: 6px 8px;
-    font-size: 0.8rem;
-    min-height: 40px;
+  .head-actions .jump-btn {
+    display: none;
   }
 
-  .jump-label {
-    font-size: 0.8rem;
+  .head-actions .btn {
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .resume-link {
+    padding: 6px 8px;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .theme-toggle {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 360px) {
+  .site-head {
+    width: min(100% - 8px, 1020px);
+    padding: 2px 4px 2px 8px;
+    gap: 3px;
+  }
+
+  .brand {
+    font-size: 0.88rem;
+  }
+
+  .head-actions {
+    gap: 3px;
+  }
+
+  .head-actions .btn {
+    padding: 5px 7px;
+    font-size: 0.78rem;
+    min-height: 44px;
+  }
+
+  .resume-link {
+    padding: 5px 6px;
+    font-size: 0.78rem;
+    min-height: 44px;
+  }
+
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
   }
 }
 

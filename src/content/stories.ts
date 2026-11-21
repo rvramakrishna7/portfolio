@@ -9,10 +9,26 @@ export interface StoryLink {
   external?: boolean;
 }
 
+export interface StoryMetric {
+  value: string;
+  label: string;
+}
+
 export interface Story {
   number: string;
   slug: string;
   title: string;
+  // New R2 fields
+  category: string;
+  headline: string;
+  problemShort: string;
+  builtShort: string;
+  metrics: readonly StoryMetric[];
+  tags: readonly string[];
+  live?: string;
+  code: string;
+
+  // Preserved fields for story pages until R3
   tag: string;
   hook: string;
   problem: string;
@@ -31,8 +47,30 @@ export const STORIES: readonly Story[] = [
     number: "01",
     slug: "restart-options",
     title: "Restart Options",
+    category: "Options trading automation",
+    headline: "Turned a manual options adjustment into a 2 to 3 second workflow.",
+    problemShort:
+      "When the market moves, a trader has to find the right strikes again by hand. One adjustment took 45 to 60 seconds while prices kept changing.",
+    builtShort:
+      "Strategy rules pick the strikes. The trader confirms with one click, and a configured loss limit can trigger an automatic exit.",
+    metrics: [
+      {
+        value: "45 to 60 s → 2 to 3 s",
+        label:
+          "Strike adjustment, manual versus automated, timed with a stopwatch.",
+      },
+      {
+        value: "38",
+        label: "REST endpoints with JWT login and owner and user roles.",
+      },
+    ],
+    tags: ["React", "Node.js", "Express", "MongoDB", "WebSocket", "JWT"],
+    live: "https://restartoptions.vercel.app",
+    code: "https://github.com/rvramakrishna7/restart",
+
+    // Old fields for story pages
     tag: "Options trading automation",
-    hook: "Traders moved strikes by hand. Each shift took a minute while the market kept moving.",
+    hook: "Turned a manual options adjustment into a 2 to 3 second workflow.",
     problem:
       "Options traders shifted strikes by hand. Each shift took 45 to 60 seconds, and the market kept moving the whole time.",
     constraint:
@@ -45,7 +83,7 @@ export const STORIES: readonly Story[] = [
     ],
     results: [
       {
-        value: "45–60 s → 2–3 s",
+        value: "45 to 60 s → 2 to 3 s",
         label: "Strike shifting time (timed by hand)",
       },
       {
@@ -61,7 +99,7 @@ export const STORIES: readonly Story[] = [
     liveUrl: "https://restartoptions.vercel.app",
     codeUrl: "https://github.com/rvramakrishna7/restart",
     links: [
-      { label: "Read the full story", href: "/work/restart-options" },
+      { label: "Read the story", href: "/work/restart-options" },
       {
         label: "Open the live site",
         href: "https://restartoptions.vercel.app",
@@ -78,106 +116,41 @@ export const STORIES: readonly Story[] = [
   },
   {
     number: "02",
-    slug: "zync",
-    title: "Zync",
-    tag: "Video meetings that write their own notes",
-    hook: "Nobody wants to take notes in a meeting. So the meeting writes them.",
-    problem:
-      "In most meetings, someone has to take notes, and the notes are either missing or wrong.",
-    constraint:
-      "Video is heavy. The server had to stay small, so video should never pass through it.",
-    whatIDid: [
-      "Video and audio go peer to peer over WebRTC. The server only passes the signals that connect people.",
-      "When a call ends, Groq Llama 3.3 70B turns the meeting into key points, action items and decisions.",
-      "Added chat, reactions, raise hand, JWT login and Google login.",
-    ],
-    results: [
-      {
-        value: "under 3 s",
-        label: "From call end to summary on screen (timed by hand)",
-      },
-      {
-        value: "100",
-        label: "Lighthouse performance score, desktop",
-      },
-      {
-        value: "0.3 s",
-        label: "Largest contentful paint",
-      },
-    ],
-    chips: ["React", "Socket.io", "WebRTC", "MongoDB", "Groq"],
-    liveUrl: "https://zync-video-conferencing.vercel.app",
-    codeUrl: "https://github.com/rvramakrishna7/zync-video-conferencing",
-    links: [
-      { label: "Read the full story", href: "/work/zync" },
-      {
-        label: "Open the live site",
-        href: "https://zync-video-conferencing.vercel.app",
-        external: true,
-      },
-      {
-        label: "See the code",
-        href: "https://github.com/rvramakrishna7/zync-video-conferencing",
-        external: true,
-      },
-    ],
-    seoDescription:
-      "A peer-to-peer video meeting app that writes the meeting summary within 3 seconds of the call ending. Lighthouse 100.",
-  },
-  {
-    number: "03",
-    slug: "vouch",
-    title: "Vouch",
-    tag: "Checking marketing claims against a brand's own facts",
-    hook: "AI checkers love to invent citations. This one is not allowed to.",
-    problem:
-      'Brand teams publish claims like "India\'s No.1" or "keeps drinks cold for 48 hours". Generic AI checkers fix the tone, but they cannot say which approved fact proves a claim, and they make up citations.',
-    constraint:
-      "Built alone for a hackathon, on free tiers. The AI had to be fast, and it had to be checkable.",
-    whatIDid: [
-      "The AI only suggests. Code checks every citation against the brand's approved facts and rules before anything is shown.",
-      "Moved the main AI call to Groq, with Gemini as an automatic fallback when Groq is slow or rate-limited.",
-      "Wrote 100 server tests and 14 end-to-end Playwright tests, plus a run against the live app with the real AI.",
-    ],
-    results: [
-      {
-        value: "18.8 s → 3.35 s",
-        label: "Review time, average of 10 runs",
-      },
-      {
-        value: "10 / 10",
-        label: "Runs with every claim judged correctly",
-      },
-      {
-        value: "98",
-        label: "Lighthouse performance score, desktop",
-      },
-    ],
-    chips: ["React", "Express", "PostgreSQL", "Groq", "Gemini", "Playwright"],
-    liveUrl: "https://vouch-app-beta.vercel.app",
-    codeUrl: "https://github.com/rvramakrishna7/vouch",
-    links: [
-      { label: "Read the full story", href: "/work/vouch" },
-      {
-        label: "Open the live site",
-        href: "https://vouch-app-beta.vercel.app",
-        external: true,
-      },
-      {
-        label: "See the code",
-        href: "https://github.com/rvramakrishna7/vouch",
-        external: true,
-      },
-    ],
-    seoDescription:
-      "An AI reviewer that checks marketing claims against approved facts, where code validates every citation. Review time cut from 18.8 s to 3.35 s.",
-  },
-  {
-    number: "04",
     slug: "mcp-gateway",
     title: "Team MCP Gateway",
+    category: "Infrastructure, security and AI tool integration",
+    headline: "One controlled entry point for a team's AI tools.",
+    problemShort:
+      "Every team member had to set up each MCP server on their own. Credentials ended up spread across laptops, and nobody had a shared record of which tools were used.",
+    builtShort:
+      "A gateway. An admin registers the servers once. Members connect through one URL and see only the tools their role allows. Upstream credentials stay encrypted on the gateway.",
+    metrics: [
+      {
+        value: "22 ms",
+        label:
+          "Tool-list lookup with a deliberately slow upstream, served from the database cache.",
+      },
+      {
+        value: "3",
+        label: "MCP servers behind one login.",
+      },
+    ],
+    tags: [
+      "TypeScript",
+      "React",
+      "PostgreSQL",
+      "Node.js",
+      "MCP",
+      "Docker",
+      "Kubernetes",
+      "Helm",
+      "Groq",
+    ],
+    code: "https://github.com/rvramakrishna7/urumi-mcp-gateway",
+
+    // Old fields for story pages
     tag: "One secure front door for AI tools",
-    hook: "When an AI agent can touch a real store, someone has to keep a record of every move.",
+    hook: "One controlled entry point for a team's AI tools.",
     problem:
       "AI agents that call tools touching real stores need rules: who may call what, and a record of every call.",
     constraint:
@@ -202,11 +175,18 @@ export const STORIES: readonly Story[] = [
         label: "Written to an audit log",
       },
     ],
-    chips: ["Kubernetes", "Helm", "TypeScript", "React", "PostgreSQL", "Groq"],
+    chips: [
+      "Kubernetes",
+      "Helm",
+      "TypeScript",
+      "React",
+      "PostgreSQL",
+      "Groq",
+    ],
     liveUrl: null,
     codeUrl: "https://github.com/rvramakrishna7/urumi-mcp-gateway",
     links: [
-      { label: "Read the full story", href: "/work/mcp-gateway" },
+      { label: "Read the story", href: "/work/mcp-gateway" },
       {
         label: "See the code",
         href: "https://github.com/rvramakrishna7/urumi-mcp-gateway",
@@ -215,5 +195,162 @@ export const STORIES: readonly Story[] = [
     ],
     seoDescription:
       "A Kubernetes gateway that puts three AI tool servers behind one login with an audit log. 1,212 automated tests, all passing.",
+  },
+  {
+    number: "03",
+    slug: "vouch",
+    title: "Vouch",
+    category: "AI brand content verification",
+    headline: "An AI reviewer shouldn't approve a claim without being able to prove it.",
+    problemShort:
+      'Marketing teams publish claims like "keeps drinks cold for 48 hours". Generic AI tools can write a convincing citation that points to nothing, and a reviewer cannot tell.',
+    builtShort:
+      "An evidence-first review system. The model suggests and analyses. Backend code checks every citation against approved, unexpired company facts before anything is shown.",
+    metrics: [
+      {
+        value: "18.83 s → 3.35 s",
+        label:
+          "First review measurement, then the average of 10 optimised runs.",
+      },
+      {
+        value: "10 of 10",
+        label: "Runs where every claim was judged correctly (50 verdicts).",
+      },
+    ],
+    tags: [
+      "React 19",
+      "TypeScript",
+      "Vite",
+      "Express",
+      "PostgreSQL",
+      "Supabase",
+      "pgvector",
+      "Groq",
+      "Gemini",
+      "Playwright",
+    ],
+    live: "https://vouch-app-beta.vercel.app",
+    code: "https://github.com/rvramakrishna7/vouch",
+
+    // Old fields for story pages
+    tag: "Checking marketing claims against a brand's own facts",
+    hook: "An AI reviewer shouldn't approve a claim without being able to prove it.",
+    problem:
+      'Brand teams publish claims like "India\'s No.1" or "keeps drinks cold for 48 hours". Generic AI checkers fix the tone, but they cannot say which approved fact proves a claim, and they make up citations.',
+    constraint:
+      "Built alone for a hackathon, on free tiers. The AI had to be fast, and it had to be checkable.",
+    whatIDid: [
+      "The AI only suggests. Code checks every citation against the brand's approved facts and rules before anything is shown.",
+      "Moved the main AI call to Groq, with Gemini as an automatic fallback when Groq is slow or rate-limited.",
+      "Wrote 100 server tests and 14 end-to-end Playwright tests, plus a run against the live app with the real AI.",
+    ],
+    results: [
+      {
+        value: "18.83 s → 3.35 s",
+        label: "Review time, average of 10 runs",
+      },
+      {
+        value: "10 of 10",
+        label: "Runs with every claim judged correctly",
+      },
+      {
+        value: "98",
+        label: "Lighthouse performance score, desktop",
+      },
+    ],
+    chips: ["React", "Express", "PostgreSQL", "Groq", "Gemini", "Playwright"],
+    liveUrl: "https://vouch-app-beta.vercel.app",
+    codeUrl: "https://github.com/rvramakrishna7/vouch",
+    links: [
+      { label: "Read the story", href: "/work/vouch" },
+      {
+        label: "Open the live site",
+        href: "https://vouch-app-beta.vercel.app",
+        external: true,
+      },
+      {
+        label: "See the code",
+        href: "https://github.com/rvramakrishna7/vouch",
+        external: true,
+      },
+    ],
+    seoDescription:
+      "An AI reviewer that checks marketing claims against approved facts, where code validates every citation. Review time cut from 18.83 s to 3.35 s.",
+  },
+  {
+    number: "04",
+    slug: "zync",
+    title: "Zync",
+    category: "Real-time video meetings with AI notes",
+    headline: "People came to meetings to participate, not to write minutes.",
+    problemShort:
+      "In an online meeting someone has to take notes while also listening and talking. Decisions and action items get missed.",
+    builtShort:
+      "A video meeting app that writes the notes when the call ends: key points, decisions and action items.",
+    metrics: [
+      {
+        value: "Under 3 s",
+        label: "From call end to summary on screen, timed by hand.",
+      },
+      {
+        value: "100",
+        label: "Lighthouse performance, desktop (LCP 0.3 s).",
+      },
+    ],
+    tags: [
+      "React",
+      "Socket.io",
+      "WebRTC",
+      "MongoDB",
+      "Groq",
+      "Llama 3.3 70B",
+    ],
+    live: "https://zync-video-conferencing.vercel.app",
+    code: "https://github.com/rvramakrishna7/zync-video-conferencing",
+
+    // Old fields for story pages
+    tag: "Video meetings that write their own notes",
+    hook: "People came to meetings to participate, not to write minutes.",
+    problem:
+      "In most meetings, someone has to take notes, and the notes are either missing or wrong.",
+    constraint:
+      "Video is heavy. The server had to stay small, so video should never pass through it.",
+    whatIDid: [
+      "Video and audio go peer to peer over WebRTC. The server only passes the signals that connect people.",
+      "When a call ends, Groq Llama 3.3 70B turns the meeting into key points, action items and decisions.",
+      "Added chat, reactions, raise hand, JWT login and Google login.",
+    ],
+    results: [
+      {
+        value: "Under 3 s",
+        label: "From call end to summary on screen (timed by hand)",
+      },
+      {
+        value: "100",
+        label: "Lighthouse performance score, desktop",
+      },
+      {
+        value: "0.3 s",
+        label: "Largest contentful paint",
+      },
+    ],
+    chips: ["React", "Socket.io", "WebRTC", "MongoDB", "Groq"],
+    liveUrl: "https://zync-video-conferencing.vercel.app",
+    codeUrl: "https://github.com/rvramakrishna7/zync-video-conferencing",
+    links: [
+      { label: "Read the story", href: "/work/zync" },
+      {
+        label: "Open the live site",
+        href: "https://zync-video-conferencing.vercel.app",
+        external: true,
+      },
+      {
+        label: "See the code",
+        href: "https://github.com/rvramakrishna7/zync-video-conferencing",
+        external: true,
+      },
+    ],
+    seoDescription:
+      "A peer-to-peer video meeting app that writes the meeting summary within 3 seconds of the call ending. Lighthouse 100.",
   },
 ];

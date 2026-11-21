@@ -16,7 +16,7 @@ test.describe("Home smoke test (S0)", () => {
       const h1 = page.locator("main#main h1");
       await expect(h1).toHaveCount(1);
       await expect(h1).toHaveText(
-        "Traders lost a minute every time they moved a strike. Now it takes a few seconds."
+        "I build software that makes complex work faster, simpler and more reliable."
       );
 
       const visibleText = await page.locator("body").innerText();
