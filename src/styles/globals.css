@@ -512,9 +512,10 @@ main#main {
 }
 
 .stat .big {
-  font: 650 clamp(1.4rem, 1rem + 0.95vw, 2rem)/1.1 var(--sans);
+  font: 650 clamp(1.2rem, 0.9rem + 0.8vw, 1.85rem)/1.1 var(--sans);
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .stat .what {
