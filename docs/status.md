@@ -1,16 +1,19 @@
 # Status: Portfolio site
 
-Current step: R1 done (tokens, theme, shell implemented, tested, and verified); awaiting owner approval to merge and start R2.
+Current step: R2 done (home page redesigned per content-v2.md and design-v2.md, all 92 e2e tests passing, 28 section screenshots reviewed); awaiting owner approval to merge and start R3.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
 Done since last update:
-- R0: Completed audit and codebase inventory, documented in `docs/audit-v1.md`, and committed redesign spec overrides (`docs/content-v2.md`, `docs/design-v2.md`, `docs/prompts/R-master.md`). Merged `feat/r0-audit` into `main`.
-- R1: Added `scripts/check-copy.mjs` and unit tests in `scripts/check-copy.test.ts` with npm script `npm run check:copy` to detect banned buzzwords and raw em dashes.
-- R1: Updated `src/styles/tokens.css` with light and dark mode tokens, system sans font stacks, and `--accent: #006CE3` (light) / `#2997FF` (dark) with WCAG AA compliance.
-- R1: Implemented theme system with flash-prevention script in `src/app/layout.tsx`, `localStorage` key `"theme"`, and `src/components/ThemeToggle.tsx` (using `useSyncExternalStore` for reactive cross-tab updates without hydration mismatch).
-- R1: Added Resume link (`/resume.pdf`) and ThemeToggle to `src/components/Header.tsx`, updated `src/components/CommandPalette.tsx` to include Resume, and restyled headings and shell components in `src/styles/globals.css`.
-- R1: Added comprehensive theme E2E tests in `e2e/theme.spec.ts` (TEST-014 OS preference, toggle persistence, no-flash, keyboard navigation; TEST-015 axe accessibility scan in light and dark modes across 6 routes; TEST-016 no horizontal scroll at 375, 768, 1024, 1280, 1440 px in light and dark modes). Added TEST-014 through TEST-017 to `docs/plan.md`.
-- R1: Ran full verification suite (`check:copy`, `lint`, `typecheck`, `test`, `check:flat`, `e2e` 91/91 passing, `build`). Captured and verified 10 screenshots in `e2e/screenshots/`.
-Next step (awaiting owner approval): R2 (hero and proof strip rewrite per content-v2.md).
+- Item 0 (R1 fix): Below 640px, header hides Jump to and nav links, displaying only brand, theme toggle, Resume, and Contact. Added mobile bounding box and no-wrapping e2e test at 320, 375, and 414 px.
+- Item 1 (Hero): Redesigned with `docs/content-v2.md` copy: status pill, H1 with blue accent highlight ("faster, simpler and more reliable"), two intro paragraphs, "View my work" and "Download resume" CTA buttons, info row, and 3-row title block (BASED India, EDUCATION BITS Pilani, Computer Science, GRADUATED 2026). Fits within 1280x720 window.
+- Item 2 (Proof strip): Updated metrics and method descriptions (1,212 with count-up, 98 to 100, 18.83 s → 3.35 s, 45 to 60 s → 2 to 3 s, no en-dashes).
+- Item 3 (Work chapters): Extended `src/content/stories.ts` with 01-04 project order (Restart Options, Team MCP Gateway, Vouch, Zync) and new card fields. Maintained slit reveal effect and added compact "Additional projects" Book My Nest card.
+- Item 4 (Experience): Updated with 7 numbered engineering contributions, product description, testing metric (2,026 / 2,239 tests), and dashed NDA card.
+- Item 5 (Skills): Grouped into 8 categories including Claude API, Render, and ESLint (override 4); removed AI-tools sentence and education/certifications.
+- Item 6 (About): Built new `About` component (`id="about"`) with "How I work" copy and Education / Certifications sidebar card; added About to the Command Palette.
+- Item 7 (Contact & Footer): Updated contact heading to "Have a problem worth solving?", new copy, links (LinkedIn, GitHub, Download resume, zero email / mailto), and aligned footer text with `content-v2.md`.
+- Item 8 (E2E tests): Updated `hero.spec.ts`, `work.spec.ts`, `contact.spec.ts`, `smoke.spec.ts`, `seo.spec.ts`, `accessibility.spec.ts`, `shell.spec.ts`, and `theme.spec.ts` to assert `docs/content-v2.md` copy.
+- Verification: `npm run lint`, `npm run typecheck`, `npm test` (19/19 passing), `npm run check:flat` (31 files scanned), `npm run check:copy` (31 files scanned), `npm run build` (12 static pages), and `npm run e2e` (92/92 tests passing). Grepped built HTML for email and mailto (zero found).
+Next step (awaiting owner approval): R3 (story pages rebuild with nine-part structure and diagrams).
 Blockers / questions for the owner:
 - Owner to configure Vercel environment variables (`RESEND_API_KEY`, `CONTACT_TO_EMAIL`, `NEXT_PUBLIC_SITE_URL`).
 - Production domain / Vercel URL to set as `NEXT_PUBLIC_SITE_URL`.
