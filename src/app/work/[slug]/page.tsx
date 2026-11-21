@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { STORIES } from "@/content/stories";
+import {
+  BeforeAfterBars,
+  McpArchitecture,
+  VouchPipeline,
+  ZyncMediaFlow,
+} from "@/components/diagrams";
+import { STORIES, type Story } from "@/content/stories";
 import { absoluteUrl } from "@/lib/site";
 
 interface PageProps {
@@ -28,7 +34,7 @@ export async function generateMetadata({
     };
   }
 
-  const title = `${story.title}: ${story.tag} | Ramakrishna`;
+  const title = story.seoTitle;
   const description = story.seoDescription;
   const canonical = `/work/${story.slug}`;
 
@@ -60,6 +66,21 @@ export async function generateMetadata({
       images: [absoluteUrl("/opengraph-image")],
     },
   };
+}
+
+function Diagram({ name }: { name: Story["diagram"] }) {
+  switch (name) {
+    case "BeforeAfterBars":
+      return <BeforeAfterBars />;
+    case "McpArchitecture":
+      return <McpArchitecture />;
+    case "VouchPipeline":
+      return <VouchPipeline />;
+    case "ZyncMediaFlow":
+      return <ZyncMediaFlow />;
+    default:
+      return null;
+  }
 }
 
 export default async function StoryPage({ params }: PageProps) {
@@ -106,72 +127,176 @@ export default async function StoryPage({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+
+      {/* Part 1: Breadcrumb, category tag, H1 (project title), headline sentence, tech tags */}
       <div className="case-hero">
         <div className="wrap">
           <p className="crumbs">
             <Link href="/">Home</Link> / <Link href="/#work">Work</Link> /{" "}
             <span aria-current="page">{story.title}</span>
           </p>
-          <p className="eyebrow">{story.tag}</p>
+          <p className="eyebrow">{story.category}</p>
           <h1>{story.title}</h1>
-          <p className="hook">{story.hook}</p>
+          <p className="hook">{story.headline}</p>
           <ul className="chips" aria-label="Built with">
-            {story.chips.map((chip) => (
-              <li key={chip}>{chip}</li>
+            {story.tags.map((tag) => (
+              <li key={tag}>{tag}</li>
             ))}
           </ul>
         </div>
       </div>
 
       <div className="wrap case-body">
+        {/* Part 2: The problem */}
         <section>
           <h2>The problem</h2>
-          <p>{story.problem}</p>
-        </section>
-        <section>
-          <h2>The constraint</h2>
-          <p>{story.constraint}</p>
-        </section>
-        <section>
-          <h2>What I did</h2>
-          <ul>
-            {story.whatIDid.map((item, idx) => (
-              <li key={idx}>{item}</li>
-            ))}
-          </ul>
-        </section>
-        <section>
-          <h2>The result</h2>
-          <div className="results">
-            {story.results.map((res, idx) => (
-              <div key={idx}>
-                <strong>{res.value}</strong>
-                <span>{res.label}</span>
-              </div>
-            ))}
+          <div>
+            <p>{story.problem}</p>
           </div>
         </section>
+
+        {/* Part 3: Why the usual way fell short */}
+        {story.whyItFellShort ? (
+          <section>
+            <h2>Why the usual way fell short</h2>
+            <div>
+              <p>{story.whyItFellShort}</p>
+            </div>
+          </section>
+        ) : null}
+
+        {/* Part 4: What I built (includes inline SVG diagram) */}
         <section>
-          <h2>Proof</h2>
-          <div className="links">
-            {story.liveUrl ? (
+          <h2>What I built</h2>
+          <div>
+            <p>{story.built}</p>
+            {story.deterministicChecks ? (
+              <div style={{ marginTop: "16px" }}>
+                <p>
+                  <strong>Deterministic checks:</strong>
+                </p>
+                <ul>
+                  {story.deterministicChecks.map((check, idx) => (
+                    <li key={idx}>{check}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <Diagram name={story.diagram} />
+          </div>
+        </section>
+
+        {/* Part 5: Engineering decisions */}
+        <section>
+          <h2>Engineering decisions</h2>
+          <div>
+            <ul>
+              {story.decisions.map((decision, idx) => (
+                <li key={idx}>{decision}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* Part 6: Reliability, security and failure handling (omitted if project has nothing real to say) */}
+        {story.reliability ? (
+          <section>
+            <h2>Reliability, security and failure handling</h2>
+            <div>
+              <p>{story.reliability}</p>
+            </div>
+          </section>
+        ) : null}
+
+        {/* Part 7: Results (table: measure | value | how it was measured) */}
+        <section>
+          <h2>Results</h2>
+          <div>
+            <div className="case-results-wrap">
+              <table className="case-results-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Measure</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">How it was measured</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {story.resultsTable.map((row, idx) => (
+                    <tr key={idx}>
+                      <th scope="row">{row.measure}</th>
+                      <td>
+                        <strong>{row.value}</strong>
+                      </td>
+                      <td>{row.howMeasured}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {story.honestNote ? (
+              <div className="case-note">
+                <p>
+                  <strong>Note:</strong> {story.honestNote}
+                </p>
+              </div>
+            ) : null}
+
+            {story.hackathonNote ? (
+              <div className="case-note">
+                <p>{story.hackathonNote}</p>
+              </div>
+            ) : null}
+
+            {story.hardenNext ? (
+              <div className="case-note">
+                <p>
+                  <strong>What I would harden next:</strong>
+                </p>
+                <ul>
+                  {story.hardenNext.map((item, idx) => (
+                    <li key={idx}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        {/* Part 8: Built with, then links */}
+        <section>
+          <h2>Built with</h2>
+          <div>
+            <ul className="chips" aria-label="Built with technologies">
+              {story.tags.map((tag) => (
+                <li key={tag}>{tag}</li>
+              ))}
+            </ul>
+            <div className="case-links">
+              {story.live ? (
+                <a
+                  className="btn primary"
+                  href={story.live}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  Open the live site
+                </a>
+              ) : null}
               <a
-                href={story.liveUrl}
+                className="btn"
+                href={story.code}
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                Open the live site
+                See the code
               </a>
-            ) : null}
-            <a
-              href={story.codeUrl}
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              See the code
-            </a>
+            </div>
           </div>
         </section>
+
+        {/* Part 9: Pager (order: Restart Options, MCP Gateway, Vouch, Zync, wrapping around) */}
         <nav className="pager" aria-label="More stories">
           <Link href={`/work/${prevStory.slug}`}>
             <small>&larr; Previous</small>
