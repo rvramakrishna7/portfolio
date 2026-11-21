@@ -1,21 +1,98 @@
 :root {
-  --bg: #0b0d10;
-  --panel: #11141a;
-  --panel-2: #171b22;
-  --line: #262c35;
-  --line-2: #363e4a;
-  --text: #ece8df;
-  --muted: #9aa2ad;
-  --accent: #f2b705;
-  --accent-ink: #1a1400;
-  --ok: #7bd88f;
-  --error: #ff8a7a;
+  /* Light theme tokens by default */
+  --bg: #F5F5F7;
+  --card: #FFFFFF;
+  --text: #1D1D1F;
+  --text-2: #6E6E73;
+  --text-3: #86868B;
+  --border: #D2D2D7;
+  --accent: #006CE3; /* Minimally darkened from #0071E3 for >= 4.5:1 AA contrast on #F5F5F7 (design-v2.md rule) */
+  --accent-ink: #FFFFFF;
+  --ok: #1B7F3A;
+  --error: #C4291C;
 
+  /* Legacy mappings for backward compatibility across existing sections */
+  --panel: var(--card);
+  --panel-2: var(--card);
+  --line: var(--border);
+  --line-2: var(--border);
+  --muted: var(--text-2);
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
   --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 
-  --pad: clamp(1.1rem, 4vw, 3rem);
-  --max: 1180px;
-  --head-h: 64px;
+  --pad: clamp(1.25rem, 5vw, 3rem);
+  --max: 1120px;
+  --head-h: 56px;
+
+  color-scheme: light;
+}
+
+/* Follow OS dark theme when user has not explicitly forced light */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B0B0D;
+    --card: #161618;
+    --text: #F5F5F7;
+    --text-2: #A1A1A6;
+    --text-3: #86868B;
+    --border: #303034;
+    --accent: #2997FF;
+    --accent-ink: #0B0B0D;
+    --ok: #5FD07F;
+    --error: #FF8A7A;
+
+    --panel: var(--card);
+    --panel-2: var(--card);
+    --line: var(--border);
+    --line-2: var(--border);
+    --muted: var(--text-2);
+
+    color-scheme: dark;
+  }
+}
+
+/* Explicit user selection: dark */
+:root[data-theme="dark"] {
+  --bg: #0B0B0D;
+  --card: #161618;
+  --text: #F5F5F7;
+  --text-2: #A1A1A6;
+  --text-3: #86868B;
+  --border: #303034;
+  --accent: #2997FF;
+  --accent-ink: #0B0B0D;
+  --ok: #5FD07F;
+  --error: #FF8A7A;
+
+  --panel: var(--card);
+  --panel-2: var(--card);
+  --line: var(--border);
+  --line-2: var(--border);
+  --muted: var(--text-2);
+
+  color-scheme: dark;
+}
+
+/* Explicit user selection: light */
+:root[data-theme="light"] {
+  --bg: #F5F5F7;
+  --card: #FFFFFF;
+  --text: #1D1D1F;
+  --text-2: #6E6E73;
+  --text-3: #86868B;
+  --border: #D2D2D7;
+  --accent: #006CE3;
+  --accent-ink: #FFFFFF;
+  --ok: #1B7F3A;
+  --error: #C4291C;
+
+  --panel: var(--card);
+  --panel-2: var(--card);
+  --line: var(--border);
+  --line-2: var(--border);
+  --muted: var(--text-2);
+
+  color-scheme: light;
 }

@@ -27,6 +27,12 @@ const PALETTE_ITEMS: readonly PaletteItem[] = [
   { label: "Skills", hint: "tools", href: "/#skills" },
   { label: "Contact", hint: "send a message", href: "/#contact" },
   {
+    label: "Resume",
+    hint: "PDF download",
+    href: "/resume.pdf",
+    external: true,
+  },
+  {
     label: "LinkedIn",
     hint: "opens in a new tab",
     href: "https://www.linkedin.com/in/rvramakrishna",

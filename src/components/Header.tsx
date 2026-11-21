@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -41,7 +42,7 @@ export function Header() {
       </nav>
       <div className="head-actions">
         <button
-          className="btn ghost"
+          className="btn ghost jump-btn"
           type="button"
           data-open-palette
           aria-haspopup="dialog"
@@ -52,6 +53,16 @@ export function Header() {
           <span className="jump-label">Jump to</span>{" "}
           <span className="kbd">Ctrl K</span>
         </button>
+        <ThemeToggle />
+        <a
+          className="btn ghost resume-link"
+          href="/resume.pdf"
+          download="Ramakrishna-Resume.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Resume
+        </a>
         <Link className="btn primary" href="/#contact">
           Contact
         </Link>
