@@ -5,7 +5,7 @@ export function Footer() {
     <footer className="site-footer">
       <div className="wrap">
         <span>
-          &copy; {year} Ramakrishna. Built by hand with Next.js and plain CSS.
+          &copy; {year} Ramakrishna. Built with Next.js and plain CSS.
         </span>
         <span className="footer-links">
           <a
@@ -23,6 +23,8 @@ export function Footer() {
           >
             LinkedIn
           </a>
+          <span aria-hidden="true">&middot;</span>
+          <a href="#main">Back to top</a>
         </span>
       </div>
     </footer>

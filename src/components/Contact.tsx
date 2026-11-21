@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ContactForm } from "@/components/ContactForm";
 
 export function Contact() {
@@ -7,9 +6,10 @@ export function Contact() {
       <div className="wrap contact">
         <div>
           <p className="eyebrow">Contact</p>
-          <h2 id="contact-title">Got a role, or a hard problem?</h2>
+          <h2 id="contact-title">Have a problem worth solving?</h2>
           <p className="sub-text">
-            Send a message and it lands straight in my inbox. I reply fast.
+            I&apos;m open to software engineering opportunities. Tell me about
+            your team, the role or the problem you&apos;re working on.
           </p>
 
           <a
@@ -28,9 +28,13 @@ export function Contact() {
           >
             GitHub &rarr;
           </a>
-          <Link className="big-link" href="/resume.pdf">
-            Resume (PDF) &rarr;
-          </Link>
+          <a
+            className="big-link"
+            href="/resume.pdf"
+            download="Ramakrishna-Resume.pdf"
+          >
+            Download resume &rarr;
+          </a>
         </div>
 
         <ContactForm />
