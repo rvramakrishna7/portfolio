@@ -1359,11 +1359,30 @@ section.block {
   max-width: 100%;
 }
 
+.case-diagram svg.diag-desktop {
+  display: block;
+}
+
+.case-diagram svg.diag-mobile {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .case-diagram svg.diag-desktop {
+    display: none;
+  }
+
+  .case-diagram svg.diag-mobile {
+    display: block;
+  }
+}
+
 .case-diagram figcaption {
   margin-top: 14px;
-  font: 500 0.8rem var(--mono);
+  font: 500 0.78rem var(--mono);
   color: var(--text-2);
   text-align: center;
+  line-height: 1.4;
 }
 
 .case-links {
