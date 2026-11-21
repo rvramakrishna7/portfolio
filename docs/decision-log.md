@@ -15,3 +15,6 @@
 | DEC-011 | 2026-11-20 | Without JavaScript the contact form cannot send; LinkedIn and GitHub links sit beside it. Accepted by the planner. | Accepted |
 | DEC-012 | 2026-11-20 | Contact delivery moved from Web3Forms to Resend because Web3Forms free plan blocks server-side calls; DEC-011 otherwise unchanged. | Accepted |
 | DEC-013 | 2026-11-20 | OG image tagline rendered as five flex word items with 11px column gap because Satori ignores CSS word-spacing on plain text runs. | Accepted |
+| DEC-014 | 2026-11-21 | Redesign: clean Apple-like palette, light/dark toggle, blue accent, system fonts, old structure and identity kept (blueprint hero, chapters, proof strip, flat design with zero gradients). | Accepted |
+| DEC-015 | 2026-11-21 | NO email address anywhere on the site. Contact is the form, LinkedIn, GitHub and the resume. | Accepted |
+| DEC-016 | 2026-11-21 | Mobile Lighthouse Performance 83 to 87 accepted by the owner as a known limitation (reason: React 19 hydration runtime evaluation TBT 520 to 710 ms under simulated 4x CPU throttle; FCP/LCP 0.8 s, CLS 0; desktop 99 to 100; A/BP/SEO 100). | Accepted |

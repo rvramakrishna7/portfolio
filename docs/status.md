@@ -1,8 +1,18 @@
 # Status: Portfolio site
 
-Current step: R4 done on feat/r4-qa (content promoted to docs/content.md, SEO updated, OG image restyled, check:numbers TEST-013 passing on all 5 pages, full Playwright suite 102/102 passing, Lighthouse measured on production build); awaiting owner approval to merge and start R5.
-Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-013).
+Current step: R0 to R4 merged on main; R5 (Resume & Ship, Part A: documentation and validation) in progress on feat/r5-ship.
+Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Phase R5 Part A: Added DEC-014 (redesign styling & tokens), DEC-015 (no email anywhere on the site), and DEC-016 (owner-accepted mobile Lighthouse known limitation) to `docs/decision-log.md`.
+- Confirmed `public/resume.pdf` is tracked in git and links from header, hero, and palette are intact.
+- Gated and open items tracked:
+  - [GATED] Vouch "Top 50 finalist" claim: excluded.
+  - [GATED] Vouch server test counts (100 server tests): excluded.
+  - [GATED] Vouch 10-12s cold start baseline: excluded; only 931ms cold start shown.
+  - [GATED] MCP Gateway server test count details: 1,212 headline tests shown per R0 audit.
+  - [OPEN] SonicVocal test figures (2,026 of 2,239) and employer public disclosure: left out / pending owner confirmation.
+  - [OPEN] Zync summary request payload details: left out; described only as "turns the meeting into key points, decisions and action items".
+- Phase R4 Merged: Merged `feat/r4-qa` into `main` (`9734b5f`), verified all checks pass cleanly on `main`.
 - Phase R4 Item 1 (Promote Content): Promoted `docs/content-v2.md` to `docs/content.md`, preserving "Form messages" microcopy section word for word; marked `docs/content-v2.md` as PROMOTED.
 - Phase R4 Item 2 (SEO & Metadata): Updated home title (`Ramakrishna | Software Engineer (Full-Stack, Backend, AI)`, 57 chars < 60), description (155 chars < 160), story titles (< 75 chars, project name first), descriptions (< 160 chars), JSON-LD (WebSite, Person with addressCountry India, no email, no phone), added `src/lib/site.test.ts` for `NEXT_PUBLIC_SITE_URL` resolution, and updated `e2e/seo.spec.ts`.
 - Phase R4 Item 3 (OG Image): Restyled `src/app/opengraph-image.tsx` using new tokens (`#0B0B0D` background, `#2997FF` blue accent, `#F5F5F7` text, `#A1A1A6` subtitle, `#303034` line, `#86868B` footer), preserving DEC-013 11px columnGap flex tagline. Reviewed `e2e/screenshots/og.png` via `read_file`.
