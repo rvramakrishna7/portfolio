@@ -239,8 +239,8 @@ test.describe("Theme system and tokens (TEST-014 to TEST-016)", () => {
           expect(bodyText).not.toContain(token);
         }
 
-        // Capture required screenshots at 375 and 1280
-        if (width === 375 || width === 1280) {
+        // Capture required screenshots at 375, 1280, and 1440
+        if (width === 375 || width === 1280 || width === 1440) {
           // Header screenshot
           const header = page.locator("header.site-head");
           await header.screenshot({

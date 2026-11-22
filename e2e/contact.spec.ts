@@ -67,7 +67,7 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
       "AI and Automation Engineer Intern, Luxecurio Pvt Ltd (SonicVocal). Remote. August 2026 to November 2026."
     );
     await expect(exp.locator(".intro")).toHaveText(
-      "Businesses lose opportunities when calls go unanswered because the owner or staff are busy. Someone has to pick up, understand the request, check the calendar and book the appointment by hand."
+      "Businesses lose opportunities when calls go unanswered because the owner or staff are busy. Someone has to pick up, understand the request, check the calendar and book the appointment manually."
     );
     await expect(exp.locator(".product-desc")).toHaveText(
       "SonicVocal is an AI voice platform for businesses. Its agent answers real phone calls, understands what the caller needs, answers common questions from a knowledge base, checks availability and books appointments through Cal.com, records leads and contacts, takes callback and opt-out requests, and transfers to a human when needed. It also runs outbound calling campaigns."
