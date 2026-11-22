@@ -10,6 +10,7 @@ interface PaletteItem {
 }
 
 const PALETTE_ITEMS: readonly PaletteItem[] = [
+  { label: "Experience", hint: "internship", href: "/#experience" },
   { label: "Work", hint: "four stories", href: "/#work" },
   {
     label: "Restart Options",
@@ -23,7 +24,6 @@ const PALETTE_ITEMS: readonly PaletteItem[] = [
   },
   { label: "Vouch", hint: "story 03", href: "/work/vouch" },
   { label: "Zync", hint: "story 04", href: "/work/zync" },
-  { label: "Experience", hint: "internship", href: "/#experience" },
   { label: "Skills", hint: "capabilities", href: "/#skills" },
   { label: "About", hint: "how I work", href: "/#about" },
   { label: "Contact", hint: "send a message", href: "/#contact" },

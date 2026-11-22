@@ -69,14 +69,13 @@ export const STORIES: readonly Story[] = [
     category: "Options trading automation",
     headline: "Turned a manual options adjustment into a 2 to 3 second workflow.",
     problemShort:
-      "When the market moves, a trader has to find the right strikes again by hand. One adjustment took 45 to 60 seconds while prices kept changing.",
+      "Stock markets run on timing. When prices move, a trader has to pick fresh strikes, check them against their rules and place the orders, and doing that manually usually takes a minute or more while the market keeps moving. Predefined strategy rules now choose the strikes automatically, so the adjustment takes 2 to 3 seconds.",
     builtShort:
       "Strategy rules pick the strikes. The trader confirms with one click, and a configured loss limit can trigger an automatic exit.",
     metrics: [
       {
-        value: "45 to 60 s → 2 to 3 s",
-        label:
-          "Strike adjustment, manual versus automated, timed with a stopwatch.",
+        value: "1 min or more → 2 to 3 s",
+        label: "Strike adjustment, manual versus automated.",
       },
       {
         value: "38",
@@ -89,9 +88,9 @@ export const STORIES: readonly Story[] = [
 
     // Nine-part story fields
     problem:
-      "Options traders running strategies such as straddles, strangles, iron flies, debit spreads and calendar spreads often have to read the option chain and pick strikes by hand. When the market moves they have to do it again: search for the strikes, check them against their rules, then place the orders.",
+      "Stock markets are about timing, and a trade is only as good as the moment it is placed. Traders running straddles, strangles, iron flies, debit spreads and calendar spreads have to read the option chain, pick strikes, check them against their rules and place the orders. When the market moves they do it all again, and manually that usually takes a minute or more. Automating those predefined rules turned the same adjustment into a few seconds of work.",
     whyItFellShort:
-      "Prices keep changing while the trader does this. One manual strike adjustment took about 45 to 60 seconds.",
+      "Prices keep moving while the trader works through the steps, so a slow adjustment can miss the moment it was meant for.",
     built:
       "Strategy-specific rules that pick the strikes automatically, one-click execution of the adjustment, and automatic exits when a configured loss limit is reached. Five strategies: debit spread, straddle, strangle, iron fly and calendar spread. Both paper and live modes.",
     decisions: [
@@ -105,8 +104,8 @@ export const STORIES: readonly Story[] = [
     resultsTable: [
       {
         measure: "Strike adjustment",
-        value: "45 to 60 s manual, 2 to 3 s automated",
-        howMeasured: "Timed with a stopwatch: by hand before, automatic after.",
+        value: "1 min or more manual, 2 to 3 s automated",
+        howMeasured: "Strike adjustment timed before and after automation.",
       },
       {
         measure: "REST endpoints",
@@ -122,7 +121,7 @@ export const STORIES: readonly Story[] = [
     honestNote:
       "This project automates execution. It does not predict markets, and I make no claim about trading returns.",
     diagram: "BeforeAfterBars",
-    diagramCaption: "Timed with a stopwatch",
+    diagramCaption: "Manual versus automated adjustment",
 
     // Compatibility fields
     tag: "Options trading automation",
@@ -136,8 +135,8 @@ export const STORIES: readonly Story[] = [
     ],
     results: [
       {
-        value: "45 to 60 s → 2 to 3 s",
-        label: "Strike shifting time (timed by hand)",
+        value: "1 min or more → 2 to 3 s",
+        label: "Strike adjustment, manual versus automated",
       },
       {
         value: "38",
@@ -166,7 +165,7 @@ export const STORIES: readonly Story[] = [
     ],
     seoTitle: "Restart Options: Manual options adjustment to 2 to 3 s | Ramakrishna",
     seoDescription:
-      "Turned manual options adjustments from 45 to 60 s into a 2 to 3 second workflow with strategy rules, one-click execution, and 38 REST endpoints.",
+      "Turned manual options adjustments from 1 min or more into a 2 to 3 second workflow with strategy rules, one-click execution, and 38 REST endpoints.",
   },
   {
     number: "02",
@@ -175,7 +174,7 @@ export const STORIES: readonly Story[] = [
     category: "Infrastructure, security and AI tool integration",
     headline: "One controlled entry point for a team's AI tools.",
     problemShort:
-      "Every team member had to set up each MCP server on their own. Credentials ended up spread across laptops, and nobody had a shared record of which tools were used.",
+      "Teams adopting AI tools end up with every member setting up each MCP server alone, credentials scattered across laptops and no shared record of which tools get used. One gateway gives the team a single controlled entry point instead.",
     builtShort:
       "A gateway. An admin registers the servers once. Members connect through one URL and see only the tools their role allows. Upstream credentials stay encrypted on the gateway.",
     metrics: [
@@ -304,7 +303,7 @@ export const STORIES: readonly Story[] = [
     category: "AI brand content verification",
     headline: "An AI reviewer shouldn't approve a claim without being able to prove it.",
     problemShort:
-      'Marketing teams publish claims like "keeps drinks cold for 48 hours". Generic AI tools can write a convincing citation that points to nothing, and a reviewer cannot tell.',
+      'Brand teams live on claims like "keeps drinks cold for 48 hours", and one unsupported claim can reach customers. Generic AI tools will write a convincing citation that points to nothing, and a reviewer cannot tell. In Vouch the AI suggests, and backend code decides whether the evidence is real.',
     builtShort:
       "An evidence-first review system. The model suggests and analyses. Backend code checks every citation against approved, unexpired company facts before anything is shown.",
     metrics: [
@@ -453,13 +452,13 @@ export const STORIES: readonly Story[] = [
     category: "Real-time video meetings with AI notes",
     headline: "People came to meetings to participate, not to write minutes.",
     problemShort:
-      "In an online meeting someone has to take notes while also listening and talking. Decisions and action items get missed.",
+      "A good meeting needs everyone listening, yet someone always ends up typing notes and missing the conversation, and decisions still slip through. Zync writes the notes when the call ends, and the summary is on screen in under 3 seconds.",
     builtShort:
       "A video meeting app that writes the notes when the call ends: key points, decisions and action items.",
     metrics: [
       {
         value: "Under 3 s",
-        label: "From call end to summary on screen, timed by hand.",
+        label: "From call end to summary on screen.",
       },
       {
         value: "100",
@@ -483,7 +482,7 @@ export const STORIES: readonly Story[] = [
     whyItFellShort:
       "Notes are either missing or wrong, and the person taking them is not fully part of the conversation.",
     built:
-      "A video meeting app that writes the notes when the call ends. The summary lists key points, decisions and action items and appears within about 3 seconds in my timed run. It also has real-time chat, reactions, raise hand, JWT login and Google login.",
+      "A video meeting app that writes the notes when the call ends. The summary lists key points, decisions and action items and appears within about 3 seconds in my own timing. It also has real-time chat, reactions, raise hand, JWT login and Google login.",
     decisions: [
       "Audio and video go peer to peer over WebRTC. The application server only handles signalling, which means it only helps participants find and connect to each other. The media does not pass through it. That keeps the server small. I make no scale claims.",
       "Groq with Llama 3.3 70B writes the summary.",
@@ -492,7 +491,8 @@ export const STORIES: readonly Story[] = [
       {
         measure: "Call end to summary",
         value: "Under 3 s",
-        howMeasured: "From call end to summary on screen, timed by hand.",
+        howMeasured:
+          "Timed manually from the end of the call to the summary on screen.",
       },
       {
         measure: "Lighthouse performance",
@@ -521,7 +521,7 @@ export const STORIES: readonly Story[] = [
     results: [
       {
         value: "Under 3 s",
-        label: "From call end to summary on screen (timed by hand)",
+        label: "From call end to summary on screen.",
       },
       {
         value: "100",

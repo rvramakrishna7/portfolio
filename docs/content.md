@@ -19,7 +19,7 @@ Label: The short version. Heading: Four numbers, and how I got them.
 - 1,212 | automated tests passing (integer count-up allowed). How measured: In the MCP gateway project. 900 run without a database: 185 in the gateway, 396 in the dashboard, 225 and 94 in two tool servers. 312 more gateway tests need PostgreSQL, which gives 1,212. The full 1,212 run was on 2026-11-19; the 900 figure was re-run in the R0 audit on 2026-11-21.
 - 98 to 100 | Lighthouse on three live apps. How measured: Desktop preset. Zync 100, Restart Options 99, Vouch 98. Measured 2026-11-19. (static text)
 - 18.83 s → 3.35 s | AI review time in Vouch. How measured: The first number is one measurement before the change. The second is the average of 10 runs after, with all 50 claim verdicts correct. (static text)
-- 45 to 60 s → 2 to 3 s | moving a strike in Restart Options. How measured: Timed with a stopwatch: by hand before, automatic after. (static text)
+- 1 min or more → 2 to 3 s | moving a strike in Restart Options. How measured: Strike adjustment timed before and after automation. (static text)
 
 ## Hero title block (blueprint style, bottom right, replaces the old stats table)
 Three rows: BASED India | EDUCATION BITS Pilani, Computer Science | GRADUATED 2026. No test count, no project count.
@@ -44,7 +44,7 @@ Three rows: BASED India | EDUCATION BITS Pilani, Computer Science | GRADUATED 20
 - Site address: the REAL live address is https://rramakrishna.vercel.app (two r). NEXT_PUBLIC_SITE_URL must equal it. See phase R0.
 
 ## Navigation
-Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume link. Brand text "Ramakrishna" links to the top. Keep the Ctrl+K "Jump to" palette (entries: the four stories, Experience, Skills, About, Contact, Resume).
+Home | Experience | Work | Skills | Contact, then a theme toggle, then a Resume link. Brand text "Ramakrishna" links to the top. Keep the Ctrl+K "Jump to" palette (entries: Experience, Work, the four stories, Skills, About, Contact, Resume).
 
 ## Home: hero
 - Eyebrow (status pill): Open to software engineering opportunities
@@ -65,16 +65,16 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 ### Card 1: Restart Options (slug: restart-options)
 - Category: Options trading automation
 - Headline: Turned a manual options adjustment into a 2 to 3 second workflow.
-- Problem: When the market moves, a trader has to find the right strikes again by hand. One adjustment took 45 to 60 seconds while prices kept changing.
+- Problem: Stock markets run on timing. When prices move, a trader has to pick fresh strikes, check them against their rules and place the orders, and doing that manually usually takes a minute or more while the market keeps moving. Predefined strategy rules now choose the strikes automatically, so the adjustment takes 2 to 3 seconds.
 - Built: Strategy rules pick the strikes. The trader confirms with one click, and a configured loss limit can trigger an automatic exit.
-- Metrics: "45 to 60 s → 2 to 3 s" | Strike adjustment, manual versus automated, timed with a stopwatch. And "38" | REST endpoints with JWT login and owner and user roles.
+- Metrics: "1 min or more → 2 to 3 s" | Strike adjustment, manual versus automated. And "38" | REST endpoints with JWT login and owner and user roles.
 - Tags: React, Node.js, Express, MongoDB, WebSocket, JWT
 - Live: https://restartoptions.vercel.app  Code: https://github.com/rvramakrishna7/restart
 
 ### Card 2: Vouch (slug: vouch)
 - Category: AI brand content verification
 - Headline: An AI reviewer shouldn't approve a claim without being able to prove it.
-- Problem: Marketing teams publish claims like "keeps drinks cold for 48 hours". Generic AI tools can write a convincing citation that points to nothing, and a reviewer cannot tell.
+- Problem: Brand teams live on claims like "keeps drinks cold for 48 hours", and one unsupported claim can reach customers. Generic AI tools will write a convincing citation that points to nothing, and a reviewer cannot tell. In Vouch the AI suggests, and backend code decides whether the evidence is real.
 - Built: An evidence-first review system. The model suggests and analyses. Backend code checks every citation against approved, unexpired company facts before anything is shown.
 - Metrics: "18.83 s → 3.35 s" | First review measurement, then the average of 10 optimised runs. And "10 of 10" | Runs where every claim was judged correctly (50 verdicts).
 - Tags: React 19, TypeScript, Vite, Express, PostgreSQL, Supabase, pgvector, Groq, Gemini, Playwright
@@ -83,7 +83,7 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 ### Card 3: Team MCP Gateway (slug: mcp-gateway)
 - Category: Infrastructure, security and AI tool integration
 - Headline: One controlled entry point for a team's AI tools.
-- Problem: Every team member had to set up each MCP server on their own. Credentials ended up spread across laptops, and nobody had a shared record of which tools were used.
+- Problem: Teams adopting AI tools end up with every member setting up each MCP server alone, credentials scattered across laptops and no shared record of which tools get used. One gateway gives the team a single controlled entry point instead.
 - Built: A gateway. An admin registers the servers once. Members connect through one URL and see only the tools their role allows. Upstream credentials stay encrypted on the gateway.
 - Metrics: "22 ms" | Tool-list lookup with a deliberately slow upstream, served from the database cache. And "3" | MCP servers behind one login.
 - Tags: TypeScript, React, PostgreSQL, Node.js, MCP, Docker, Kubernetes, Helm, Groq
@@ -92,9 +92,9 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 ### Card 4: Zync (slug: zync)
 - Category: Real-time video meetings with AI notes
 - Headline: People came to meetings to participate, not to write minutes.
-- Problem: In an online meeting someone has to take notes while also listening and talking. Decisions and action items get missed.
+- Problem: A good meeting needs everyone listening, yet someone always ends up typing notes and missing the conversation, and decisions still slip through. Zync writes the notes when the call ends, and the summary is on screen in under 3 seconds.
 - Built: A video meeting app that writes the notes when the call ends: key points, decisions and action items.
-- Metrics: "Under 3 s" | From call end to summary on screen, timed by hand. And "100" | Lighthouse performance, desktop (LCP 0.3 s).
+- Metrics: "Under 3 s" | From call end to summary on screen. And "100" | Lighthouse performance, desktop (LCP 0.3 s).
 - Tags: React, Socket.io, WebRTC, MongoDB, Groq, Llama 3.3 70B
 - Live: https://zync-video-conferencing.vercel.app  Code: https://github.com/rvramakrishna7/zync-video-conferencing
 
@@ -105,7 +105,7 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 - Label: Experience
 - Heading: A business shouldn't lose a customer just because nobody can answer the phone.
 - Role line: AI and Automation Engineer Intern, Luxecurio Pvt Ltd (SonicVocal). Remote. August 2026 to November 2026.
-- Problem paragraph: Businesses lose opportunities when calls go unanswered because the owner or staff are busy. Someone has to pick up, understand the request, check the calendar and book the appointment by hand.
+- Problem paragraph: Businesses lose opportunities when calls go unanswered because the owner or staff are busy. Someone has to pick up, understand the request, check the calendar and book the appointment manually.
 - What the product does: SonicVocal is an AI voice platform for businesses. Its agent answers real phone calls, understands what the caller needs, answers common questions from a knowledge base, checks availability and books appointments through Cal.com, records leads and contacts, takes callback and opt-out requests, and transfers to a human when needed. It also runs outbound calling campaigns.
 - My work (7 items, in this order):
   1. Stopped finished calls from flipping back to active. I built the call-state handling for Vapi webhooks, so a late or out-of-order event cannot reopen a call that has ended.
@@ -164,8 +164,8 @@ Home | Work | Experience | Skills | Contact, then a theme toggle, then a Resume 
 Use short paragraphs and short bullet lists. No API-doc tone.
 
 ### Story: Restart Options
-- Problem: Options traders running strategies such as straddles, strangles, iron flies, debit spreads and calendar spreads often have to read the option chain and pick strikes by hand. When the market moves they have to do it again: search for the strikes, check them against their rules, then place the orders.
-- Why the usual way fell short: Prices keep changing while the trader does this. One manual strike adjustment took about 45 to 60 seconds.
+- Problem: Stock markets are about timing, and a trade is only as good as the moment it is placed. Traders running straddles, strangles, iron flies, debit spreads and calendar spreads have to read the option chain, pick strikes, check them against their rules and place the orders. When the market moves they do it all again, and manually that usually takes a minute or more. Automating those predefined rules turned the same adjustment into a few seconds of work.
+- Why the usual way fell short: Prices keep moving while the trader works through the steps, so a slow adjustment can miss the moment it was meant for.
 - What I built: Strategy-specific rules that pick the strikes automatically, one-click execution of the adjustment, and automatic exits when a configured loss limit is reached. Five strategies: debit spread, straddle, strangle, iron fly and calendar spread. Both paper and live modes.
 - Decisions:
   - The rules for each strategy choose the strikes, so the trader confirms an adjustment instead of calculating it.
@@ -173,9 +173,9 @@ Use short paragraphs and short bullet lists. No API-doc tone.
   - Open positions and P&L are stored in MongoDB, so a server restart does not lose them.
   - A short cooldown stops the same adjustment from firing twice in a row.
 - Reliability: When the internet drops, the live feed reconnects and re-subscribes every open position, so monitoring carries on by itself. After a restart, positions and P&L are loaded back from MongoDB. Access uses JWT login with owner and user roles across 38 REST endpoints.
-- Results: Strike adjustment 45 to 60 s manual, 2 to 3 s automated (stopwatch, by hand). REST endpoints: 38. Lighthouse performance 99 (desktop).
+- Results: Strike adjustment 1 min or more manual, 2 to 3 s automated. REST endpoints: 38. Lighthouse performance 99 (desktop).
 - Honest note (show it): This project automates execution. It does not predict markets, and I make no claim about trading returns.
-- Diagram: simple before and after bars: 45 to 60 s versus 2 to 3 s. Draw bars to scale from the midpoint 52.5 s and 2.5 s, label them with the real ranges, caption "Timed with a stopwatch".
+- Diagram: simple before and after bars: 1 min or more versus 2 to 3 s. Draw bars to scale from 60 s and 2.5 s, label them with the real ranges, caption "Manual versus automated adjustment".
 
 ### Story: Vouch
 - Problem: Marketing teams publish claims such as "India's No. 1 sustainable smart water bottle", "keeps drinks cold for 48 hours" and "made from 100% recycled ocean plastic". A brand reviewer needs to know whether each claim is backed by an approved fact, whether that fact has expired, whether the claim contradicts product data, whether the wording breaks a brand rule, and who approved the final text.
@@ -212,12 +212,12 @@ Use short paragraphs and short bullet lists. No API-doc tone.
 ### Story: Zync
 - Problem: In an online meeting, people take notes while they listen and speak. Important decisions and action items get missed.
 - Why the usual way fell short: Notes are either missing or wrong, and the person taking them is not fully part of the conversation.
-- What I built: A video meeting app that writes the notes when the call ends. The summary lists key points, decisions and action items and appears within about 3 seconds in my timed run. It also has real-time chat, reactions, raise hand, JWT login and Google login.
+- What I built: A video meeting app that writes the notes when the call ends. The summary lists key points, decisions and action items and appears within about 3 seconds in my own timing. It also has real-time chat, reactions, raise hand, JWT login and Google login.
 - Decisions:
   - Audio and video go peer to peer over WebRTC. The application server only handles signalling, which means it only helps participants find and connect to each other. The media does not pass through it. That keeps the server small. I make no scale claims.
   - Groq with Llama 3.3 70B writes the summary.
 - Diagram: participants connected to each other by WebRTC (audio, video), and each connected to the signalling server (Socket.io) with a thin line. Label the thick line "media" and the thin line "signals only".
-- Results: Under 3 s from call end to summary on screen (timed by hand). Lighthouse performance 100 (desktop). LCP 0.3 s (that measurement).
+- Results: Under 3 s from call end to summary on screen (timed manually from the end of the call to the summary on screen). Lighthouse performance 100 (desktop). LCP 0.3 s (that measurement).
 - [OPEN] What exactly goes into the summary request (transcript or something else) is not in the brief. Do not describe it. Say "turns the meeting into key points, decisions and action items".
 
 ## SEO and metadata

@@ -72,8 +72,8 @@ export default function HomePage() {
       />
       <Hero />
       <ProofStrip />
-      <Work />
       <Experience />
+      <Work />
       <Skills />
       <About />
       <Contact />

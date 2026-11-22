@@ -25,7 +25,7 @@ export function Experience() {
           <p className="intro">
             Businesses lose opportunities when calls go unanswered because the
             owner or staff are busy. Someone has to pick up, understand the
-            request, check the calendar and book the appointment by hand.
+            request, check the calendar and book the appointment manually.
           </p>
           <p className="product-desc">
             SonicVocal is an AI voice platform for businesses. Its agent answers
