@@ -135,6 +135,10 @@ test.describe("Shell and design system (S1)", () => {
       });
 
       await page.goto("/");
+      await expect(page.locator("dialog#palette")).toHaveAttribute(
+        "data-ready",
+        "true"
+      );
       const opener = page.locator("[data-open-palette]");
       if (await opener.isVisible()) {
         await opener.click();
