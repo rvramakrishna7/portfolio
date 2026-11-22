@@ -1,8 +1,45 @@
 # Status: Portfolio site
 
-Current step: R0 to R6 merged on main (merge commit `df51f2e`, push pending).
+Current step: J1 admin foundation merged on main (merge commit `b47c73a`, push pending).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Phase J1 (Private Owner-Only /admin & Job Desk Foundation):
+  - Merge commit on main: `b47c73a` ("feat: merge J1 admin foundation (private login, schema, dashboard shell)").
+  - Auth Core & Crypto (`src/lib/admin/*`):
+    - `password.ts`: scrypt password verification with format `scrypt$N$r$p$saltB64$hashB64` and `timingSafeEqual`.
+    - `session.ts`: signed session token using HMAC-SHA256 with `ADMIN_SESSION_SECRET` (min 32 chars enforced), payload `{sub: "owner", iat, exp}` with 12 h expiry and `timingSafeEqual` signature verification.
+    - `cookie.ts`: sets `__Host-admin` in production (Secure, Path=/, no Domain), plain `admin` in dev; HttpOnly, SameSite=Strict.
+    - `origin.ts`: origin and referer verification on state-changing requests (rejects cross-origin requests with 403).
+    - `ratelimit.ts`: dual rate limiter:
+      - Per-IP limit: max 5 failed logins per 15 min per IP-hash; locks for 15 min.
+      - Global limit: max 30 failed logins across all IPs in 60 min; locks for 60 min.
+      - Backed by Postgres `login_attempts` table when `DATABASE_URL` is configured, with safe in-memory fallback + console warning. IP is HMAC-hashed, never stored raw.
+    - `require-admin.ts`: defense-in-depth helper for both Server Components (`requireAdminPage()` redirecting to `/admin/login`) and Route Handlers (`requireAdminApi()` returning 401 JSON + `X-Robots-Tag: noindex, nofollow`). Safe try/catch cookie decode rejects malformed cookies with 401, never 500.
+    - `scripts/hash-password.mjs`: password hasher prompting in terminal (hidden in TTY) for owner use.
+  - Route Protection & Proxy (`src/proxy.ts`):
+    - Next.js 16 Proxy intercepts `/admin/:path*` and `/api/admin/:path*`, redirects unauthed page visits to `/admin/login`, returns 401 JSON for unauthed API requests, and injects `X-Robots-Tag: noindex, nofollow` on all admin responses.
+    - `POST /api/admin/login`: Zod validated, scrypt constant-time response, rate-limit enforced (429), fails closed (503) if secrets are unset.
+    - `POST /api/admin/logout`: clears session cookie.
+  - Database Schema & Migrations (`db/migrations/001_init.sql`, `scripts/db-migrate.mjs`):
+    - Created migration runner `npm run db:migrate` using `@neondatabase/serverless`.
+    - Schema tables with UUID primary keys and indexes: `login_attempts`, `jobs`, `contacts`, `outreach`, `events`, `visits`, `inbound_raw`, and `schema_migrations`.
+  - Dashboard Shell:
+    - `/admin/login`: modern card form with 52px input, 16px border-radius, pill button, accessible validation errors.
+    - `/admin`: protected Job Desk header, logout, theme toggle, 5 key stat cards, 5 section tabs (Jobs, Pipeline, Messages, Visits, Settings) with clean empty state cards.
+    - Zero gradients, system fonts, WCAG AA contrast.
+  - Safety & SEO:
+    - `src/app/robots.ts` includes `disallow: ["/api/", "/admin", "/admin/"]`.
+    - Zero links to admin on public pages, sitemap untouched, zero changes to public components or content.
+  - Full Verification:
+    - 43 unit tests passed across 6 test files (`npm test`).
+    - Full Playwright suite passed: 124/124 tests passed across 16 spec files. Port 3000 verified free.
+    - Zero secret values in source code.
+  - Owner TODO:
+    1. Create a free Neon Postgres database.
+    2. Put `DATABASE_URL` into `.env.local` and Vercel dashboard.
+    3. Run `node scripts/hash-password.mjs` to generate password hash.
+    4. Put `ADMIN_PASSWORD_HASH` and a random 48+ char `ADMIN_SESSION_SECRET` into `.env.local` and Vercel dashboard.
+    5. Run `npm run db:migrate`.
 - Phase R6 (Copy polish, typography reset, Experience before Work, modern contact form):
   - Merge commit on main: `df51f2e` ("feat: merge R6 polish (story copy, no italics, Experience before Work, modern contact form)").
   - Site copy rewrite:
