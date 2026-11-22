@@ -149,12 +149,13 @@ test.describe("Admin Area & Job Desk Foundation (J1)", () => {
     await expect(robotsMeta).toHaveAttribute("content", /noindex/);
   });
 
-  test("robots.txt has Disallow: /admin/ and sitemap.xml has no /admin", async ({
+  test("robots.txt has Disallow: /admin and Disallow: /admin/ and sitemap.xml has no /admin", async ({
     request,
   }) => {
     const robotsRes = await request.get("/robots.txt");
     expect(robotsRes.status()).toBe(200);
     const robotsText = await robotsRes.text();
+    expect(robotsText).toContain("Disallow: /admin");
     expect(robotsText).toContain("Disallow: /admin/");
 
     const sitemapRes = await request.get("/sitemap.xml");

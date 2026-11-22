@@ -55,7 +55,15 @@ export function requireAdminApi(req: Request):
   // Extract cookie value safely
   const cookiesList = cookieHeader.split(";").map((c) => c.trim());
   const targetCookie = cookiesList.find((c) => c.startsWith(`${cookieName}=`));
-  const token = targetCookie ? decodeURIComponent(targetCookie.slice(cookieName.length + 1)) : null;
+  let token: string | null = null;
+  if (targetCookie) {
+    try {
+      token = decodeURIComponent(targetCookie.slice(cookieName.length + 1));
+    } catch {
+      // Malformed URI encoding (e.g. "%E0%A4%A") -> reject safely with null, never 500
+      token = null;
+    }
+  }
 
   const session = verifySessionToken(token, secret);
   if (!session) {

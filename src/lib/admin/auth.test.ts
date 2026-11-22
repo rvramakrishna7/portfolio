@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { hashPassword, verifyPassword } from "./password";
 import { createSessionToken, verifySessionToken } from "./session";
 import { verifyAdminOrigin } from "./origin";
@@ -168,6 +168,46 @@ describe("Login rate limiter (in-memory test)", () => {
     const status = await isLoginRateLimited(ipHash, baseTime + 11000);
     expect(status.locked).toBe(false);
   });
+
+  it("global rate limiter locks after 30 failed attempts across different IPs in 60 min", async () => {
+    const baseTime = 1000000000;
+
+    // 29 failed attempts from distinct IPs: not locked
+    for (let i = 0; i < 29; i++) {
+      const distinctIpHash = hashIp(`10.0.0.${i}`, TEST_SECRET);
+      await recordLoginAttempt(distinctIpHash, false, baseTime + i * 1000);
+    }
+    const freshIpHash = hashIp("10.0.0.254", TEST_SECRET);
+    expect((await isLoginRateLimited(freshIpHash, baseTime + 30000)).locked).toBe(false);
+
+    // 30th failed attempt from distinct IP: global lock triggers
+    const ip30Hash = hashIp("10.0.0.30", TEST_SECRET);
+    await recordLoginAttempt(ip30Hash, false, baseTime + 31000);
+
+    const lockedStatus = await isLoginRateLimited(freshIpHash, baseTime + 32000);
+    expect(lockedStatus.locked).toBe(true);
+    expect(lockedStatus.retryAfterSeconds).toBeGreaterThan(0);
+
+    // After 60 minutes + 1 second: global lock expires
+    const futureTime = baseTime + 31000 + 60 * 60 * 1000 + 1000;
+    const expiredStatus = await isLoginRateLimited(freshIpHash, futureTime);
+    expect(expiredStatus.locked).toBe(false);
+  });
+
+  it("warns and falls back to in-memory rate limiting when database fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.DATABASE_URL = "postgres://invalid-host:5432/bad_db";
+
+    try {
+      await recordLoginAttempt("fallback-test-ip", false);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "rate limiter: database unavailable, using in-memory fallback"
+      );
+    } finally {
+      delete process.env.DATABASE_URL;
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("requireAdminApi helper", () => {
@@ -202,5 +242,18 @@ describe("requireAdminApi helper", () => {
     const res = requireAdminApi(req);
     expect(res.session?.sub).toBe("owner");
     expect(res.errorResponse).toBeNull();
+  });
+
+  it("returns 401 when cookie contains malformed URI encoding, never throws 500", () => {
+    process.env.ADMIN_SESSION_SECRET = TEST_SECRET;
+    const reqWithMalformedCookie = new Request("http://localhost:3000/api/admin/jobs", {
+      headers: {
+        cookie: "admin=%E0%A4%A",
+      },
+    });
+    const res = requireAdminApi(reqWithMalformedCookie);
+    expect(res.session).toBeNull();
+    expect(res.errorResponse?.status).toBe(401);
+    expect(res.errorResponse?.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
   });
 });
