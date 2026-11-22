@@ -57,6 +57,25 @@ describe("scripts/check-copy.mjs", () => {
     expect(result.stderr).toContain("seamless");
   });
 
+  it("exits 1 on stopwatch or by hand", () => {
+    const fixtureFile = path.join(tempRoot, "src", "banned-timing.ts");
+    fs.writeFileSync(
+      fixtureFile,
+      'export const copy = "Timed with a stopwatch or done by hand";\n',
+      "utf8"
+    );
+
+    const result = spawnSync(process.execPath, [SCRIPT_PATH, "src"], {
+      cwd: tempRoot,
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("banned-timing.ts:1");
+    expect(result.stderr).toContain("stopwatch");
+    expect(result.stderr).toContain("by hand");
+  });
+
   it("exits 0 on clean copy", () => {
     const fixtureFile = path.join(tempRoot, "src", "clean.ts");
     fs.writeFileSync(

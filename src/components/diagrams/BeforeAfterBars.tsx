@@ -12,7 +12,7 @@ export function BeforeAfterBars() {
       >
         <title id="before-after-title-d">Strike adjustment time comparison</title>
         <desc id="before-after-desc-d">
-          Simple before and after bars: 45 to 60 s manual versus 2 to 3 s automated, timed with a stopwatch.
+          Simple before and after bars: 1 min or more manual versus 2 to 3 s automated.
         </desc>
 
         {/* Row 1: Manual */}
@@ -26,24 +26,24 @@ export function BeforeAfterBars() {
         >
           Manual
         </text>
-        {/* Midpoint 52.5 s scaled bar: 357 px */}
+        {/* Scaled 60 s manual bar: 360 px */}
         <rect
           x="105"
           y="28"
-          width="357"
+          width="360"
           height="30"
           rx="6"
           fill="var(--border)"
         />
         <text
-          x="474"
+          x="475"
           y="48"
           fill="var(--text)"
           fontSize="13"
           fontFamily="var(--mono)"
           fontWeight="600"
         >
-          45 to 60 s
+          1 min or more
         </text>
 
         {/* Row 2: Automated */}
@@ -57,17 +57,17 @@ export function BeforeAfterBars() {
         >
           Automated
         </text>
-        {/* Midpoint 2.5 s scaled bar: 357 * (2.5 / 52.5) = 17 px */}
+        {/* Scaled 2.5 s automated bar: 360 * (2.5 / 60) = 15 px */}
         <rect
           x="105"
           y="82"
-          width="17"
+          width="15"
           height="30"
           rx="4"
           fill="var(--accent)"
         />
         <text
-          x="132"
+          x="130"
           y="102"
           fill="var(--accent)"
           fontSize="13"
@@ -89,7 +89,7 @@ export function BeforeAfterBars() {
       >
         <title id="before-after-title-m">Strike adjustment time comparison (mobile view)</title>
         <desc id="before-after-desc-m">
-          Simple before and after bars: 45 to 60 s manual versus 2 to 3 s automated, timed with a stopwatch.
+          Simple before and after bars: 1 min or more manual versus 2 to 3 s automated.
         </desc>
 
         {/* Row 1: Manual */}
@@ -103,24 +103,24 @@ export function BeforeAfterBars() {
         >
           Manual
         </text>
-        {/* Midpoint 52.5 s scaled bar: 189 px */}
+        {/* Scaled 60 s manual bar: 192 px */}
         <rect
           x="10"
           y="32"
-          width="189"
+          width="192"
           height="26"
           rx="5"
           fill="var(--border)"
         />
         <text
-          x="212"
+          x="210"
           y="50"
           fill="var(--text)"
-          fontSize="14"
+          fontSize="13"
           fontFamily="var(--mono)"
           fontWeight="600"
         >
-          45 to 60 s
+          1 min or more
         </text>
 
         {/* Row 2: Automated */}
@@ -134,11 +134,11 @@ export function BeforeAfterBars() {
         >
           Automated
         </text>
-        {/* Midpoint 2.5 s scaled bar: 189 * (2.5 / 52.5) = 9 px */}
+        {/* Scaled 2.5 s automated bar: 192 * (2.5 / 60) = 8 px */}
         <rect
           x="10"
           y="94"
-          width="9"
+          width="8"
           height="26"
           rx="2"
           fill="var(--accent)"
@@ -155,7 +155,7 @@ export function BeforeAfterBars() {
         </text>
       </svg>
 
-      <figcaption>Timed with a stopwatch</figcaption>
+      <figcaption>Manual versus automated adjustment</figcaption>
     </figure>
   );
 }

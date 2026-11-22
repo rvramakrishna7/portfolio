@@ -21,6 +21,8 @@ const BANNED_PATTERNS = [
   { label: "seamless", regex: /\bseamless\b/i },
   { label: "highly scalable", regex: /\bhighly scalable\b/i },
   { label: "I thrive on", regex: /\bi thrive on\b/i },
+  { label: "stopwatch", regex: /\bstopwatch\b/i },
+  { label: "by hand", regex: /\bby hand\b/i },
 ];
 
 function collectFiles(dirOrFilePath, results = []) {

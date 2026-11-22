@@ -28,9 +28,9 @@ const PROOF_CARDS: readonly ProofCard[] = [
       "The first number is one measurement before the change. The second is the average of 10 runs after, with all 50 claim verdicts correct.",
   },
   {
-    value: "45 to 60 s → 2 to 3 s",
+    value: "1 min or more → 2 to 3 s",
     meaning: "moving a strike in Restart Options",
-    howMeasured: "Timed with a stopwatch: by hand before, automatic after.",
+    howMeasured: "Strike adjustment timed before and after automation.",
   },
 ];
 
