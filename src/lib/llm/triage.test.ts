@@ -189,4 +189,141 @@ describe("LLM Triage & Guardrails", () => {
     expect(fake.callCount).toBe(0); // Did not make call
     expect(result.expClass).toBe("unclear");
   });
+
+  it("skips LLM when job was already triaged and description hash is unchanged", async () => {
+    const fake = new FakeLlmProvider();
+    fake.mockResponse = {
+      expClass: "junior",
+      minYears: 1,
+      geo: "worldwide",
+      geoReason: "Open worldwide",
+      summaryLine: "Role summary",
+      skills: ["TypeScript"],
+    };
+
+    const ruleExp = classifyExperience(baseJob.title, baseJob.description);
+    const ruleGeo = classifyGeo(baseJob.title, baseJob.location, baseJob.remoteScope, baseJob.description);
+    const ruleScore = scoreMatch({
+      title: baseJob.title,
+      description: baseJob.description,
+      tags: baseJob.tags,
+      expClass: ruleExp.expClass,
+      geoEligibility: ruleGeo.geo,
+    });
+
+    // First triage (not yet triaged)
+    const callsMade1 = { count: 0 };
+    const result1 = await triageJobWithLlm(
+      baseJob,
+      ruleExp,
+      ruleGeo,
+      ruleScore,
+      fake,
+      callsMade1
+    );
+
+    expect(fake.callCount).toBe(1);
+    expect(result1.descriptionHash).toBeDefined();
+    expect(result1.triagedAt).toBeDefined();
+
+    // Re-run with existingData containing same descriptionHash and triagedAt
+    const callsMade2 = { count: 0 };
+    const result2 = await triageJobWithLlm(
+      baseJob,
+      ruleExp,
+      ruleGeo,
+      ruleScore,
+      fake,
+      callsMade2,
+      {
+        triagedAt: result1.triagedAt,
+        descriptionHash: result1.descriptionHash,
+      }
+    );
+
+    // Call count on fake provider remains 1 (no new LLM call made!)
+    expect(fake.callCount).toBe(1);
+    expect(result2.llmSkipped).toBe("already");
+  });
+
+  it("skips LLM and marks filtered for non-engineering titles", async () => {
+    const nonEngTitles = [
+      "Sales Representative",
+      "VP of Marketing",
+      "Technical Recruiter",
+      "Talent Acquisition Lead",
+      "Customer Success Specialist",
+      "Account Executive",
+      "Legal Counsel",
+    ];
+
+    for (const title of nonEngTitles) {
+      const fake = new FakeLlmProvider();
+      const job: NormalizedJob = {
+        ...baseJob,
+        title,
+      };
+
+      const ruleExp = classifyExperience(job.title, job.description);
+      const ruleGeo = classifyGeo(job.title, job.location, job.remoteScope, job.description);
+      const ruleScore = scoreMatch({
+        title: job.title,
+        description: job.description,
+        tags: job.tags,
+        expClass: ruleExp.expClass,
+        geoEligibility: ruleGeo.geo,
+      });
+
+      const callsMade = { count: 0 };
+      const result = await triageJobWithLlm(
+        job,
+        ruleExp,
+        ruleGeo,
+        ruleScore,
+        fake,
+        callsMade
+      );
+
+      expect(fake.callCount).toBe(0);
+      expect(result.llmSkipped).toBe("irrelevant");
+      expect(result.filterReason).toBe("Non-engineering role");
+    }
+  });
+
+  it("skips LLM when rule indicates senior or restricted", async () => {
+    const fake = new FakeLlmProvider();
+
+    // Restricted geo job
+    const restrictedJob: NormalizedJob = {
+      ...baseJob,
+      location: "USA Only",
+      description: "Must be US citizen residing in North America.",
+    };
+
+    const ruleExp = classifyExperience(restrictedJob.title, restrictedJob.description);
+    const ruleGeo = classifyGeo(restrictedJob.title, restrictedJob.location, restrictedJob.remoteScope, restrictedJob.description);
+    const ruleScore = scoreMatch({
+      title: restrictedJob.title,
+      description: restrictedJob.description,
+      tags: restrictedJob.tags,
+      expClass: ruleExp.expClass,
+      geoEligibility: ruleGeo.geo,
+    });
+
+    expect(ruleGeo.geo).toBe("restricted");
+
+    const callsMade = { count: 0 };
+    const result = await triageJobWithLlm(
+      restrictedJob,
+      ruleExp,
+      ruleGeo,
+      ruleScore,
+      fake,
+      callsMade
+    );
+
+    expect(fake.callCount).toBe(0);
+    expect(result.llmSkipped).toBe("irrelevant");
+    expect(result.geoEligibility).toBe("restricted");
+  });
 });

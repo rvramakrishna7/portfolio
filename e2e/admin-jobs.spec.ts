@@ -102,21 +102,50 @@ test.describe("Admin Jobs Engine (J2)", () => {
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.locator(".admin-brand h1")).toHaveText("Ramakrishna Job Desk");
 
-    // 2. Shortlist tab should contain junior/fresher jobs that are fresh (2 days old and 5 days old)
-    await expect(page.locator(".admin-job-card")).toHaveCount(3);
+    // Assert tab counts show numbers (e.g. "Shortlist (5)")
+    const shortlistTabBtn = page.locator('button.filter-btn:has-text("Shortlist")');
+    await expect(shortlistTabBtn).toHaveText(/Shortlist \(\d+\)/);
+
+    // 2. Shortlist tab should contain junior/fresher jobs that are fresh (including Greenhouse and HN)
+    await expect(page.locator(".admin-job-card")).toHaveCount(5);
     await expect(page.locator(".admin-job-title").first()).toBeVisible();
 
     const textContent = await page.textContent(".admin-jobs-list");
     expect(textContent).toContain("Junior Backend Developer");
     expect(textContent).toContain("Full Stack Engineer (Fresher / New Grad)");
     expect(textContent).toContain("Software Engineer (5 Days Old)");
+    expect(textContent).toContain("Junior Platform Engineer");
+    expect(textContent).toContain("AI Engineer (Fresher / Junior)");
+
+    // Assert Greenhouse job is listed with its source tag
+    const ghCard = page.locator('.admin-job-card:has-text("Junior Platform Engineer")');
+    await expect(ghCard.locator(".admin-job-source-tag")).toContainText("greenhouse");
+
+    // Assert HN job is listed, shows 'Email available' badge
+    const hnCard = page.locator('.admin-job-card:has-text("AI Engineer (Fresher / Junior)")');
+    await expect(hnCard.locator(".admin-job-source-tag")).toContainText("hn");
+    await expect(hnCard.locator(".email-badge")).toHaveText("Email available");
+
+    // Assert status chips show "Exp: " and "Geo: " prefixes
+    await expect(ghCard.locator(".exp-badge")).toHaveText("Exp: junior");
+    await expect(ghCard.locator(".geo-badge")).toHaveText("Geo: india_ok");
+
+    // Assert source filter select contains new sources (greenhouse, lever, ashby, hn)
+    const sourceSelect = page.locator("#source-select");
+    await expect(sourceSelect.locator('option[value="greenhouse"]')).toHaveCount(1);
+    await expect(sourceSelect.locator('option[value="lever"]')).toHaveCount(1);
+    await expect(sourceSelect.locator('option[value="ashby"]')).toHaveCount(1);
+    await expect(sourceSelect.locator('option[value="hn"]')).toHaveCount(1);
+
     // Senior, US-only, and 15-day-old job should NOT be in shortlist
     expect(textContent).not.toContain("Senior Software Architect");
     expect(textContent).not.toContain("US Only Labs");
     expect(textContent).not.toContain("Legacy Backend Developer (15 Days Old)");
 
     // 3. Switch to 'Hidden' tab
-    await page.click('button:has-text("Hidden")');
+    const hiddenTabBtn = page.locator('button.filter-btn:has-text("Hidden")');
+    await expect(hiddenTabBtn).toHaveText(/Hidden \(\d+\)/);
+    await hiddenTabBtn.click();
     await page.waitForTimeout(300);
 
     const hiddenText = await page.textContent(".admin-jobs-list");
@@ -137,10 +166,12 @@ test.describe("Admin Jobs Engine (J2)", () => {
     const shortlist10dText = await page.textContent(".admin-jobs-list");
     expect(shortlist10dText).not.toContain("Legacy Backend Developer (15 Days Old)");
 
-    // 5. Switch to 'All' tab (with 10 days, 5 jobs match within 10 days)
-    await page.click('button:has-text("All")');
+    // 5. Switch to 'All' tab (with 10 days, 7 jobs match within 10 days: 3 original + 2 new + 2 hidden within 10d)
+    const allTabBtn = page.locator('button.filter-btn:has-text("All")');
+    await expect(allTabBtn).toHaveText(/All \(\d+\)/);
+    await allTabBtn.click();
     await page.waitForTimeout(300);
-    await expect(page.locator(".admin-job-card")).toHaveCount(5);
+    await expect(page.locator(".admin-job-card")).toHaveCount(7);
   });
 
   test("status update actions (Shortlist, Mark applied, Skip) persist in view", async ({

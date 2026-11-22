@@ -5,6 +5,9 @@ import { parseRemoteOkJobs } from "./remoteok";
 import { parseJobicyJobs } from "./jobicy";
 import { parseArbeitnowJobs } from "./arbeitnow";
 import { parseWeWorkRemotelyRss } from "./weworkremotely";
+import { parseGreenhouseJobs } from "./greenhouse";
+import { parseLeverJobs } from "./lever";
+import { parseAshbyJobs } from "./ashby";
 import { stripHtml } from "../clean";
 
 describe("Job Source Adapters (Fixtures)", () => {
@@ -80,5 +83,122 @@ describe("Job Source Adapters (Fixtures)", () => {
     const longHtml = "<p>" + "A".repeat(10000) + "</p>";
     const truncated = stripHtml(longHtml, 500);
     expect(truncated.length).toBe(500);
+  });
+
+  it("greenhouse adapter parses title, location, url, remoteScope, postedAt and skips senior", () => {
+    const nowIso = new Date().toISOString();
+    const mockData = {
+      jobs: [
+        {
+          id: 5501,
+          title: "Junior Backend Engineer",
+          location: { name: "Remote, India" },
+          updated_at: nowIso,
+          absolute_url: "https://boards.greenhouse.io/gitlab/jobs/5501",
+          content: "<p>We build Go and TypeScript services. Work from anywhere.</p>",
+        },
+        {
+          id: 5502,
+          title: "Senior Engineering Manager",
+          location: { name: "Remote" },
+          updated_at: nowIso,
+          absolute_url: "https://boards.greenhouse.io/gitlab/jobs/5502",
+          content: "<p>Lead 10+ engineers.</p>",
+        },
+      ],
+    };
+
+    const jobs = parseGreenhouseJobs(mockData, "gitlab");
+    expect(jobs.length).toBe(1);
+    expect(jobs[0].source).toBe("greenhouse");
+    expect(jobs[0].sourceId).toBe("gitlab_5501");
+    expect(jobs[0].title).toBe("Junior Backend Engineer");
+    expect(jobs[0].company).toBe("Gitlab");
+    expect(jobs[0].location).toBe("Remote, India");
+    expect(jobs[0].remoteScope).toBe("Remote, India");
+    expect(jobs[0].url).toBe("https://boards.greenhouse.io/gitlab/jobs/5501");
+    expect(jobs[0].applyUrl).toBe("https://boards.greenhouse.io/gitlab/jobs/5501#app");
+    expect(jobs[0].postedAt).toBe(new Date(nowIso).toISOString());
+    expect(jobs[0].description).toBe("We build Go and TypeScript services. Work from anywhere.");
+  });
+
+  it("lever adapter parses title, location, url, remoteScope, postedAt and skips senior", () => {
+    const nowTime = Date.now();
+    const mockData = [
+      {
+        id: "lev-101",
+        text: "Software Developer",
+        createdAt: nowTime,
+        hostedUrl: "https://jobs.lever.co/kinsta/lev-101",
+        applyUrl: "https://jobs.lever.co/kinsta/lev-101/apply",
+        categories: {
+          commitment: "Full time",
+          department: "Engineering",
+          location: "Worldwide (Remote)",
+        },
+        descriptionPlain: "Build modern web apps with TypeScript and Node.",
+      },
+      {
+        id: "lev-102",
+        text: "Principal Architect",
+        createdAt: nowTime,
+        hostedUrl: "https://jobs.lever.co/kinsta/lev-102",
+        categories: {
+          location: "Remote",
+        },
+        descriptionPlain: "Lead architecture.",
+      },
+    ];
+
+    const jobs = parseLeverJobs(mockData, "kinsta");
+    expect(jobs.length).toBe(1);
+    expect(jobs[0].source).toBe("lever");
+    expect(jobs[0].sourceId).toBe("kinsta_lev-101");
+    expect(jobs[0].title).toBe("Software Developer");
+    expect(jobs[0].company).toBe("Kinsta");
+    expect(jobs[0].location).toBe("Worldwide (Remote)");
+    expect(jobs[0].remoteScope).toBe("Worldwide (Remote)");
+    expect(jobs[0].url).toBe("https://jobs.lever.co/kinsta/lev-101");
+    expect(jobs[0].applyUrl).toBe("https://jobs.lever.co/kinsta/lev-101/apply");
+    expect(jobs[0].postedAt).toBe(new Date(nowTime).toISOString());
+    expect(jobs[0].description).toBe("Build modern web apps with TypeScript and Node.");
+  });
+
+  it("ashby adapter parses title, location, url, remoteScope, postedAt and skips senior", () => {
+    const nowIso = new Date().toISOString();
+    const mockData = {
+      jobs: [
+        {
+          id: "ash-201",
+          title: "Frontend Engineer",
+          department: "Product",
+          location: "Remote, Global",
+          publishedAt: nowIso,
+          jobUrl: "https://jobs.ashbyhq.com/linear/ash-201",
+          applyUrl: "https://jobs.ashbyhq.com/linear/ash-201/application",
+          descriptionPlain: "Develop intuitive UI using React and TypeScript.",
+        },
+        {
+          id: "ash-202",
+          title: "Staff Infrastructure Engineer",
+          publishedAt: nowIso,
+          jobUrl: "https://jobs.ashbyhq.com/linear/ash-202",
+          descriptionPlain: "Manage clusters.",
+        },
+      ],
+    };
+
+    const jobs = parseAshbyJobs(mockData, "linear");
+    expect(jobs.length).toBe(1);
+    expect(jobs[0].source).toBe("ashby");
+    expect(jobs[0].sourceId).toBe("linear_ash-201");
+    expect(jobs[0].title).toBe("Frontend Engineer");
+    expect(jobs[0].company).toBe("Linear");
+    expect(jobs[0].location).toBe("Remote, Global");
+    expect(jobs[0].remoteScope).toBe("Remote, Global");
+    expect(jobs[0].url).toBe("https://jobs.ashbyhq.com/linear/ash-201");
+    expect(jobs[0].applyUrl).toBe("https://jobs.ashbyhq.com/linear/ash-201/application");
+    expect(jobs[0].postedAt).toBe(new Date(nowIso).toISOString());
+    expect(jobs[0].description).toBe("Develop intuitive UI using React and TypeScript.");
   });
 });

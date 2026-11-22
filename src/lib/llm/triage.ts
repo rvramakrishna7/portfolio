@@ -1,7 +1,7 @@
 import { NormalizedJob } from "../jobs/types";
 import { calculateJobAgeDays } from "../jobs/freshness";
 import { detectLanguage } from "../jobs/language";
-import { MAX_AGE_DAYS_DEFAULT } from "../../config/job-profile";
+import { MAX_AGE_DAYS_DEFAULT, NON_ENGINEERING_TITLE_WORDS } from "../../config/job-profile";
 import {
   ClassifyExperienceResult,
   ClassifyGeoResult,
@@ -15,6 +15,23 @@ import {
   MAX_LLM_CALLS_PER_RUN,
 } from "./types";
 
+/**
+ * Computes a simple deterministic 32-bit FNV-1a hash of a string.
+ */
+export function hashString(str: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+export interface ExistingJobTriageData {
+  triagedAt?: string | null;
+  descriptionHash?: string | null;
+}
+
 export interface TriagedJobResult {
   expClass: "fresher" | "junior" | "unclear" | "senior";
   expMinYears: number | null;
@@ -24,6 +41,9 @@ export interface TriagedJobResult {
   skills: string[];
   filterReason?: string;
   matchScore: number;
+  triagedAt?: string | null;
+  descriptionHash?: string;
+  llmSkipped?: "already" | "irrelevant" | "stale";
 }
 
 /**
@@ -36,7 +56,8 @@ export async function triageJobWithLlm(
   ruleGeo: ClassifyGeoResult,
   ruleScore: ScoreMatchResult,
   provider: LlmProvider,
-  llmCallsMade: { count: number }
+  llmCallsMade: { count: number },
+  existingData?: ExistingJobTriageData | null
 ): Promise<TriagedJobResult> {
   let expClass = ruleExp.expClass;
   let expMinYears = ruleExp.minYears;
@@ -45,21 +66,54 @@ export async function triageJobWithLlm(
   let summaryLine = job.title;
   let skills = ruleScore.matchedSkills;
 
-  // Check age: skip LLM triage if older than 10 days
-  const jobAge = calculateJobAgeDays(job.postedAt);
+  const currentDescHash = hashString(job.description || "");
+  let triagedAt = existingData?.triagedAt || null;
+  let llmSkipped: "already" | "irrelevant" | "stale" | undefined;
 
-  // Check language: if non-English, skip LLM and place in hidden with reason
+  // 1. Age check: skip LLM triage if older than 10 days
+  const jobAge = calculateJobAgeDays(job.postedAt);
+  const isStale = jobAge > 10;
+
+  // 2. Language check: if non-English, skip LLM and place in hidden with reason
   const langResult = detectLanguage(job.title, job.description);
   const isNonEnglish = langResult.language !== "English";
 
+  // 3. Skip already triaged jobs if description hash is unchanged
+  const alreadyTriaged =
+    Boolean(existingData?.triagedAt) &&
+    existingData?.descriptionHash === currentDescHash;
+
+  // 4. Skip non-engineering roles or already restricted/senior roles
+  const titleLower = job.title.toLowerCase();
+  const isNonEngineering = NON_ENGINEERING_TITLE_WORDS.some((word) => {
+    const reg = new RegExp(`\\b${word}\\b`, "i");
+    return reg.test(titleLower);
+  });
+  const isAlreadyFiltered =
+    ruleExp.expClass === "senior" || ruleGeo.geo === "restricted";
+
+  if (ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear") {
+    if (alreadyTriaged) {
+      llmSkipped = "already";
+    } else if (isNonEngineering || isAlreadyFiltered) {
+      llmSkipped = "irrelevant";
+    } else if (isStale) {
+      llmSkipped = "stale";
+    }
+  }
+
   const needsLlm =
     !isNonEnglish &&
-    jobAge <= 10 &&
+    !alreadyTriaged &&
+    !isNonEngineering &&
+    !isAlreadyFiltered &&
+    !isStale &&
     (ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear") &&
     llmCallsMade.count < MAX_LLM_CALLS_PER_RUN;
 
   if (needsLlm) {
     llmCallsMade.count++;
+    triagedAt = new Date().toISOString();
 
     const systemPrompt = `You are a technical job triage assistant for a software engineer.
 Candidate profile: Fresher, BS Computer Science 2026, based in India (IST). Target: Remote SWE, Full Stack, Backend, AI / LLM Engineer (0-1 yrs exp only).
@@ -109,6 +163,9 @@ ${job.description.slice(0, 1500)}`;
         skills = llmResult.skills.slice(0, 8);
       }
     }
+  } else {
+    // If not triaged by LLM, mark triagedAt so subsequent runs recognize it has been processed
+    triagedAt = triagedAt || new Date().toISOString();
   }
 
   // Recalculate match score with refined attributes
@@ -124,6 +181,8 @@ ${job.description.slice(0, 1500)}`;
   let filterReason: string | undefined;
   if (isNonEnglish) {
     filterReason = `description not in English (${langResult.language})`;
+  } else if (isNonEngineering) {
+    filterReason = "Non-engineering role";
   } else if (jobAge > MAX_AGE_DAYS_DEFAULT) {
     filterReason = `posted ${jobAge} days ago`;
   } else if (expClass === "senior") {
@@ -143,5 +202,8 @@ ${job.description.slice(0, 1500)}`;
     skills,
     filterReason,
     matchScore: finalScoreResult.score,
+    triagedAt,
+    descriptionHash: currentDescHash,
+    llmSkipped,
   };
 }

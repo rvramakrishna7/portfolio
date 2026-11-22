@@ -38,16 +38,18 @@ export async function GET(req: Request) {
   }
 
   const repo = getJobsRepository();
-  const [jobsData, statsData, lastRun] = await Promise.all([
+  const [jobsData, statsData, lastRun, viewCounts] = await Promise.all([
     repo.getJobs(parsed.data),
     repo.getStats(),
     repo.getLastSearchRun(),
+    repo.getViewCounts(parsed.data.maxAgeDays),
   ]);
 
   return NextResponse.json(
     {
       jobs: jobsData.jobs,
       total: jobsData.total,
+      viewCounts,
       stats: statsData,
       lastRun,
       user: session.sub,

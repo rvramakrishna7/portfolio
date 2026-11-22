@@ -1,5 +1,15 @@
+export type JobSource =
+  | "remoteok"
+  | "jobicy"
+  | "arbeitnow"
+  | "weworkremotely"
+  | "greenhouse"
+  | "lever"
+  | "ashby"
+  | "hn";
+
 export interface NormalizedJob {
-  source: "remoteok" | "jobicy" | "arbeitnow" | "weworkremotely";
+  source: JobSource | string;
   sourceId: string;
   url: string;
   title: string;
@@ -10,6 +20,8 @@ export interface NormalizedJob {
   postedAt: string; // ISO 8601 string
   tags: string[];
   salaryText?: string;
+  applyUrl?: string;
+  contactEmail?: string;
 }
 
 export interface AdapterResult {

@@ -2367,6 +2367,12 @@ dialog.palette::backdrop {
   color: var(--muted);
 }
 
+.email-badge {
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  color: var(--accent);
+}
+
 .admin-job-summary {
   font: 400 0.88rem/1.5 var(--sans);
   color: var(--text);
