@@ -64,7 +64,7 @@ describe("LLM Triage & Guardrails", () => {
     };
 
     const ruleExp = classifyExperience(baseJob.title, baseJob.description);
-    const ruleGeo = classifyGeo(baseJob.location, baseJob.remoteScope, baseJob.description);
+    const ruleGeo = classifyGeo(baseJob.title, baseJob.location, baseJob.remoteScope, baseJob.description);
     const ruleScore = scoreMatch({
       title: baseJob.title,
       description: baseJob.description,
@@ -95,7 +95,7 @@ describe("LLM Triage & Guardrails", () => {
     fake.returnInvalidJson = true;
 
     const ruleExp = classifyExperience(baseJob.title, baseJob.description);
-    const ruleGeo = classifyGeo(baseJob.location, baseJob.remoteScope, baseJob.description);
+    const ruleGeo = classifyGeo(baseJob.title, baseJob.location, baseJob.remoteScope, baseJob.description);
     const ruleScore = scoreMatch({
       title: baseJob.title,
       description: baseJob.description,
@@ -138,7 +138,7 @@ describe("LLM Triage & Guardrails", () => {
     };
 
     const ruleExp = classifyExperience(seniorJob.title, seniorJob.description);
-    const ruleGeo = classifyGeo(seniorJob.location, seniorJob.remoteScope, seniorJob.description);
+    const ruleGeo = classifyGeo(seniorJob.title, seniorJob.location, seniorJob.remoteScope, seniorJob.description);
     const ruleScore = scoreMatch({
       title: seniorJob.title,
       description: seniorJob.description,
@@ -167,7 +167,7 @@ describe("LLM Triage & Guardrails", () => {
   it("respects daily budget cap (max 150 calls)", async () => {
     const fake = new FakeLlmProvider();
     const ruleExp = classifyExperience(baseJob.title, baseJob.description);
-    const ruleGeo = classifyGeo(baseJob.location, baseJob.remoteScope, baseJob.description);
+    const ruleGeo = classifyGeo(baseJob.title, baseJob.location, baseJob.remoteScope, baseJob.description);
     const ruleScore = scoreMatch({
       title: baseJob.title,
       description: baseJob.description,

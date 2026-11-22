@@ -22,6 +22,10 @@ export async function POST(req: Request) {
 
   const repo = getJobsRepository();
 
+  const now = new Date();
+  const daysAgoIso = (days: number) =>
+    new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+
   const fixtureJobs: Array<{ job: NormalizedJob; triaged: TriagedJobResult }> = [
     {
       job: {
@@ -33,7 +37,7 @@ export async function POST(req: Request) {
         location: "Worldwide",
         remoteScope: "Worldwide",
         description: "Node.js, TypeScript, PostgreSQL. 0 to 1 years experience.",
-        postedAt: "2026-11-20T10:00:00Z",
+        postedAt: daysAgoIso(2),
         tags: ["typescript", "node", "postgresql"],
       },
       triaged: {
@@ -56,7 +60,7 @@ export async function POST(req: Request) {
         location: "Remote - India",
         remoteScope: "India",
         description: "Fresh graduates welcome. React, Next.js, FastAPI.",
-        postedAt: "2026-11-21T08:00:00Z",
+        postedAt: daysAgoIso(1),
         tags: ["react", "next.js", "python", "fastapi"],
       },
       triaged: {
@@ -79,7 +83,7 @@ export async function POST(req: Request) {
         location: "Worldwide",
         remoteScope: "Worldwide",
         description: "8+ years experience required.",
-        postedAt: "2026-11-19T12:00:00Z",
+        postedAt: daysAgoIso(3),
         tags: ["architecture", "kubernetes"],
       },
       triaged: {
@@ -103,7 +107,7 @@ export async function POST(req: Request) {
         location: "US Only",
         remoteScope: "United States",
         description: "Must reside in the US. TypeScript and React.",
-        postedAt: "2026-11-21T09:00:00Z",
+        postedAt: daysAgoIso(1),
         tags: ["typescript", "react"],
       },
       triaged: {
@@ -115,6 +119,53 @@ export async function POST(req: Request) {
         skills: ["TypeScript", "React"],
         filterReason: "Geographically restricted to US",
         matchScore: 0,
+      },
+    },
+    {
+      job: {
+        source: "remoteok",
+        sourceId: "seed-105",
+        url: "https://remoteok.com/remote-jobs/seed-105",
+        title: "Software Engineer (5 Days Old)",
+        company: "Fresh Startups",
+        location: "Worldwide",
+        remoteScope: "Worldwide",
+        description: "TypeScript and Node.js. Mid-fresh opportunity.",
+        postedAt: daysAgoIso(5),
+        tags: ["typescript", "node"],
+      },
+      triaged: {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "worldwide",
+        geoReason: "Open globally",
+        summaryLine: "Active opening posted 5 days ago",
+        skills: ["TypeScript", "Node.js"],
+        matchScore: 80,
+      },
+    },
+    {
+      job: {
+        source: "arbeitnow",
+        sourceId: "seed-106",
+        url: "https://www.arbeitnow.com/view/seed-106",
+        title: "Legacy Backend Developer (15 Days Old)",
+        company: "Stale Corp",
+        location: "Worldwide",
+        remoteScope: "Worldwide",
+        description: "Node.js, PostgreSQL. Stale role from 15 days ago.",
+        postedAt: daysAgoIso(15),
+        tags: ["node", "postgresql"],
+      },
+      triaged: {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "worldwide",
+        geoReason: "Open globally",
+        summaryLine: "Older posting from two weeks ago",
+        skills: ["Node.js", "PostgreSQL"],
+        filterReason: "posted 15 days ago",
+        matchScore: 75,
       },
     },
   ];

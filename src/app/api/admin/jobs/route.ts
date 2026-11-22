@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin/require-admin";
 import { getJobsRepository } from "@/lib/jobs/repository";
+import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 import { z } from "zod";
 
 const QuerySchema = z.object({
@@ -8,6 +9,7 @@ const QuerySchema = z.object({
   source: z.string().optional(),
   q: z.string().optional(),
   status: z.enum(["new", "shortlisted", "skipped", "applied"]).optional(),
+  maxAgeDays: z.coerce.number().pipe(z.union([z.literal(3), z.literal(7), z.literal(10)])).default(MAX_AGE_DAYS_DEFAULT),
   limit: z.coerce.number().min(1).max(100).default(50),
   offset: z.coerce.number().min(0).default(0),
 });

@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { StoredJob } from "@/lib/jobs/repository";
+import { formatJobAge } from "@/lib/jobs/freshness";
+import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 
 interface StatItem {
   id: string;
@@ -77,6 +79,7 @@ export function AdminDashboard() {
   });
   const [lastRunTime, setLastRunTime] = useState<string | null>(null);
   const [lastSourceCounts, setLastSourceCounts] = useState<Record<string, number> | null>(null);
+  const [lastRunStats, setLastRunStats] = useState<{ llmCalls: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -84,6 +87,7 @@ export function AdminDashboard() {
   const [viewFilter, setViewFilter] = useState<ViewFilter>("shortlist");
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [maxAgeDays, setMaxAgeDays] = useState<number>(MAX_AGE_DAYS_DEFAULT);
 
   // Pipeline search state
   const [isSearching, setIsSearching] = useState(false);
@@ -94,6 +98,7 @@ export function AdminDashboard() {
     try {
       const params = new URLSearchParams();
       params.set("view", viewFilter);
+      params.set("maxAgeDays", String(maxAgeDays));
       if (sourceFilter) params.set("source", sourceFilter);
       if (searchQuery) params.set("q", searchQuery);
 
@@ -107,6 +112,9 @@ export function AdminDashboard() {
       if (data.lastRun?.finished_at) {
         setLastRunTime(data.lastRun.finished_at);
         setLastSourceCounts(data.lastRun.source_counts || null);
+        if (data.lastRun.stats?.llmCalls !== undefined) {
+          setLastRunStats({ llmCalls: data.lastRun.stats.llmCalls });
+        }
       }
     } catch (err: unknown) {
       setFetchError(
@@ -117,7 +125,7 @@ export function AdminDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [viewFilter, sourceFilter, searchQuery]);
+  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays]);
 
   useEffect(() => {
     let ignore = false;
@@ -125,6 +133,7 @@ export function AdminDashboard() {
       try {
         const params = new URLSearchParams();
         params.set("view", viewFilter);
+        params.set("maxAgeDays", String(maxAgeDays));
         if (sourceFilter) params.set("source", sourceFilter);
         if (searchQuery) params.set("q", searchQuery);
 
@@ -139,6 +148,9 @@ export function AdminDashboard() {
           if (data.lastRun?.finished_at) {
             setLastRunTime(data.lastRun.finished_at);
             setLastSourceCounts(data.lastRun.source_counts || null);
+            if (data.lastRun.stats?.llmCalls !== undefined) {
+              setLastRunStats({ llmCalls: data.lastRun.stats.llmCalls });
+            }
           }
         }
       } catch (err: unknown) {
@@ -160,7 +172,7 @@ export function AdminDashboard() {
     return () => {
       ignore = true;
     };
-  }, [viewFilter, sourceFilter, searchQuery]);
+  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays]);
 
   const handleRunSearch = async () => {
     if (isSearching) return;
@@ -335,6 +347,11 @@ export function AdminDashboard() {
                 {lastRunTime && (
                   <div className="admin-last-run-info">
                     <span>Last run: {new Date(lastRunTime).toLocaleString()}</span>
+                    {lastRunStats && (
+                      <span className="admin-stats-summary">
+                        LLM: {lastRunStats.llmCalls} calls
+                      </span>
+                    )}
                     {lastSourceCounts && (
                       <span className="admin-sources-summary">
                         Sources: RemoteOK ({lastSourceCounts.remoteok ?? 0}), Jobicy ({lastSourceCounts.jobicy ?? 0}), Arbeitnow ({lastSourceCounts.arbeitnow ?? 0}), WeWorkRemotely ({lastSourceCounts.weworkremotely ?? 0})
@@ -370,6 +387,18 @@ export function AdminDashboard() {
                   </div>
 
                   <div className="admin-search-filters">
+                    <label htmlFor="posted-within-select" className="sr-only">Posted within</label>
+                    <select
+                      id="posted-within-select"
+                      className="admin-select"
+                      value={maxAgeDays}
+                      onChange={(e) => setMaxAgeDays(Number(e.target.value))}
+                    >
+                      <option value={3}>Posted within 3 days</option>
+                      <option value={7}>Posted within 7 days</option>
+                      <option value={10}>Posted within 10 days</option>
+                    </select>
+
                     <label htmlFor="source-select" className="sr-only">Source</label>
                     <select
                       id="source-select"
@@ -431,14 +460,10 @@ export function AdminDashboard() {
                               <span className="admin-job-source-tag">
                                 via <a href={job.url} target="_blank" rel="noopener noreferrer">{job.source}</a>
                               </span>
-                              {job.posted_at && (
-                                <>
-                                  <span className="admin-meta-sep">•</span>
-                                  <span className="admin-job-date">
-                                    {new Date(job.posted_at).toLocaleDateString()}
-                                  </span>
-                                </>
-                              )}
+                              <span className="admin-meta-sep">•</span>
+                              <span className="admin-job-date">
+                                {formatJobAge(job.posted_at, job.fetched_at)}
+                              </span>
                             </div>
                           </div>
 

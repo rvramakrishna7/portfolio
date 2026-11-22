@@ -1,6 +1,8 @@
 import { getSql, hasDatabaseUrl } from "../db";
 import { NormalizedJob } from "./types";
 import { TriagedJobResult } from "../llm/triage";
+import { calculateJobAgeDays } from "./freshness";
+import { MAX_AGE_DAYS_DEFAULT } from "../../config/job-profile";
 
 export interface StoredJob {
   id: string;
@@ -27,6 +29,15 @@ export interface StoredJob {
   last_seen_at: string;
 }
 
+export interface SearchRunStats {
+  llmCalls: number;
+  llmErrors: number;
+  llmSkippedStale: number;
+  shortlistCount: number;
+  hiddenCount: number;
+  languageHidden: number;
+}
+
 export interface SearchRun {
   id: string;
   started_at: string;
@@ -36,6 +47,7 @@ export interface SearchRun {
   new_jobs: number;
   filtered_out: number;
   error: string | null;
+  stats?: SearchRunStats | null;
 }
 
 export interface JobsQueryOptions {
@@ -43,6 +55,7 @@ export interface JobsQueryOptions {
   source?: string;
   q?: string;
   status?: string;
+  maxAgeDays?: number;
   limit?: number;
   offset?: number;
 }
@@ -133,23 +146,42 @@ export class InMemoryJobsRepository implements JobsRepository {
   async getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }> {
     let list = Array.from(this.jobs.values());
     const view = opts.view || "shortlist";
+    const maxAgeDays = opts.maxAgeDays ?? MAX_AGE_DAYS_DEFAULT;
 
     if (view === "shortlist") {
-      list = list.filter(
-        (j) =>
-          ["fresher", "junior", "unclear"].includes(j.exp_class) &&
-          ["worldwide", "india_ok", "unclear"].includes(j.geo_eligibility) &&
-          j.status !== "skipped"
-      );
-      list.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
+      list = list.filter((j) => {
+        const isNotSkipped = j.status !== "skipped";
+        const hasValidExp = ["fresher", "junior", "unclear"].includes(j.exp_class);
+        const hasValidGeo = ["worldwide", "india_ok", "unclear"].includes(j.geo_eligibility);
+        const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+        const isFresh = age <= maxAgeDays;
+        return isNotSkipped && hasValidExp && hasValidGeo && isFresh;
+      });
+      list.sort((a, b) => {
+        const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        const timeA = a.posted_at ? new Date(a.posted_at).getTime() : 0;
+        const timeB = b.posted_at ? new Date(b.posted_at).getTime() : 0;
+        return timeB - timeA;
+      });
     } else if (view === "hidden") {
-      list = list.filter(
-        (j) =>
+      list = list.filter((j) => {
+        const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+        const isOlder = age > maxAgeDays;
+        return (
           j.exp_class === "senior" ||
           j.geo_eligibility === "restricted" ||
           j.status === "skipped" ||
-          Boolean(j.filter_reason)
-      );
+          Boolean(j.filter_reason) ||
+          isOlder
+        );
+      });
+    } else {
+      // "all" view: also filter by maxAgeDays
+      list = list.filter((j) => {
+        const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+        return age <= maxAgeDays;
+      });
     }
 
     if (opts.source) {
@@ -299,6 +331,7 @@ export class NeonJobsRepository implements JobsRepository {
     const limit = opts.limit || 50;
     const offset = opts.offset || 0;
     const view = opts.view || "shortlist";
+    const maxAgeDays = opts.maxAgeDays ?? MAX_AGE_DAYS_DEFAULT;
 
     let rows: StoredJob[] = [];
 
@@ -308,6 +341,7 @@ export class NeonJobsRepository implements JobsRepository {
         WHERE exp_class IN ('fresher', 'junior', 'unclear')
           AND geo_eligibility IN ('worldwide', 'india_ok', 'unclear')
           AND status != 'skipped'
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
         ORDER BY match_score DESC, posted_at DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
@@ -318,12 +352,14 @@ export class NeonJobsRepository implements JobsRepository {
            OR geo_eligibility = 'restricted'
            OR status = 'skipped'
            OR filter_reason IS NOT NULL
+           OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
         ORDER BY last_seen_at DESC
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
     } else {
       rows = (await sql`
         SELECT * FROM jobs
+        WHERE COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
         ORDER BY last_seen_at DESC
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
@@ -378,17 +414,34 @@ export class NeonJobsRepository implements JobsRepository {
 
   async updateSearchRun(id: string, updates: Partial<SearchRun>): Promise<void> {
     const sql = getSql();
-    await sql`
-      UPDATE search_runs
-      SET
-        finished_at = ${updates.finished_at ? sql`NOW()` : null},
-        status = ${updates.status || null},
-        source_counts = ${updates.source_counts ? JSON.stringify(updates.source_counts) : null},
-        new_jobs = ${updates.new_jobs ?? 0},
-        filtered_out = ${updates.filtered_out ?? 0},
-        error = ${updates.error || null}
-      WHERE id = ${id}
-    `;
+    try {
+      // Try updating with stats column if it exists in the schema
+      await sql`
+        UPDATE search_runs
+        SET
+          finished_at = ${updates.finished_at ? sql`NOW()` : null},
+          status = ${updates.status || null},
+          source_counts = ${updates.source_counts ? JSON.stringify(updates.source_counts) : null},
+          new_jobs = ${updates.new_jobs ?? 0},
+          filtered_out = ${updates.filtered_out ?? 0},
+          error = ${updates.error || null},
+          stats = ${updates.stats ? JSON.stringify(updates.stats) : null}
+        WHERE id = ${id}
+      `;
+    } catch {
+      // Fallback if stats column has not yet been migrated in production
+      await sql`
+        UPDATE search_runs
+        SET
+          finished_at = ${updates.finished_at ? sql`NOW()` : null},
+          status = ${updates.status || null},
+          source_counts = ${updates.source_counts ? JSON.stringify(updates.source_counts) : null},
+          new_jobs = ${updates.new_jobs ?? 0},
+          filtered_out = ${updates.filtered_out ?? 0},
+          error = ${updates.error || null}
+        WHERE id = ${id}
+      `;
+    }
   }
 
   async getLastSearchRun(): Promise<SearchRun | null> {
