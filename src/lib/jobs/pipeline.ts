@@ -3,6 +3,7 @@ import { fetchRemoteOk } from "./sources/remoteok";
 import { fetchJobicy } from "./sources/jobicy";
 import { fetchArbeitnow } from "./sources/arbeitnow";
 import { fetchWeWorkRemotely } from "./sources/weworkremotely";
+import { calculateJobAgeDays } from "./freshness";
 import {
   classifyExperience,
   classifyGeo,
@@ -28,6 +29,14 @@ export interface PipelineState {
   }>;
   newJobsCount: number;
   filteredOutCount: number;
+  stats: {
+    llmCalls: number;
+    llmErrors: number;
+    llmSkippedStale: number;
+    shortlistCount: number;
+    hiddenCount: number;
+    languageHidden: number;
+  };
 }
 
 // Global in-memory cache for resumable multi-step runs
@@ -112,6 +121,14 @@ export async function startJobSearch(
     pendingJobs,
     newJobsCount: 0,
     filteredOutCount: 0,
+    stats: {
+      llmCalls: 0,
+      llmErrors: 0,
+      llmSkippedStale: 0,
+      shortlistCount: 0,
+      hiddenCount: 0,
+      languageHidden: 0,
+    },
   });
 
   return {
@@ -141,14 +158,40 @@ export async function stepJobSearch(
   const llmCallsMade = { count: 0 };
 
   for (const item of batch) {
-    const triaged = await triageJobWithLlm(
-      item.job,
-      item.ruleExp,
-      item.ruleGeo,
-      item.ruleScore,
-      llmProvider,
-      llmCallsMade
-    );
+    const prevCount = llmCallsMade.count;
+    const isStale = calculateJobAgeDays(item.job.postedAt) > 10;
+    if (isStale && (item.ruleExp.expClass === "unclear" || item.ruleGeo.geo === "unclear")) {
+      state.stats.llmSkippedStale++;
+    }
+
+    let triaged;
+    try {
+      triaged = await triageJobWithLlm(
+        item.job,
+        item.ruleExp,
+        item.ruleGeo,
+        item.ruleScore,
+        llmProvider,
+        llmCallsMade
+      );
+    } catch {
+      state.stats.llmErrors++;
+      // Fallback triaged result on unexpected LLM error
+      triaged = {
+        expClass: item.ruleExp.expClass,
+        expMinYears: item.ruleExp.minYears,
+        geoEligibility: item.ruleGeo.geo,
+        geoReason: item.ruleGeo.reason,
+        summaryLine: item.job.title,
+        skills: item.ruleScore.matchedSkills,
+        filterReason: item.ruleExp.reason || item.ruleGeo.reason,
+        matchScore: item.ruleScore.score,
+      };
+    }
+
+    if (llmCallsMade.count > prevCount) {
+      state.stats.llmCalls += llmCallsMade.count - prevCount;
+    }
 
     const upsertRes = await repo.upsertJob(item.job, triaged);
     if (upsertRes === "new") {
@@ -156,6 +199,12 @@ export async function stepJobSearch(
     }
     if (triaged.filterReason) {
       state.filteredOutCount++;
+      state.stats.hiddenCount++;
+      if (triaged.filterReason.startsWith("description not in English")) {
+        state.stats.languageHidden++;
+      }
+    } else {
+      state.stats.shortlistCount++;
     }
   }
 
@@ -169,6 +218,7 @@ export async function stepJobSearch(
       source_counts: state.sourceCounts,
       new_jobs: state.newJobsCount,
       filtered_out: state.filteredOutCount,
+      stats: state.stats,
     });
     activePipelines.delete(runId);
   }

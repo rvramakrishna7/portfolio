@@ -458,6 +458,92 @@ const GEO_TEST_CASES: TestCaseGeo[] = [
     description: "Role requires India timezone overlap for daily standups.",
     expectedGeo: "india_ok",
   },
+
+  // 12+ J2.1c Worldwide Leak and Territory Tests
+  {
+    title: "Virtual IOP Clinician - Florida & Texas",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Providing teletherapy services across clinical networks.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Field Service Engineer - UK Remote",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Maintenance and customer support for 3D printing equipment.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Customer Success Producer (China)",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Working with gaming clients across Chinese market.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Director, Sales (Middle East)",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Driving enterprise identity access software sales.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Sales Director",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Overseeing sales teams and driving quota in APAC territory.",
+    expectedGeo: "unclear",
+  },
+  {
+    title: "Full Stack Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "We serve customers worldwide with modern cloud software.",
+    expectedGeo: "unclear",
+  },
+  {
+    title: "Senior Backend Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Remote worldwide role. Join our globally distributed engineering squad.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "Platform Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Our company is a worldwide leader in observability tools.",
+    expectedGeo: "unclear",
+  },
+  {
+    title: "Staff Software Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Open worldwide to engineers looking for high ownership.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "Frontend Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "We have offices worldwide. Looking for great UI developers.",
+    expectedGeo: "unclear",
+  },
+  {
+    title: "Security Analyst",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Hiring worldwide for our 24/7 security operations center.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "Machine Learning Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Candidates worldwide are invited to apply for our AI research team.",
+    expectedGeo: "worldwide",
+  },
 ];
 
 describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {

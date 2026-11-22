@@ -267,12 +267,30 @@ export function classifyGeo(
     /\bnot\s+open\s+internationally\b/i,
   ];
 
-  // Check country-specific restrictions in headers (title / location / remoteScope) or description
+  // Territory restriction in title:
+  // e.g. "Sales Director (Middle East)", "Customer Success Producer (China)", "Field Service Engineer - UK Remote", "Virtual IOP Clinician - Florida & Texas"
+  const titleTerritoryRegex = new RegExp(
+    `(?:\\(|-|–|,|:)\\s*(?:remote\\s+)?(?:the\\s+)?(${COUNTRIES_PATTERN}|florida|texas|california|new york|apac|asia|middle east)\\b`,
+    "i"
+  );
+
   let detectedRestriction: string | null = null;
-  for (const pat of generalRestrictedPatterns) {
-    if (pat.test(combined)) {
-      detectedRestriction = "Restricted to specific jurisdictions (e.g. US/EU/UK only)";
-      break;
+  const titleTerritoryMatch = titleTerritoryRegex.exec(title);
+  if (titleTerritoryMatch) {
+    const matchedRegion = titleTerritoryMatch[1].toLowerCase();
+    // If India or worldwide is listed in that title territory, it's not restricted
+    if (!/\b(india|worldwide)\b/i.test(matchedRegion)) {
+      detectedRestriction = `Title restricted to territory ${titleTerritoryMatch[1]}`;
+    }
+  }
+
+  // Check country-specific restrictions in headers (title / location / remoteScope) or description
+  if (!detectedRestriction) {
+    for (const pat of generalRestrictedPatterns) {
+      if (pat.test(combined)) {
+        detectedRestriction = "Restricted to specific jurisdictions (e.g. US/EU/UK only)";
+        break;
+      }
     }
   }
 
@@ -316,19 +334,31 @@ export function classifyGeo(
     /\bbengaluru|bangalore|mumbai|delhi|hyderabad|pune\b/i,
   ];
 
-  // From description: ONLY explicit phrases
+  // From description: ONLY explicit eligibility phrases
+  // A bare "worldwide" (customers worldwide, offices worldwide, worldwide leader) must be ignored.
   const descWorldwidePatterns = [
-    /\bwork\s+from\s+anywhere\b/i,
+    /\bremote\s+worldwide\b/i,
+    /\bworldwide\s+remote\b/i,
+    /\bwork\s+worldwide\b/i,
+    /\bopen\s+worldwide\b/i,
+    /\banywhere\s+worldwide\b/i,
+    /\bhiring\s+worldwide\b/i,
+    /\bcandidates\s+worldwide\b/i,
+    /\bworldwide\s*\(\s*remote\s*\)/i,
+    /\bfrom\s+anywhere\b/i,
     /\banywhere\s+in\s+the\s+world\b/i,
-    /\bworldwide\b/i,
-    /\bcandidates\s+from\s+any\s+country\b/i,
+    /\bany\s+country\b/i,
   ];
   const descIndiaPatterns = [
     /\bopen\s+to\s+candidates\s+in\s+india\b/i,
+    /\bopen\s+to\s+(?:candidates\s+in\s+)?(?:india|apac)\b/i,
     /\bindia\s+timezone\b/i,
     /\bapac\s+timezones?\b/i,
     /\bremote,\s*india\b/i,
+    /\bremote\s*-\s*india\b/i,
     /\bhiring\s+in\s+india\b/i,
+    /\bcandidates\s+in\s+india\b/i,
+    /\bwork\s+from\s+india\b/i,
   ];
 
   let matchesWorldwide = headerWorldwidePatterns.some((pat) => pat.test(titleScope));
@@ -349,9 +379,8 @@ export function classifyGeo(
         matchesIndia = true;
         break;
       }
-      // Also allow "open to India" or "India timezones welcome" in clean sentences
-      if (/\b(?:open\s+to|welcome|hiring\s+in|available\s+in)\s+[^,]*\b(india|apac)\b/i.test(sentence) ||
-          /\b(india|apac)\s+(?:timezones?\s+)?welcome\b/i.test(sentence)) {
+      // Also allow "India timezones welcome" or "APAC timezones welcome" in clean sentences
+      if (/\b(india|apac)\s+(?:timezones?\s+)?welcome\b/i.test(sentence)) {
         matchesIndia = true;
         break;
       }

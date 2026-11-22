@@ -29,6 +29,15 @@ export interface StoredJob {
   last_seen_at: string;
 }
 
+export interface SearchRunStats {
+  llmCalls: number;
+  llmErrors: number;
+  llmSkippedStale: number;
+  shortlistCount: number;
+  hiddenCount: number;
+  languageHidden: number;
+}
+
 export interface SearchRun {
   id: string;
   started_at: string;
@@ -38,6 +47,7 @@ export interface SearchRun {
   new_jobs: number;
   filtered_out: number;
   error: string | null;
+  stats?: SearchRunStats | null;
 }
 
 export interface JobsQueryOptions {
@@ -404,17 +414,34 @@ export class NeonJobsRepository implements JobsRepository {
 
   async updateSearchRun(id: string, updates: Partial<SearchRun>): Promise<void> {
     const sql = getSql();
-    await sql`
-      UPDATE search_runs
-      SET
-        finished_at = ${updates.finished_at ? sql`NOW()` : null},
-        status = ${updates.status || null},
-        source_counts = ${updates.source_counts ? JSON.stringify(updates.source_counts) : null},
-        new_jobs = ${updates.new_jobs ?? 0},
-        filtered_out = ${updates.filtered_out ?? 0},
-        error = ${updates.error || null}
-      WHERE id = ${id}
-    `;
+    try {
+      // Try updating with stats column if it exists in the schema
+      await sql`
+        UPDATE search_runs
+        SET
+          finished_at = ${updates.finished_at ? sql`NOW()` : null},
+          status = ${updates.status || null},
+          source_counts = ${updates.source_counts ? JSON.stringify(updates.source_counts) : null},
+          new_jobs = ${updates.new_jobs ?? 0},
+          filtered_out = ${updates.filtered_out ?? 0},
+          error = ${updates.error || null},
+          stats = ${updates.stats ? JSON.stringify(updates.stats) : null}
+        WHERE id = ${id}
+      `;
+    } catch {
+      // Fallback if stats column has not yet been migrated in production
+      await sql`
+        UPDATE search_runs
+        SET
+          finished_at = ${updates.finished_at ? sql`NOW()` : null},
+          status = ${updates.status || null},
+          source_counts = ${updates.source_counts ? JSON.stringify(updates.source_counts) : null},
+          new_jobs = ${updates.new_jobs ?? 0},
+          filtered_out = ${updates.filtered_out ?? 0},
+          error = ${updates.error || null}
+        WHERE id = ${id}
+      `;
+    }
   }
 
   async getLastSearchRun(): Promise<SearchRun | null> {

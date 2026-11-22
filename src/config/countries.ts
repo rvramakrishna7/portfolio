@@ -14,9 +14,11 @@ export const RESTRICTED_COUNTRIES_AND_REGIONS: readonly string[] = [
   "EMEA",
   "North America",
   "Americas",
+  "Middle East",
   "Nordics",
   "Benelux",
   "DACH",
+  "ANZ",
 
   // North America
   "USA",
@@ -99,4 +101,5 @@ export const RESTRICTED_COUNTRIES_AND_REGIONS: readonly string[] = [
   "Thailand",
   "Indonesia",
   "Malaysia",
+  "China",
 ] as const;

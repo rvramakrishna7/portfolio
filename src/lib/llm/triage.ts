@@ -1,5 +1,6 @@
 import { NormalizedJob } from "../jobs/types";
 import { calculateJobAgeDays } from "../jobs/freshness";
+import { detectLanguage } from "../jobs/language";
 import { MAX_AGE_DAYS_DEFAULT } from "../../config/job-profile";
 import {
   ClassifyExperienceResult,
@@ -47,7 +48,12 @@ export async function triageJobWithLlm(
   // Check age: skip LLM triage if older than 10 days
   const jobAge = calculateJobAgeDays(job.postedAt);
 
+  // Check language: if non-English, skip LLM and place in hidden with reason
+  const langResult = detectLanguage(job.title, job.description);
+  const isNonEnglish = langResult.language !== "English";
+
   const needsLlm =
+    !isNonEnglish &&
     jobAge <= 10 &&
     (ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear") &&
     llmCallsMade.count < MAX_LLM_CALLS_PER_RUN;
@@ -116,7 +122,9 @@ ${job.description.slice(0, 1500)}`;
 
   // Determine filter reason if excluded from shortlist
   let filterReason: string | undefined;
-  if (jobAge > MAX_AGE_DAYS_DEFAULT) {
+  if (isNonEnglish) {
+    filterReason = `description not in English (${langResult.language})`;
+  } else if (jobAge > MAX_AGE_DAYS_DEFAULT) {
     filterReason = `posted ${jobAge} days ago`;
   } else if (expClass === "senior") {
     filterReason = ruleExp.reason || "Senior experience required";
