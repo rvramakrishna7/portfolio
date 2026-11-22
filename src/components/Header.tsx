@@ -37,11 +37,11 @@ export function Header() {
         Rama<b>krishna</b>
       </Link>
       <nav className="nav" aria-label="Main">
-        <Link className="hide-s" href="/#work">
-          Work
-        </Link>
         <Link className="hide-s" href="/#experience">
           Experience
+        </Link>
+        <Link className="hide-s" href="/#work">
+          Work
         </Link>
         <Link className="hide-s" href="/#skills">
           Skills
