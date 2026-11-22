@@ -88,7 +88,7 @@ export async function startJobSearch(
 
   for (const job of dedupedJobs) {
     const ruleExp = classifyExperience(job.title, job.description);
-    const ruleGeo = classifyGeo(job.location, job.remoteScope, job.description);
+    const ruleGeo = classifyGeo(job.title, job.location, job.remoteScope, job.description);
     const ruleScore = scoreMatch({
       title: job.title,
       description: job.description,

@@ -15,6 +15,7 @@ interface TestCaseExperience {
 }
 
 interface TestCaseGeo {
+  title?: string;
   location: string;
   remoteScope: string;
   description: string;
@@ -371,6 +372,92 @@ const GEO_TEST_CASES: TestCaseGeo[] = [
     description: "Work from Canada only. Remote eligible in Canada.",
     expectedGeo: "restricted",
   },
+
+  // 12 Labelled Geo Hardening Tests (Step 1/4)
+  {
+    title: "Software Engineer (Remote Eligible in Bulgaria)",
+    location: "Remote",
+    remoteScope: "WeWorkRemotely",
+    description: "We are a global company with offices worldwide. We operate in costa rica, japan, bulgaria, india, and singapore.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Senior Full Stack Engineer",
+    location: "Remote",
+    remoteScope: "US Only",
+    description: "Global leader in payments. Remote, US only. We are expanding rapidly.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Backend Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Offices in London, Mumbai and Austin. Modern tech stack.",
+    expectedGeo: "unclear",
+  },
+  {
+    title: "Full Stack Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Work from anywhere in the world. Flexible hours and competitive package.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "Software Developer",
+    location: "Remote (Worldwide)",
+    remoteScope: "Worldwide",
+    description: "Join our core team building high performance systems.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "Full Stack Engineer",
+    location: "Remote, India or APAC",
+    remoteScope: "APAC",
+    description: "Building developer platforms. Competitive salary.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "DevOps Engineer",
+    location: "Remote - EMEA",
+    remoteScope: "EMEA",
+    description: "Managing infrastructure across European timezones.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "We are hiring in India for our platform team.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "Frontend Developer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Open to candidates in India with strong React skills.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "AI Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Candidates from any country welcome to apply.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "Cloud Architect",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "We have team members across Germany, France, Poland, India, and Brazil.",
+    expectedGeo: "unclear",
+  },
+  {
+    title: "Software Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Role requires India timezone overlap for daily standups.",
+    expectedGeo: "india_ok",
+  },
 ];
 
 describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
@@ -388,7 +475,7 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
     let passedCount = 0;
     for (let i = 0; i < GEO_TEST_CASES.length; i++) {
       const tc = GEO_TEST_CASES[i];
-      const res = classifyGeo(tc.location, tc.remoteScope, tc.description);
+      const res = classifyGeo(tc.title || "Software Engineer", tc.location, tc.remoteScope, tc.description);
       if (res.geo !== tc.expectedGeo) {
         console.error(`Failed at index ${i}:`, tc, "got:", res);
       }
