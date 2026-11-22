@@ -27,6 +27,7 @@ export default defineConfig({
         "test-admin-session-secret-at-least-32-chars-long-e2e-only",
       ADMIN_PASSWORD_HASH:
         "scrypt$16384$8$1$nMeV081x8anx1PxRZ52mbQ==$RSEgqFBJdJR5leKNzO92MqZmNj6y6rdzumNW7xwf1Dk=",
+      E2E_SEED: "1",
     },
   },
 });

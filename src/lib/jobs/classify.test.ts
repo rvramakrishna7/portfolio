@@ -1,0 +1,340 @@
+import { describe, it, expect } from "vitest";
+import {
+  classifyExperience,
+  classifyGeo,
+  scoreMatch,
+  ExpClass,
+  GeoEligibility,
+} from "./classify";
+
+interface TestCaseExperience {
+  title: string;
+  description: string;
+  expectedClass: ExpClass;
+  expectedMinYears?: number | null;
+}
+
+interface TestCaseGeo {
+  location: string;
+  remoteScope: string;
+  description: string;
+  expectedGeo: GeoEligibility;
+}
+
+const EXP_TEST_CASES: TestCaseExperience[] = [
+  // 1-5: Clear fresher / new grad cases
+  {
+    title: "Junior Backend Engineer (0-1 yrs)",
+    description: "Looking for an energetic developer with 0-1 years experience in Node.js.",
+    expectedClass: "fresher",
+  },
+  {
+    title: "New Grad SWE",
+    description: "Calling all recent computer science graduates. Fresh graduates welcome.",
+    expectedClass: "fresher",
+  },
+  {
+    title: "Software Engineer - Entry Level",
+    description: "No experience required, comprehensive training provided.",
+    expectedClass: "fresher",
+  },
+  {
+    title: "AI Automation Intern",
+    description: "Summer internship building LLM tools and integrations.",
+    expectedClass: "fresher",
+  },
+  {
+    title: "Graduate Software Developer",
+    description: "Entry-level opportunity for BS Computer Science holders.",
+    expectedClass: "fresher",
+  },
+
+  // 6-10: Clear Junior / Associate cases
+  {
+    title: "Associate Engineer",
+    description: "Work on web microservices with senior engineers.",
+    expectedClass: "junior",
+  },
+  {
+    title: "Junior Full Stack Developer",
+    description: "Requires 1 year of experience building React applications.",
+    expectedClass: "junior",
+  },
+  {
+    title: "Junior Python Engineer",
+    description: "Must have at least one year of hands-on experience with FastAPI.",
+    expectedClass: "junior",
+  },
+  {
+    title: "Associate Software Developer",
+    description: "Assist with CI/CD and automated Playwright testing.",
+    expectedClass: "junior",
+  },
+  {
+    title: "Junior Web Developer",
+    description: "General development tasks across frontend and backend.",
+    expectedClass: "junior",
+  },
+
+  // 11-20: Senior / Mid cases (years >= 2 or senior title words)
+  {
+    title: "Software Engineer, 3+ years",
+    description: "We require 3+ years of professional backend software engineering experience.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Senior Full Stack Engineer",
+    description: "Lead our product development team.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Staff Platform Engineer",
+    description: "Manage large scale Kubernetes clusters.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Principal AI Architect",
+    description: "Architect agentic workflows and neural architectures.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Lead Developer",
+    description: "Guide a squad of 6 engineers.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Backend Engineer",
+    description: "Requires 2-4 years of experience with distributed systems.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Fullstack Developer",
+    description: "Candidate should have five years of experience with Next.js and SQL.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Engineering Manager",
+    description: "Manage sprint velocity and engineering hiring.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Director of Engineering",
+    description: "Oversee all technical roadmaps.",
+    expectedClass: "senior",
+  },
+  {
+    title: "VP of Technology",
+    description: "Executive role setting technology strategy.",
+    expectedClass: "senior",
+  },
+
+  // 21-25: False positives handling (years of history, funding, 401k)
+  {
+    title: "Junior Software Engineer",
+    description: "Our company has 20+ years of company history and a 401k match. 0 to 1 years experience wanted.",
+    expectedClass: "fresher",
+  },
+  {
+    title: "Frontend Developer",
+    description: "Backed by 2 years of funding and tier-1 VCs. We offer 401k and generous health insurance.",
+    expectedClass: "unclear",
+  },
+  {
+    title: "Software Engineer (New Grad)",
+    description: "Our mission spans 10 years of history. Freshers and recent grads encouraged to apply.",
+    expectedClass: "fresher",
+  },
+  {
+    title: "Full Stack Engineer",
+    description: "We are an established startup celebrating ten years of success.",
+    expectedClass: "unclear",
+  },
+  {
+    title: "Software Developer",
+    description: "Company history over 15 years in financial services.",
+    expectedClass: "unclear",
+  },
+
+  // 26-30: Conflict handling (fresher words + 5+ years => years win)
+  {
+    title: "Senior Full Stack (Graduate Mentor)",
+    description: "Mentoring new grads. Requires at least 5 years of industry experience.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Backend Engineer",
+    description: "Work with interns. Must have 6+ years of software engineering experience.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Lead AI Engineer",
+    description: "Graduate degree preferred but must have 7+ years hands-on experience.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Head of AI",
+    description: "Entry-level enthusiasm required, but 8+ years leading ML projects is a must.",
+    expectedClass: "senior",
+  },
+  {
+    title: "Staff Engineer (Apprentice Program)",
+    description: "Oversee the apprentice program. Demands minimum 5 years of production experience.",
+    expectedClass: "senior",
+  },
+];
+
+const GEO_TEST_CASES: TestCaseGeo[] = [
+  // 31-35: Worldwide / Anywhere
+  {
+    location: "Worldwide",
+    remoteScope: "Global",
+    description: "This role is 100% remote. Work from anywhere in the world.",
+    expectedGeo: "worldwide",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Anywhere",
+    description: "We hire globally across all continents.",
+    expectedGeo: "worldwide",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Worldwide",
+    description: "Work from anywhere in your timezone.",
+    expectedGeo: "worldwide",
+  },
+  {
+    location: "Global Remote",
+    remoteScope: "Worldwide",
+    description: "Any timezone welcome.",
+    expectedGeo: "worldwide",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Work from anywhere",
+    description: "Distributed team across 20 countries.",
+    expectedGeo: "worldwide",
+  },
+
+  // 36-40: India OK / APAC
+  {
+    location: "Remote - India",
+    remoteScope: "India",
+    description: "Role based remotely in India with IST working hours.",
+    expectedGeo: "india_ok",
+  },
+  {
+    location: "Remote",
+    remoteScope: "APAC",
+    description: "Engineers in Asia / APAC regions preferred.",
+    expectedGeo: "india_ok",
+  },
+  {
+    location: "Bengaluru (Remote)",
+    remoteScope: "India",
+    description: "Work remotely from Mumbai, Delhi, or Pune.",
+    expectedGeo: "india_ok",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Asia",
+    description: "We are expanding our presence in Asia and India.",
+    expectedGeo: "india_ok",
+  },
+  {
+    location: "Remote",
+    remoteScope: "IST Timezone",
+    description: "Must be available during IST timezone hours.",
+    expectedGeo: "india_ok",
+  },
+
+  // 41-45: Restricted (US only, Europe only, etc.)
+  {
+    location: "US Only",
+    remoteScope: "United States",
+    description: "Must be located in the US and authorized to work in the US.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote",
+    remoteScope: "USA Only",
+    description: "No C2C. United States citizenship required.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Europe Only",
+    description: "Must reside in the EU or UK.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote (Canada Only)",
+    remoteScope: "Canada",
+    description: "Canadian residents only.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote",
+    remoteScope: "US Timezone Only",
+    description: "PST timezone only. Must be located in the United States.",
+    expectedGeo: "restricted",
+  },
+];
+
+describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
+  it(`passes all ${EXP_TEST_CASES.length} experience classification test cases`, () => {
+    let passedCount = 0;
+    for (const tc of EXP_TEST_CASES) {
+      const res = classifyExperience(tc.title, tc.description);
+      expect(res.expClass).toBe(tc.expectedClass);
+      passedCount++;
+    }
+    expect(passedCount).toBe(EXP_TEST_CASES.length);
+  });
+
+  it(`passes all ${GEO_TEST_CASES.length} geographic classification test cases`, () => {
+    let passedCount = 0;
+    for (const tc of GEO_TEST_CASES) {
+      const res = classifyGeo(tc.location, tc.remoteScope, tc.description);
+      expect(res.geo).toBe(tc.expectedGeo);
+      passedCount++;
+    }
+    expect(passedCount).toBe(GEO_TEST_CASES.length);
+  });
+
+  it("calculates explainable match scores cleanly", () => {
+    // High match: target title, multiple strong skills, fresher, worldwide
+    const highMatch = scoreMatch({
+      title: "Junior Full-Stack Engineer",
+      description: "Building reactive apps with TypeScript, React, Next.js, and Python FastAPI.",
+      tags: ["typescript", "react", "python"],
+      expClass: "fresher",
+      geoEligibility: "worldwide",
+    });
+
+    expect(highMatch.score).toBeGreaterThanOrEqual(70);
+    expect(highMatch.matchedSkills).toContain("TypeScript");
+    expect(highMatch.matchedSkills).toContain("React");
+    expect(highMatch.matchedSkills).toContain("Python");
+
+    // Zero match: US only restricted
+    const restrictedMatch = scoreMatch({
+      title: "Full Stack Engineer",
+      description: "TypeScript and React.",
+      tags: ["react"],
+      expClass: "fresher",
+      geoEligibility: "restricted",
+    });
+    expect(restrictedMatch.score).toBe(0);
+
+    // Capped match: Senior position
+    const seniorMatch = scoreMatch({
+      title: "Senior Backend Engineer",
+      description: "Python, PostgreSQL, Docker.",
+      tags: ["python"],
+      expClass: "senior",
+      geoEligibility: "worldwide",
+    });
+    expect(seniorMatch.score).toBeLessThanOrEqual(15);
+  });
+});

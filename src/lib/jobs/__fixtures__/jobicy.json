@@ -1,0 +1,29 @@
+{
+  "jobs": [
+    {
+      "id": 2001,
+      "url": "https://jobicy.com/jobs/2001-full-stack-developer",
+      "jobTitle": "Full Stack Developer (Graduate / Fresher)",
+      "companyName": "InnoTech Labs",
+      "jobGeo": "Anywhere in the World",
+      "jobExcerpt": "Great entry-level position for fresh graduates.",
+      "jobDescription": "<div><p>Looking for a fresher or graduate in Computer Science.</p><ul><li>React & TypeScript</li><li>Python FastAPI</li></ul></div>",
+      "pubDate": "2026-11-21T08:30:00Z",
+      "jobIndustry": ["Engineering", "Developer"],
+      "annualSalaryMin": "40000",
+      "annualSalaryMax": "60000",
+      "salaryCurrency": "USD"
+    },
+    {
+      "id": 2002,
+      "url": "https://jobicy.com/jobs/2002-lead-devops",
+      "jobTitle": "Lead DevOps Engineer",
+      "companyName": "CloudScale",
+      "jobGeo": "USA Only",
+      "jobExcerpt": "Senior role for infrastructure leadership.",
+      "jobDescription": "<p>Minimum 7 years of Kubernetes and AWS experience required.</p>",
+      "pubDate": "2026-11-21T09:00:00Z",
+      "jobIndustry": ["DevOps"]
+    }
+  ]
+}

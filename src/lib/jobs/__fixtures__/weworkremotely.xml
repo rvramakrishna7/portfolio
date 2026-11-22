@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>We Work Remotely - Remote Jobs</title>
+    <link>https://weworkremotely.com</link>
+    <description>Remote jobs for developers</description>
+    <item>
+      <title><![CDATA[Starlight Systems: Junior Software Engineer]]></title>
+      <link>https://weworkremotely.com/remote-jobs/starlight-systems-junior-software-engineer</link>
+      <description><![CDATA[<p>Join our core engineering team! Open to global candidates anywhere. 1 year of professional experience or fresh graduate portfolio.</p>]]></description>
+      <pubDate>Thu, 20 Nov 2026 14:00:00 +0000</pubDate>
+      <guid isPermaLink="false">wwr-4001</guid>
+      <category><![CDATA[Full-Stack Programming]]></category>
+      <category><![CDATA[TypeScript]]></category>
+    </item>
+    <item>
+      <title><![CDATA[MegaCorp: Staff Backend Engineer]]></title>
+      <link>https://weworkremotely.com/remote-jobs/megacorp-staff-backend-engineer</link>
+      <description><![CDATA[<p>Must reside in United States. 10+ years backend distributed systems experience.</p>]]></description>
+      <pubDate>Fri, 21 Nov 2026 15:00:00 +0000</pubDate>
+      <guid isPermaLink="false">wwr-4002</guid>
+      <category><![CDATA[Back-End Programming]]></category>
+    </item>
+  </channel>
+</rss>

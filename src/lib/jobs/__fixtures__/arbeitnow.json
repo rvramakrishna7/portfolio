@@ -1,0 +1,26 @@
+{
+  "data": [
+    {
+      "slug": "arbeitnow-ai-engineer-intern-3001",
+      "title": "AI Engineer (Junior / Intern)",
+      "company_name": "Cognitive AI",
+      "remote": true,
+      "location": "Remote, India or Worldwide",
+      "description": "<p>Build LLM agents and prompt engineering pipelines. 0 to 1 years experience.</p>",
+      "tags": ["python", "llm", "rag", "docker"],
+      "created_at": 1763719200,
+      "url": "https://www.arbeitnow.com/view/arbeitnow-ai-engineer-intern-3001"
+    },
+    {
+      "slug": "arbeitnow-on-site-berlin-3002",
+      "title": "Software Developer Berlin",
+      "company_name": "Berlin Soft",
+      "remote": false,
+      "location": "Berlin, Germany",
+      "description": "<p>Onsite role in Berlin office.</p>",
+      "tags": ["c++"],
+      "created_at": 1763719200,
+      "url": "https://www.arbeitnow.com/view/arbeitnow-on-site-berlin-3002"
+    }
+  ]
+}
