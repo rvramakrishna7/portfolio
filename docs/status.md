@@ -1,8 +1,39 @@
 # Status: Portfolio site
 
-Current step: R0 to R4 merged on main; R5 Part A & Part B complete on main (commit `d6cb417`, push pending).
+Current step: R0 to R6 merged on main (merge commit `df51f2e`, push pending).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Phase R6 (Copy polish, typography reset, Experience before Work, modern contact form):
+  - Merge commit on main: `df51f2e` ("feat: merge R6 polish (story copy, no italics, Experience before Work, modern contact form)").
+  - Site copy rewrite:
+    - Updated Restart Options and Proof Strip to "1 min or more → 2 to 3 s" (automated execution).
+    - Replaced all banned timing phrases ("stopwatch", "by hand") with "manually" across active site, stories, proof strip, and diagrams.
+    - Updated `problemShort` for all four selected work stories to match story-style problem statements.
+    - Updated Zync timing description to "in my own timing".
+    - Added automated copy checks for banned timing phrases in `scripts/check-copy.mjs` and `scripts/check-copy.test.ts`.
+  - Typography polish:
+    - Removed `font-style: italic` from `.hook` (now `font-style: normal`).
+    - Added global typography reset (`em, i, cite, dfn, address, var, figcaption { font-style: normal; }`).
+    - Added automated Playwright test `e2e/typography.spec.ts` asserting zero elements have computed `fontStyle !== 'normal'` across all 5 pages in both light and dark themes.
+  - Section ordering:
+    - Reordered home page sections in `src/app/page.tsx` to place Experience immediately after ProofStrip and before Selected Work.
+    - Updated navigation links in `src/components/Header.tsx` to: Experience, Work, Skills.
+    - Updated `src/components/CommandPalette.tsx` section items to list Experience before Work.
+  - Modern contact form redesign:
+    - Styled contact form as a clean card (`var(--panel)`, `1px solid var(--line)`, radius 16px, padding 24px/32px).
+    - Styled inputs and textarea with 12px border radius, 52px/160px min-height, `var(--bg)` background, `1px solid var(--line-2)` border, and clean accent focus ring with zero harsh outlines.
+    - Styled submit button as pill (radius 999px), full-width on mobile, auto-width on desktop, with disabled state displaying "Sending...".
+    - Uses `var(--error)` meeting WCAG AA 4.5:1 contrast for validation feedback.
+    - Zero gradients (passed `check:flat`).
+  - Full verification suite on `main`:
+    - `npm run lint`: 0 errors.
+    - `npm run typecheck`: 0 errors.
+    - `npm test`: 26 passed across 5 test files.
+    - `npm run check:flat`: 37 files scanned, passed.
+    - `npm run check:copy`: 37 files scanned, passed.
+    - `npm run build`: 12 static pages generated successfully.
+    - `npm run check:numbers`: 5 pages scanned, all visible numbers match `docs/content.md`.
+    - Full Playwright suite: 112 passed across 15 spec files. Port 3000 verified free before and after.
 - Phase R5 Part B (Resume & Degree nomenclature fix):
   - Verified `public/resume.pdf` hash `1DC676C9C37CEAD7813CF24D2588A8165E1F5EA7` and length `59511` bytes. Served on localhost:3000 returning HTTP 200 and application/pdf.
   - Replaced "BSc Computer Science" with "BS Computer Science" across `src/components/About.tsx`, `docs/content.md`, `docs/content-v2.md`, and `e2e/contact.spec.ts`.
