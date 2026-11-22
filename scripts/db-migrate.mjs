@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { neon } from "@neondatabase/serverless";
+import { splitSql } from "./split-sql.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,14 +51,15 @@ async function runMigrations() {
     console.log(`Applying migration: ${file}...`);
     const filePath = path.join(MIGRATIONS_DIR, file);
     const sqlContent = fs.readFileSync(filePath, "utf8");
+    const statements = splitSql(sqlContent);
 
-    // Execute migration inside a transaction block
-    await sql.transaction([
-      sql(sqlContent),
-      sql`INSERT INTO schema_migrations (name) VALUES (${file})`,
-    ]);
+    // Execute migration inside a single atomic transaction block
+    const queries = statements.map((stmt) => sql.query(stmt));
+    queries.push(sql`INSERT INTO schema_migrations (name) VALUES (${file})`);
 
-    console.log(`Applied: ${file}`);
+    await sql.transaction(queries);
+
+    console.log(`Applied: ${file} (${statements.length} statements)`);
     appliedCount++;
   }
 
