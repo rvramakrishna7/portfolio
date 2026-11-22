@@ -1909,3 +1909,247 @@ dialog.palette::backdrop {
     text-shadow: none !important;
   }
 }
+
+/* ==========================================================================
+   Admin Area & Job Desk (J1)
+   ========================================================================== */
+
+.admin-login-layout {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: var(--bg);
+}
+
+.admin-card-container {
+  width: 100%;
+  max-width: 440px;
+}
+
+.admin-header-badge {
+  font: 600 0.8rem var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.admin-card-container h1 {
+  font: 700 clamp(1.5rem, 1.3rem + 1vw, 2rem)/1.2 var(--sans);
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+.admin-login-subtitle {
+  font: 400 0.95rem/1.5 var(--sans);
+  color: var(--muted);
+  margin: 0 0 24px;
+}
+
+.admin-card-form {
+  display: grid;
+  gap: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+@media (min-width: 640px) {
+  .admin-card-form {
+    padding: 32px;
+  }
+}
+
+.admin-submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.admin-dashboard-container {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.admin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+@media (min-width: 768px) {
+  .admin-head {
+    padding: 16px 32px;
+  }
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-brand h1 {
+  font: 600 1.15rem var(--sans);
+  margin: 0;
+  color: var(--text);
+}
+
+.admin-status-badge {
+  font: 600 0.72rem var(--mono);
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--muted);
+}
+
+.admin-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-logout-btn {
+  font: 500 0.88rem var(--sans);
+  min-height: 40px;
+  padding: 8px 16px;
+}
+
+.admin-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+@media (min-width: 768px) {
+  .admin-content {
+    padding: 32px 24px 80px;
+  }
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.admin-stat-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-stat-num {
+  font: 700 1.85rem/1.1 var(--sans);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-stat-label {
+  font: 600 0.88rem var(--sans);
+  color: var(--text);
+}
+
+.admin-stat-hint {
+  font: 400 0.78rem var(--sans);
+  color: var(--muted);
+}
+
+.admin-tabs-nav {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.admin-tab-btn {
+  background: none;
+  border: 1px solid transparent;
+  font: 500 0.9rem var(--sans);
+  color: var(--muted);
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.admin-tab-btn:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.admin-tab-btn.active {
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 600;
+  border-color: var(--line-2);
+}
+
+.admin-tab-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+@media (min-width: 768px) {
+  .admin-tab-panel {
+    padding: 32px;
+  }
+}
+
+.admin-panel-header {
+  margin-bottom: 20px;
+}
+
+.admin-panel-header h2 {
+  font: 600 1.25rem var(--sans);
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.admin-panel-desc {
+  font: 400 0.9rem var(--sans);
+  color: var(--muted);
+  margin: 0;
+}
+
+.admin-empty-card {
+  border: 1px dashed var(--line-2);
+  border-radius: 12px;
+  padding: 36px 20px;
+  text-align: center;
+  background: var(--bg);
+}
+
+.admin-empty-card h3 {
+  font: 600 1.05rem var(--sans);
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.admin-empty-card p {
+  font: 400 0.9rem/1.5 var(--sans);
+  color: var(--muted);
+  margin: 0;
+  max-width: 48ch;
+  margin-inline: auto;
+}
+
