@@ -1,9 +1,25 @@
 import { NextResponse } from "next/server";
-import { getJobsRepository } from "@/lib/jobs/repository";
-import { NormalizedJob } from "@/lib/jobs/types";
-import { TriagedJobResult } from "@/lib/llm/triage";
+import { requireAdminApi } from "../../../../lib/admin/require-admin";
+import { getJobsRepository } from "../../../../lib/jobs/repository";
+import { NormalizedJob } from "../../../../lib/jobs/types";
+import { TriagedJobResult } from "../../../../lib/llm/triage";
 
-export async function POST() {
+export function isSeedRouteAllowed(envSeed = process.env.E2E_SEED): boolean {
+  return envSeed === "1";
+}
+
+export async function POST(req: Request) {
+  // 1. Guard: Only allowed when E2E_SEED === "1"
+  if (!isSeedRouteAllowed()) {
+    return NextResponse.json({ error: "Not Found" }, { status: 404 });
+  }
+
+  // 2. Defense-in-depth: require admin session
+  const { errorResponse } = requireAdminApi(req);
+  if (errorResponse) {
+    return errorResponse;
+  }
+
   const repo = getJobsRepository();
 
   const fixtureJobs: Array<{ job: NormalizedJob; triaged: TriagedJobResult }> = [

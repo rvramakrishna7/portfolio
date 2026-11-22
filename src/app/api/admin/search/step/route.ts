@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/admin/require-admin";
+import { verifyAdminOrigin } from "@/lib/admin/origin";
 import { stepJobSearch } from "@/lib/jobs/pipeline";
 import { z } from "zod";
 
@@ -9,29 +10,18 @@ const StepSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  // 1. Same-origin check using shared helper
+  if (!verifyAdminOrigin(req)) {
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403, headers: { "X-Robots-Tag": "noindex, nofollow" } }
+    );
+  }
+
+  // 2. Admin authorization
   const { errorResponse } = requireAdminApi(req);
   if (errorResponse) {
     return errorResponse;
-  }
-
-  // Same-origin check
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("host");
-  if (origin && host) {
-    try {
-      const originHost = new URL(origin).host;
-      if (originHost !== host) {
-        return NextResponse.json(
-          { error: "Cross-origin requests are forbidden" },
-          { status: 403, headers: { "X-Robots-Tag": "noindex, nofollow" } }
-        );
-      }
-    } catch {
-      return NextResponse.json(
-        { error: "Invalid origin header" },
-        { status: 403, headers: { "X-Robots-Tag": "noindex, nofollow" } }
-      );
-    }
   }
 
   let body: unknown;

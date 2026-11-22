@@ -5,8 +5,44 @@ const TEST_PASSWORD = "TestAdminPassword123!";
 
 test.describe("Admin Jobs Engine (J2)", () => {
   test.beforeEach(async ({ request }) => {
-    // Attempt seeding test fixture jobs via internal test route
-    await request.post("/api/test/seed-jobs").catch(() => {});
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    // Attempt seeding test fixture jobs via internal test route with admin session & origin
+    await request.post("/api/test/seed-jobs", {
+      headers: {
+        cookie: `admin=${token}; __Host-admin=${token}`,
+        origin: "http://localhost:3000",
+      },
+    }).catch(() => {});
+  });
+
+  test("unauthenticated POST to seed route returns 401", async ({ request }) => {
+    const res = await request.post("/api/test/seed-jobs", {
+      headers: {
+        origin: "http://localhost:3000",
+      },
+      data: {},
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test("POST /api/admin/search/start without Origin header returns 403 Forbidden", async ({
+    request,
+  }) => {
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    const res = await request.post("/api/admin/search/start", {
+      headers: {
+        cookie: `admin=${token}; __Host-admin=${token}`,
+        // No origin or referer header
+      },
+      data: {},
+    });
+    expect(res.status()).toBe(403);
   });
 
   test("unauthenticated /api/admin/search/* and /api/admin/jobs/* return 401 with X-Robots-Tag", async ({
