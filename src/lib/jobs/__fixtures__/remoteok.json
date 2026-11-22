@@ -1,0 +1,29 @@
+[
+  {
+    "legal": "Legal notice: Please do not scrape this API excessively."
+  },
+  {
+    "id": "1001",
+    "slug": "remoteok-junior-backend-engineer",
+    "position": "Junior Backend Engineer",
+    "company": "Acme Cloud",
+    "location": "Worldwide",
+    "description": "<p>We are seeking a <strong>Junior Backend Engineer</strong> with 0-1 years of experience.</p><p>Tech stack: Node.js, TypeScript, PostgreSQL.</p>",
+    "tags": ["backend", "typescript", "node", "postgresql"],
+    "date": "2026-11-20T10:00:00Z",
+    "url": "https://remoteok.com/remote-jobs/1001",
+    "salary_min": 50000,
+    "salary_max": 70000
+  },
+  {
+    "id": "1002",
+    "slug": "remoteok-senior-architect",
+    "position": "Senior Software Architect",
+    "company": "Enterprise Corp",
+    "location": "US Only",
+    "description": "<p>Must have 8+ years of experience leading teams.</p>",
+    "tags": ["senior", "architect", "java"],
+    "date": "2026-11-21T12:00:00Z",
+    "url": "https://remoteok.com/remote-jobs/1002"
+  }
+]
