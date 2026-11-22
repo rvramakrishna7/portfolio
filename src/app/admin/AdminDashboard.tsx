@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { StoredJob } from "@/lib/jobs/repository";
+import { formatJobAge } from "@/lib/jobs/freshness";
+import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 
 interface StatItem {
   id: string;
@@ -84,6 +86,7 @@ export function AdminDashboard() {
   const [viewFilter, setViewFilter] = useState<ViewFilter>("shortlist");
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [maxAgeDays, setMaxAgeDays] = useState<number>(MAX_AGE_DAYS_DEFAULT);
 
   // Pipeline search state
   const [isSearching, setIsSearching] = useState(false);
@@ -94,6 +97,7 @@ export function AdminDashboard() {
     try {
       const params = new URLSearchParams();
       params.set("view", viewFilter);
+      params.set("maxAgeDays", String(maxAgeDays));
       if (sourceFilter) params.set("source", sourceFilter);
       if (searchQuery) params.set("q", searchQuery);
 
@@ -117,7 +121,7 @@ export function AdminDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [viewFilter, sourceFilter, searchQuery]);
+  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays]);
 
   useEffect(() => {
     let ignore = false;
@@ -125,6 +129,7 @@ export function AdminDashboard() {
       try {
         const params = new URLSearchParams();
         params.set("view", viewFilter);
+        params.set("maxAgeDays", String(maxAgeDays));
         if (sourceFilter) params.set("source", sourceFilter);
         if (searchQuery) params.set("q", searchQuery);
 
@@ -160,7 +165,7 @@ export function AdminDashboard() {
     return () => {
       ignore = true;
     };
-  }, [viewFilter, sourceFilter, searchQuery]);
+  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays]);
 
   const handleRunSearch = async () => {
     if (isSearching) return;
@@ -370,6 +375,18 @@ export function AdminDashboard() {
                   </div>
 
                   <div className="admin-search-filters">
+                    <label htmlFor="posted-within-select" className="sr-only">Posted within</label>
+                    <select
+                      id="posted-within-select"
+                      className="admin-select"
+                      value={maxAgeDays}
+                      onChange={(e) => setMaxAgeDays(Number(e.target.value))}
+                    >
+                      <option value={3}>Posted within 3 days</option>
+                      <option value={7}>Posted within 7 days</option>
+                      <option value={10}>Posted within 10 days</option>
+                    </select>
+
                     <label htmlFor="source-select" className="sr-only">Source</label>
                     <select
                       id="source-select"
@@ -431,14 +448,10 @@ export function AdminDashboard() {
                               <span className="admin-job-source-tag">
                                 via <a href={job.url} target="_blank" rel="noopener noreferrer">{job.source}</a>
                               </span>
-                              {job.posted_at && (
-                                <>
-                                  <span className="admin-meta-sep">•</span>
-                                  <span className="admin-job-date">
-                                    {new Date(job.posted_at).toLocaleDateString()}
-                                  </span>
-                                </>
-                              )}
+                              <span className="admin-meta-sep">•</span>
+                              <span className="admin-job-date">
+                                {formatJobAge(job.posted_at, job.fetched_at)}
+                              </span>
                             </div>
                           </div>
 

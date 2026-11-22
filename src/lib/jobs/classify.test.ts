@@ -279,6 +279,98 @@ const GEO_TEST_CASES: TestCaseGeo[] = [
     description: "PST timezone only. Must be located in the United States.",
     expectedGeo: "restricted",
   },
+
+  // 15 NEW labelled geo tests (Step 2/6)
+  {
+    location: "Remote",
+    remoteScope: "WeWorkRemotely",
+    description: "Software Engineer (Remote Eligible in Bulgaria). Smartsheet is hiring.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote - Germany",
+    remoteScope: "Germany Only",
+    description: "Must reside in Germany. Working hours CET.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote (Poland)",
+    remoteScope: "Europe",
+    description: "Software developer role based in Poland.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Indiana, USA",
+    remoteScope: "United States",
+    description: "Position located in Indiana, USA. Not open internationally.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Malaysia",
+    remoteScope: "Malaysia",
+    description: "Based in Malaysia. Malaysian work permit required.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Anywhere in the world",
+    description: "We are an all-remote team anywhere in the world.",
+    expectedGeo: "worldwide",
+  },
+  {
+    location: "Remote",
+    remoteScope: "APAC",
+    description: "APAC timezones welcome. Competitive salary.",
+    expectedGeo: "india_ok",
+  },
+  {
+    location: "Remote, India",
+    remoteScope: "India",
+    description: "Remote, India. Build cloud applications with TypeScript.",
+    expectedGeo: "india_ok",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "General software engineering role with no location specified.",
+    expectedGeo: "unclear",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Must reside in France. French speaking required.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote (Brazil)",
+    remoteScope: "LATAM",
+    description: "Engineering team hiring remote in Brazil.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Worldwide",
+    description: "Headquartered in London UK but position is open worldwide.",
+    expectedGeo: "worldwide",
+  },
+  {
+    location: "Remote",
+    remoteScope: "APAC",
+    description: "Offices in Singapore and Tokyo, but engineering hiring is open to India and APAC.",
+    expectedGeo: "india_ok",
+  },
+  {
+    location: "Remote - UK",
+    remoteScope: "UK",
+    description: "UK residents only. No sponsorship available.",
+    expectedGeo: "restricted",
+  },
+  {
+    location: "Remote",
+    remoteScope: "Canada",
+    description: "Work from Canada only. Remote eligible in Canada.",
+    expectedGeo: "restricted",
+  },
 ];
 
 describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
@@ -294,8 +386,12 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
 
   it(`passes all ${GEO_TEST_CASES.length} geographic classification test cases`, () => {
     let passedCount = 0;
-    for (const tc of GEO_TEST_CASES) {
+    for (let i = 0; i < GEO_TEST_CASES.length; i++) {
+      const tc = GEO_TEST_CASES[i];
       const res = classifyGeo(tc.location, tc.remoteScope, tc.description);
+      if (res.geo !== tc.expectedGeo) {
+        console.error(`Failed at index ${i}:`, tc, "got:", res);
+      }
       expect(res.geo).toBe(tc.expectedGeo);
       passedCount++;
     }

@@ -1,4 +1,5 @@
 import { OWNER_PROFILE } from "../../config/job-profile";
+import { RESTRICTED_COUNTRIES_AND_REGIONS } from "../../config/countries";
 import { NormalizedJob } from "./types";
 
 export type ExpClass = "fresher" | "junior" | "unclear" | "senior";
@@ -199,6 +200,28 @@ export function classifyExperience(
 }
 
 /**
+ * Escapes regex special characters.
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Build regex patterns for restricted regions/countries
+const COUNTRIES_PATTERN = RESTRICTED_COUNTRIES_AND_REGIONS
+  .map((c) => escapeRegex(c.toLowerCase()))
+  .join("|");
+
+const RESTRICTED_COUNTRY_REGEXES = [
+  new RegExp(`\\beligible\\s+in\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
+  new RegExp(`\\bbased\\s+in\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
+  new RegExp(`\\blocated\\s+in\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
+  new RegExp(`\\bmust\\s+reside\\s+in\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
+  new RegExp(`\\bwork\\s+from\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
+  new RegExp(`\\bremote\\s*\\(\\s*(${COUNTRIES_PATTERN})\\s*\\)`, "i"),
+  new RegExp(`\\bremote\\s*-\\s*(${COUNTRIES_PATTERN})\\b`, "i"),
+];
+
+/**
  * Classifies geographical eligibility.
  */
 export function classifyGeo(
@@ -207,28 +230,19 @@ export function classifyGeo(
   description: string
 ): ClassifyGeoResult {
   const combined = `${location} ${remoteScope} ${description}`.toLowerCase();
+  const headerCombined = `${location} ${remoteScope}`.toLowerCase();
 
-  // 1. Restricted patterns (US only, Europe only, etc.)
-  const restrictedPatterns = [
-    /\b(?:us\s+only|usa\s+only|united\s+states\s+only)\b/i,
-    /\bmust\s+be\s+located\s+in\s+(?:the\s+)?(?:us|usa|united\s+states|eu|uk|canada|europe)\b/i,
-    /\b(?:eu\s+only|europe\s+only|uk\s+only|canada\s+only|americas\s+only|latin\s+america\s+only|latam\s+only)\b/i,
-    /\b(?:us|est|pst|cst)\s+timezone\s+only\b/i,
-    /\bauthorized\s+to\s+work\s+in\s+the\s+us\b/i,
-    /\bus\s+citizenship\s+required\b/i,
-    /\bno\s+c2c\b/i,
+  // 1. Explicit worldwide / work from anywhere patterns
+  const worldwidePatterns = [
+    /\bworldwide\b/i,
+    /\banywhere\s+in\s+the\s+world\b/i,
+    /\bwork\s+from\s+anywhere\b/i,
+    /\banywhere\b/i,
+    /\bglobal\b/i,
+    /\bany\s+timezone\b/i,
   ];
 
-  for (const pat of restrictedPatterns) {
-    if (pat.test(combined)) {
-      return {
-        geo: "restricted",
-        reason: "Restricted to specific jurisdictions (e.g. US/EU/UK only)",
-      };
-    }
-  }
-
-  // 2. India ok
+  // 2. India OK / APAC patterns (whole-word matching only!)
   const indiaPatterns = [
     /\bindia\b/i,
     /\bapac\b/i,
@@ -236,33 +250,102 @@ export function classifyGeo(
     /\bist\s+timezone\b/i,
     /\bbengaluru|bangalore|mumbai|delhi|hyderabad|pune\b/i,
   ];
-  for (const pat of indiaPatterns) {
+
+  // 3. Jurisdictional restriction patterns (US only, Europe only, etc.)
+  const generalRestrictedPatterns = [
+    /\b(?:us\s+only|usa\s+only|united\s+states\s+only)\b/i,
+    /\bmust\s+be\s+located\s+in\s+(?:the\s+)?(?:us|usa|united\s+states|eu|uk|canada|europe)\b/i,
+    /\b(?:eu\s+only|europe\s+only|uk\s+only|canada\s+only|americas\s+only|latin\s+america\s+only|latam\s+only)\b/i,
+    /\b(?:us|est|pst|cst)\s+timezone\s+only\b/i,
+    /\bauthorized\s+to\s+work\s+in\s+the\s+us\b/i,
+    /\bus\s+citizenship\s+required\b/i,
+    /\bno\s+c2c\b/i,
+    /\bnot\s+open\s+internationally\b/i,
+  ];
+
+  // Check country-specific restrictions in headers (location / remoteScope) or in combined text
+  let detectedRestriction: string | null = null;
+  for (const pat of generalRestrictedPatterns) {
     if (pat.test(combined)) {
-      return {
-        geo: "india_ok",
-        reason: "Explicitly open to India / APAC",
-      };
+      detectedRestriction = "Restricted to specific jurisdictions (e.g. US/EU/UK only)";
+      break;
     }
   }
 
-  // 3. Worldwide
-  const worldwidePatterns = [
-    /\bworldwide\b/i,
-    /\banywhere\b/i,
-    /\bglobal\b/i,
-    /\bwork\s+from\s+anywhere\b/i,
-    /\banywhere\s+in\s+the\s+world\b/i,
-    /\bany\s+timezone\b/i,
-  ];
-  for (const pat of worldwidePatterns) {
-    if (pat.test(combined)) {
+  if (!detectedRestriction) {
+    // Check header combined first (e.g. "Remote (Poland)", "Remote - Germany", "Remote Eligible in Bulgaria")
+    for (const regex of RESTRICTED_COUNTRY_REGEXES) {
+      const match = regex.exec(headerCombined);
+      if (match) {
+        detectedRestriction = `Restricted to ${match[1] || "specific country/region"}`;
+        break;
+      }
+    }
+  }
+
+  if (!detectedRestriction) {
+    // Also check description for restricted patterns
+    for (const regex of RESTRICTED_COUNTRY_REGEXES) {
+      const match = regex.exec(description);
+      if (match) {
+        detectedRestriction = `Restricted to ${match[1] || "specific country/region"}`;
+        break;
+      }
+    }
+  }
+
+  // Check India / APAC match (whole word)
+  const matchesIndia = indiaPatterns.some((pat) => pat.test(combined));
+  // Check Worldwide match
+  const matchesWorldwide = worldwidePatterns.some((pat) => pat.test(combined));
+
+  // (c) If a job mentions BOTH a restricted country and India/APAC,
+  // India/APAC wins only when the sentence says it is allowed ("India", "APAC", "worldwide"); otherwise restricted.
+  if (detectedRestriction) {
+    if (matchesWorldwide) {
       return {
         geo: "worldwide",
         reason: "Open worldwide / work from anywhere",
       };
     }
+
+    if (matchesIndia) {
+      // Check if India/APAC is explicitly allowed in its sentence/clause
+      // e.g. "APAC timezones welcome", "open to India", "remote, India"
+      const allowedSentencePattern = /\b(?:open\s+to|welcome|hiring\s+in|available\s+in|based\s+in|located\s+in|remote,\s*|remote\s*-\s*|eligible\s+in|across)\s+[^.!?\n]*\b(india|apac|asia|ist)\b/i;
+      const isExplicitlyAllowed = allowedSentencePattern.test(combined) ||
+        /\b(india|apac|asia)\s+(?:timezones?\s+)?welcome\b/i.test(combined);
+
+      if (isExplicitlyAllowed) {
+        return {
+          geo: "india_ok",
+          reason: "Explicitly open to India / APAC",
+        };
+      }
+    }
+
+    return {
+      geo: "restricted",
+      reason: detectedRestriction,
+    };
   }
 
+  // No restriction found
+  if (matchesIndia) {
+    return {
+      geo: "india_ok",
+      reason: "Explicitly open to India / APAC",
+    };
+  }
+
+  if (matchesWorldwide) {
+    return {
+      geo: "worldwide",
+      reason: "Open worldwide / work from anywhere",
+    };
+  }
+
+  // (d) a bare "Remote" with no region stays unclear
   return {
     geo: "unclear",
     reason: "No explicit geographic restrictions found",

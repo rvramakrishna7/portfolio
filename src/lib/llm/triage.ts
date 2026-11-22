@@ -1,4 +1,6 @@
 import { NormalizedJob } from "../jobs/types";
+import { calculateJobAgeDays } from "../jobs/freshness";
+import { MAX_AGE_DAYS_DEFAULT } from "../../config/job-profile";
 import {
   ClassifyExperienceResult,
   ClassifyGeoResult,
@@ -42,7 +44,11 @@ export async function triageJobWithLlm(
   let summaryLine = job.title;
   let skills = ruleScore.matchedSkills;
 
+  // Check age: skip LLM triage if older than 10 days
+  const jobAge = calculateJobAgeDays(job.postedAt);
+
   const needsLlm =
+    jobAge <= 10 &&
     (ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear") &&
     llmCallsMade.count < MAX_LLM_CALLS_PER_RUN;
 
@@ -110,7 +116,9 @@ ${job.description.slice(0, 1500)}`;
 
   // Determine filter reason if excluded from shortlist
   let filterReason: string | undefined;
-  if (expClass === "senior") {
+  if (jobAge > MAX_AGE_DAYS_DEFAULT) {
+    filterReason = `posted ${jobAge} days ago`;
+  } else if (expClass === "senior") {
     filterReason = ruleExp.reason || "Senior experience required";
   } else if (geoEligibility === "restricted") {
     filterReason = geoReason || "Geographically restricted";

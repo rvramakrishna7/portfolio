@@ -10,6 +10,10 @@ export interface SkillWeight {
   weight: number;
 }
 
+export const MAX_AGE_DAYS_DEFAULT = 7;
+export const ALLOWED_MAX_AGE_DAYS = [3, 7, 10] as const;
+export type AllowedMaxAgeDays = (typeof ALLOWED_MAX_AGE_DAYS)[number];
+
 export const OWNER_PROFILE = {
   name: "Ramakrishna",
   roleStatus: "Fresher",

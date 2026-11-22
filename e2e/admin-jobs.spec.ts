@@ -1,8 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-const TEST_PASSWORD = "TestAdminPassword123!";
-
 test.describe("Admin Jobs Engine (J2)", () => {
   test.beforeEach(async ({ request }) => {
     const { createSessionToken } = await import("../src/lib/admin/session");
@@ -104,16 +102,18 @@ test.describe("Admin Jobs Engine (J2)", () => {
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.locator(".admin-brand h1")).toHaveText("Ramakrishna Job Desk");
 
-    // 2. Shortlist tab should contain junior/fresher jobs
-    await expect(page.locator(".admin-job-card")).toHaveCount(2);
+    // 2. Shortlist tab should contain junior/fresher jobs that are fresh (2 days old and 5 days old)
+    await expect(page.locator(".admin-job-card")).toHaveCount(3);
     await expect(page.locator(".admin-job-title").first()).toBeVisible();
 
     const textContent = await page.textContent(".admin-jobs-list");
     expect(textContent).toContain("Junior Backend Developer");
     expect(textContent).toContain("Full Stack Engineer (Fresher / New Grad)");
-    // Senior and US-only should NOT be in shortlist
+    expect(textContent).toContain("Software Engineer (5 Days Old)");
+    // Senior, US-only, and 15-day-old job should NOT be in shortlist
     expect(textContent).not.toContain("Senior Software Architect");
     expect(textContent).not.toContain("US Only Labs");
+    expect(textContent).not.toContain("Legacy Backend Developer (15 Days Old)");
 
     // 3. Switch to 'Hidden' tab
     await page.click('button:has-text("Hidden")');
@@ -122,13 +122,25 @@ test.describe("Admin Jobs Engine (J2)", () => {
     const hiddenText = await page.textContent(".admin-jobs-list");
     expect(hiddenText).toContain("Senior Software Architect");
     expect(hiddenText).toContain("US Only Labs");
-    // Verify reason is visible
+    expect(hiddenText).toContain("Legacy Backend Developer (15 Days Old)");
+    // Verify reasons are visible, including freshness reason
     expect(hiddenText).toContain("Reason:");
+    expect(hiddenText).toContain("posted 15 days ago");
 
-    // 4. Switch to 'All' tab
+    // 4. Switching the select to 10 days still hides the 15-day job
+    await page.selectOption("#posted-within-select", "10");
+    await page.waitForTimeout(300);
+
+    // Switch back to Shortlist and assert 15-day job is not there
+    await page.click('button:has-text("Shortlist")');
+    await page.waitForTimeout(300);
+    const shortlist10dText = await page.textContent(".admin-jobs-list");
+    expect(shortlist10dText).not.toContain("Legacy Backend Developer (15 Days Old)");
+
+    // 5. Switch to 'All' tab (with 10 days, 5 jobs match within 10 days)
     await page.click('button:has-text("All")');
     await page.waitForTimeout(300);
-    await expect(page.locator(".admin-job-card")).toHaveCount(4);
+    await expect(page.locator(".admin-job-card")).toHaveCount(5);
   });
 
   test("status update actions (Shortlist, Mark applied, Skip) persist in view", async ({
