@@ -153,7 +153,7 @@ describe("Resumable Job Search Pipeline", () => {
   });
 
   it("handles an adapter that throws by recording the board error without failing the run", async () => {
-    let virtualTime = 1000;
+    const virtualTime = 1000;
     const clock = () => virtualTime;
 
     const fakeBoards: BoardQueueItem[] = [
