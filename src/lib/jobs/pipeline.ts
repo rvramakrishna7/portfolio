@@ -83,10 +83,13 @@ export async function startJobSearch(
   // One-off re-classification for existing stored rows with geo_eligibility = 'unclear'
   try {
     if (typeof repo.reclassifyUnclearJobs === "function") {
-      await repo.reclassifyUnclearJobs();
+      const res = await repo.reclassifyUnclearJobs();
+      if (res?.error) {
+        console.warn("[startJobSearch] reclassifyUnclearJobs encountered an error; continuing search run");
+      }
     }
-  } catch {
-    // Non-blocking fallback
+  } catch (err) {
+    console.warn("[startJobSearch] Unexpected reclassify error; continuing search run:", err);
   }
 
   let rawJobs: NormalizedJob[] = [];

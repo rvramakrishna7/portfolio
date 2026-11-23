@@ -1028,4 +1028,139 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
     expect(hiddenIds).toContain("case-us");
     expect(hiddenIds).toContain("case-london");
   });
+
+  describe("reclassifyUnclearJobs cost and budget controls", () => {
+    it("second call updates 0 rows because rows are already classified", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      await repo.upsertJob(
+        {
+          source: "greenhouse",
+          sourceId: "reclass-1",
+          url: "https://example.com/1",
+          title: "Frontend Developer",
+          company: "Co A",
+          location: "Remote",
+          remoteScope: "Remote",
+          description: "Remote developer opening.",
+          postedAt: nowIso,
+          tags: [],
+          isRemote: true,
+        },
+        {
+          expClass: "junior",
+          expMinYears: 1,
+          geoEligibility: "unclear",
+          geoReason: "legacy unclassified reason",
+          filterReason: undefined,
+          summaryLine: "Legacy unclear job",
+          skills: ["React"],
+          matchScore: 70,
+        }
+      );
+
+      // First run: updates the 1 unclassified row
+      const firstRun = await repo.reclassifyUnclearJobs();
+      expect(firstRun.updated).toBe(1);
+      expect(firstRun.remaining).toBe(0);
+
+      // Second run: 0 rows selected because geo_reason now starts with remote-unconfirmed:
+      const secondRun = await repo.reclassifyUnclearJobs();
+      expect(secondRun.updated).toBe(0);
+      expect(secondRun.remaining).toBe(0);
+    });
+
+    it("skips updating unchanged rows when fields would not change", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      await repo.upsertJob(
+        {
+          source: "ashby",
+          sourceId: "reclass-unchanged",
+          url: "https://example.com/unchanged",
+          title: "Platform Engineer",
+          company: "Co B",
+          location: "Unknown",
+          remoteScope: "Unknown",
+          description: "Platform role.",
+          postedAt: nowIso,
+          tags: [],
+        },
+        {
+          expClass: "junior",
+          expMinYears: 1,
+          geoEligibility: "unclear",
+          geoReason: "legacy-match-reason",
+          filterReason: undefined,
+          summaryLine: "Role with matching mock",
+          skills: ["Docker"],
+          matchScore: 60,
+        }
+      );
+
+      // Pass classifyFn returning the exact same values already on the job
+      const res = await repo.reclassifyUnclearJobs({
+        classifyFn: () => ({
+          geo: "unclear",
+          reason: "legacy-match-reason",
+        }),
+      });
+      expect(res.updated).toBe(0);
+      expect(res.remaining).toBe(0);
+    });
+
+    it("stops after time budget is exceeded and returns remaining > 0", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      for (let i = 1; i <= 3; i++) {
+        await repo.upsertJob(
+          {
+            source: "lever",
+            sourceId: `budget-job-${i}`,
+            url: `https://example.com/${i}`,
+            title: `Developer ${i}`,
+            company: `Budget Co ${i}`,
+            location: "Remote",
+            remoteScope: "Remote",
+            description: "Remote role.",
+            postedAt: nowIso,
+            tags: [],
+            isRemote: true,
+          },
+          {
+            expClass: "junior",
+            expMinYears: 1,
+            geoEligibility: "unclear",
+            geoReason: `unclassified legacy ${i}`,
+            filterReason: undefined,
+            summaryLine: `Job ${i}`,
+            skills: ["Node.js"],
+            matchScore: 75,
+          }
+        );
+      }
+
+      // Simulated clock: advances past budget after 1 job is processed
+      let callCount = 0;
+      const clock = () => {
+        callCount++;
+        return callCount <= 2 ? 1000 : 7000;
+      };
+
+      const res = await repo.reclassifyUnclearJobs({
+        timeBudgetMs: 5000,
+        clock,
+      });
+
+      expect(res.updated).toBe(1);
+      expect(res.remaining).toBe(2);
+      expect(res.remaining).toBeGreaterThan(0);
+    });
+  });
 });

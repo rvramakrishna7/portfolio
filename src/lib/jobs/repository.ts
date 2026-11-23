@@ -69,12 +69,25 @@ export interface JobsQueryOptions {
   offset?: number;
 }
 
+export interface ReclassifyOptions {
+  timeBudgetMs?: number;
+  clock?: () => number;
+  batchSize?: number;
+  classifyFn?: typeof classifyGeo;
+}
+
+export interface ReclassifyResult {
+  updated: number;
+  remaining: number;
+  error?: boolean;
+}
+
 export interface JobsRepository {
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
   getJob(source: string, sourceId: string): Promise<StoredJob | null>;
   getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }>;
   getViewCounts(maxAgeDays?: number): Promise<{ shortlist: number; maybe: number; hidden: number; all: number }>;
-  reclassifyUnclearJobs?(): Promise<{ updated: number }>;
+  reclassifyUnclearJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
   getStats(): Promise<{
     jobsFound: number;
     newToday: number;
@@ -303,39 +316,73 @@ export class InMemoryJobsRepository implements JobsRepository {
     return { shortlist, maybe, hidden, all };
   }
 
-  async reclassifyUnclearJobs(): Promise<{ updated: number }> {
-    let updated = 0;
-    for (const j of this.jobs.values()) {
-      if (j.geo_eligibility === "unclear") {
-        const rawObj = j.raw as Record<string, unknown> | undefined;
-        const isRemote =
-          (rawObj?.isRemote as boolean | undefined) ??
-          (/\bremote\b/i.test(j.location || "") ||
-            /\bremote\b/i.test(j.remote_scope || "") ||
-            /\bremote\b/i.test(j.title || "") ||
-            /\bremote\b/i.test(j.description || ""));
-        const workplaceType = rawObj?.workplaceType as string | undefined;
-        const reclassified = classifyGeo(
-          j.title || "",
-          j.location || "",
-          j.remote_scope || "",
-          j.description || "",
-          { isRemote, workplaceType }
-        );
+  async reclassifyUnclearJobs(opts?: ReclassifyOptions): Promise<ReclassifyResult> {
+    const timeBudgetMs = opts?.timeBudgetMs ?? 15000;
+    const clock = opts?.clock ?? Date.now;
+    const classifyFn = opts?.classifyFn ?? classifyGeo;
+    const startTime = clock();
 
+    // (a) SELECT only rows where geo_eligibility = 'unclear' AND
+    // (geo_reason IS NULL OR (geo_reason NOT LIKE 'remote-unconfirmed:%' AND geo_reason NOT LIKE 'onsite:%'))
+    const candidates = Array.from(this.jobs.values()).filter((j) => {
+      if (j.geo_eligibility !== "unclear") return false;
+      if (!j.geo_reason) return true;
+      return (
+        !j.geo_reason.startsWith("remote-unconfirmed:") &&
+        !j.geo_reason.startsWith("onsite:")
+      );
+    });
+
+    let updated = 0;
+    let processedCount = 0;
+
+    for (const j of candidates) {
+      if (clock() - startTime >= timeBudgetMs) {
+        break;
+      }
+
+      const rawObj = j.raw as Record<string, unknown> | undefined;
+      const isRemote =
+        (rawObj?.isRemote as boolean | undefined) ??
+        (/\bremote\b/i.test(j.location || "") ||
+          /\bremote\b/i.test(j.remote_scope || "") ||
+          /\bremote\b/i.test(j.title || "") ||
+          /\bremote\b/i.test(j.description || ""));
+      const workplaceType = rawObj?.workplaceType as string | undefined;
+      const reclassified = classifyFn(
+        j.title || "",
+        j.location || "",
+        j.remote_scope || "",
+        j.description || "",
+        { isRemote, workplaceType }
+      );
+
+      const newFilterReason = reclassified.reason.startsWith("remote-unconfirmed:")
+        ? null
+        : reclassified.geo === "restricted"
+        ? reclassified.reason
+        : reclassified.reason.startsWith("onsite:")
+        ? "location not remote / not confirmed for India"
+        : null;
+
+      // (b) Skip the UPDATE when geo, geo_reason and filter_reason would not change
+      const changed =
+        j.geo_eligibility !== reclassified.geo ||
+        j.geo_reason !== reclassified.reason ||
+        (j.filter_reason ?? null) !== (newFilterReason ?? null);
+
+      if (changed) {
         j.geo_eligibility = reclassified.geo;
         j.geo_reason = reclassified.reason;
-        if (reclassified.reason.startsWith("remote-unconfirmed:")) {
-          j.filter_reason = null;
-        } else if (reclassified.geo === "restricted") {
-          j.filter_reason = reclassified.reason;
-        } else if (reclassified.reason.startsWith("onsite:")) {
-          j.filter_reason = "location not remote / not confirmed for India";
-        }
+        j.filter_reason = newFilterReason;
         updated++;
       }
+
+      processedCount++;
     }
-    return { updated };
+
+    const remaining = candidates.length - processedCount;
+    return { updated, remaining };
   }
 
   async getStats() {
@@ -633,13 +680,26 @@ export class NeonJobsRepository implements JobsRepository {
     }
   }
 
-  async reclassifyUnclearJobs(): Promise<{ updated: number }> {
+  async reclassifyUnclearJobs(opts?: ReclassifyOptions): Promise<ReclassifyResult> {
+    const timeBudgetMs = opts?.timeBudgetMs ?? 15000;
+    const clock = opts?.clock ?? Date.now;
+    const batchSize = opts?.batchSize ?? 100;
+    const classifyFn = opts?.classifyFn ?? classifyGeo;
+    const startTime = clock();
+
     const sql = getSql();
     try {
       const rows = (await sql`
-        SELECT id, title, location, remote_scope, description, raw
+        SELECT id, title, location, remote_scope, description, raw, geo_eligibility, geo_reason, filter_reason
         FROM jobs
         WHERE geo_eligibility = 'unclear'
+          AND (
+            geo_reason IS NULL
+            OR (
+              geo_reason NOT LIKE 'remote-unconfirmed:%'
+              AND geo_reason NOT LIKE 'onsite:%'
+            )
+          )
       `) as Array<{
         id: string;
         title: string;
@@ -647,57 +707,102 @@ export class NeonJobsRepository implements JobsRepository {
         remote_scope: string | null;
         description: string | null;
         raw: unknown;
+        geo_eligibility: string;
+        geo_reason: string | null;
+        filter_reason: string | null;
       }>;
 
-      let updated = 0;
-      for (const row of rows) {
-        let rawObj: Record<string, unknown> | null = null;
-        if (typeof row.raw === "string") {
-          try {
-            rawObj = JSON.parse(row.raw);
-          } catch {
-            rawObj = null;
-          }
-        } else if (typeof row.raw === "object" && row.raw !== null) {
-          rawObj = row.raw as Record<string, unknown>;
+      let totalUpdated = 0;
+      let currentIndex = 0;
+
+      while (currentIndex < rows.length) {
+        if (clock() - startTime >= timeBudgetMs) {
+          break;
         }
 
-        const isRemote =
-          (rawObj?.isRemote as boolean | undefined) ??
-          (/\bremote\b/i.test(row.location || "") ||
-            /\bremote\b/i.test(row.remote_scope || "") ||
-            /\bremote\b/i.test(row.title || "") ||
-            /\bremote\b/i.test(row.description || ""));
-        const workplaceType = rawObj?.workplaceType as string | undefined;
-        const reclassified = classifyGeo(
-          row.title || "",
-          row.location || "",
-          row.remote_scope || "",
-          row.description || "",
-          { isRemote, workplaceType }
-        );
+        const batchEnd = Math.min(currentIndex + batchSize, rows.length);
+        const batch = rows.slice(currentIndex, batchEnd);
 
-        const newFilterReason = reclassified.reason.startsWith("remote-unconfirmed:")
-          ? null
-          : reclassified.geo === "restricted"
-          ? reclassified.reason
-          : reclassified.reason.startsWith("onsite:")
-          ? "location not remote / not confirmed for India"
-          : null;
+        const ids: string[] = [];
+        const geos: string[] = [];
+        const reasons: string[] = [];
+        const filterReasons: Array<string | null> = [];
 
-        await sql`
-          UPDATE jobs
-          SET
-            geo_eligibility = ${reclassified.geo},
-            geo_reason = ${reclassified.reason},
-            filter_reason = ${newFilterReason}
-          WHERE id = ${row.id}
-        `;
-        updated++;
+        for (const row of batch) {
+          let rawObj: Record<string, unknown> | null = null;
+          if (typeof row.raw === "string") {
+            try {
+              rawObj = JSON.parse(row.raw);
+            } catch {
+              rawObj = null;
+            }
+          } else if (typeof row.raw === "object" && row.raw !== null) {
+            rawObj = row.raw as Record<string, unknown>;
+          }
+
+          const isRemote =
+            (rawObj?.isRemote as boolean | undefined) ??
+            (/\bremote\b/i.test(row.location || "") ||
+              /\bremote\b/i.test(row.remote_scope || "") ||
+              /\bremote\b/i.test(row.title || "") ||
+              /\bremote\b/i.test(row.description || ""));
+          const workplaceType = rawObj?.workplaceType as string | undefined;
+          const reclassified = classifyFn(
+            row.title || "",
+            row.location || "",
+            row.remote_scope || "",
+            row.description || "",
+            { isRemote, workplaceType }
+          );
+
+          const newFilterReason = reclassified.reason.startsWith("remote-unconfirmed:")
+            ? null
+            : reclassified.geo === "restricted"
+            ? reclassified.reason
+            : reclassified.reason.startsWith("onsite:")
+            ? "location not remote / not confirmed for India"
+            : null;
+
+          const changed =
+            row.geo_eligibility !== reclassified.geo ||
+            row.geo_reason !== reclassified.reason ||
+            (row.filter_reason ?? null) !== (newFilterReason ?? null);
+
+          if (changed) {
+            ids.push(row.id);
+            geos.push(reclassified.geo);
+            reasons.push(reclassified.reason);
+            filterReasons.push(newFilterReason);
+          }
+        }
+
+        if (ids.length > 0) {
+          await sql`
+            UPDATE jobs AS j
+            SET
+              geo_eligibility = u.geo,
+              geo_reason = u.geo_reason,
+              filter_reason = u.filter_reason
+            FROM (
+              SELECT
+                UNNEST(${ids}::uuid[]) AS id,
+                UNNEST(${geos}::text[]) AS geo,
+                UNNEST(${reasons}::text[]) AS geo_reason,
+                UNNEST(${filterReasons}::text[]) AS filter_reason
+            ) AS u
+            WHERE j.id = u.id;
+          `;
+          totalUpdated += ids.length;
+        }
+
+        currentIndex = batchEnd;
       }
-      return { updated };
-    } catch {
-      return { updated: 0 };
+
+      const remaining = rows.length - currentIndex;
+      return { updated: totalUpdated, remaining };
+    } catch (err) {
+      console.error("[reclassifyUnclearJobs] Error reclassifying jobs:", err);
+      return { updated: 0, remaining: 0, error: true };
     }
   }
 
