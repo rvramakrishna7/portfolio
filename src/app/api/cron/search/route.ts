@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
 import { startJobSearch, stepJobSearch } from "@/lib/jobs/pipeline";
 import { getJobsRepository } from "@/lib/jobs/repository";
+import { safeCompare } from "@/lib/admin/safe-compare";
 
 export const maxDuration = 60;
 
@@ -17,11 +17,7 @@ export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization") || "";
   const expectedHeader = `Bearer ${cronSecret}`;
 
-  // Constant-time comparison
-  const authBuf = Buffer.from(authHeader);
-  const expBuf = Buffer.from(expectedHeader);
-
-  if (authBuf.length !== expBuf.length || !timingSafeEqual(authBuf, expBuf)) {
+  if (!safeCompare(authHeader, expectedHeader)) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401 }

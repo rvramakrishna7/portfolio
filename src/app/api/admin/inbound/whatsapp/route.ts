@@ -14,6 +14,7 @@ const NOINDEX_HEADERS = {
 
 const MAX_COMPRESSED_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024; // 20MB
+const MAX_ZIP_ENTRIES = 50;
 const MAX_MESSAGE_AGE_DAYS = 10;
 
 /**
@@ -221,21 +222,42 @@ export async function POST(req: NextRequest) {
 
   if (isZip) {
     try {
-      const unzipped = unzipSync(fileBuffer);
+      let entryCount = 0;
       let totalUncompressedBytes = 0;
 
-      for (const [filename, content] of Object.entries(unzipped)) {
-        totalUncompressedBytes += content.length;
-        if (totalUncompressedBytes > MAX_UNCOMPRESSED_BYTES) {
-          return NextResponse.json(
-            { error: "Uncompressed content exceeds 20MB limit (zip bomb protection)" },
-            { status: 400, headers: NOINDEX_HEADERS }
-          );
-        }
+      const unzipped = unzipSync(fileBuffer, {
+        filter(file) {
+          entryCount++;
+          if (entryCount > MAX_ZIP_ENTRIES) {
+            throw new Error(`Archive contains too many entries (max ${MAX_ZIP_ENTRIES})`);
+          }
 
-        if (filename.endsWith(".txt") || filename.includes("chat")) {
-          combinedText += new TextDecoder("utf-8").decode(content) + "\n";
-        }
+          if (file.originalSize > MAX_UNCOMPRESSED_BYTES) {
+            throw new Error("Uncompressed content exceeds 20MB limit (zip bomb protection)");
+          }
+
+          // Accept only entries whose name ends with .txt
+          // Reject (skip) any entry whose name contains "..", starts with "/" or "\", or contains a drive letter
+          const hasTraversal = file.name.includes("..");
+          const hasLeadingSlash = file.name.startsWith("/") || file.name.startsWith("\\");
+          const hasDriveLetter = /[a-zA-Z]:/.test(file.name);
+          const isTxt = file.name.toLowerCase().endsWith(".txt");
+
+          if (hasTraversal || hasLeadingSlash || hasDriveLetter || !isTxt) {
+            return false;
+          }
+
+          totalUncompressedBytes += file.originalSize;
+          if (totalUncompressedBytes > MAX_UNCOMPRESSED_BYTES) {
+            throw new Error("Uncompressed content exceeds 20MB limit (zip bomb protection)");
+          }
+
+          return true;
+        },
+      });
+
+      for (const [, content] of Object.entries(unzipped)) {
+        combinedText += new TextDecoder("utf-8").decode(content) + "\n";
       }
     } catch (err: unknown) {
       return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseInboundCandidates, processAndIngestInboundCandidates } from "../../../../lib/inbound/parse";
 import { getJobsRepository } from "../../../../lib/jobs/repository";
+import { safeCompare } from "../../../../lib/admin/safe-compare";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +39,8 @@ export async function POST(req: NextRequest) {
   const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET;
   const headerSecret = req.headers.get("x-telegram-bot-api-secret-token");
 
-  // Security: check secret token header
-  if (!secretToken || headerSecret !== secretToken) {
+  // Security: check secret token header using timingSafeEqual
+  if (!secretToken || !safeCompare(headerSecret, secretToken)) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401, headers: NOINDEX_HEADERS }
@@ -88,8 +89,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Check if update is from configured owner chat
-  const ownerChatId = process.env.TELEGRAM_CHAT_ID;
-  if (!ownerChatId || String(ownerChatId).trim() !== chatId) {
+  const ownerChatId = process.env.TELEGRAM_CHAT_ID?.trim();
+  const cleanChatId = chatId ? String(chatId).trim() : null;
+  if (!ownerChatId || !cleanChatId || ownerChatId !== cleanChatId) {
     // Ignore non-owner chats silently with 200 OK so Telegram does not retry
     return NextResponse.json(
       { ok: true, ignored: true },

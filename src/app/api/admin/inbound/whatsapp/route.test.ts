@@ -147,7 +147,7 @@ Skills: React, Node.js, TypeScript`;
       expect(data.added).toBe(1);
     });
 
-    it("unzips .zip archive using fflate and ingests messages", async () => {
+    it("unzips .zip archive using fflate and ingests messages (valid zip with .txt chat -> 200)", async () => {
       const today = new Date();
       const day = String(today.getDate()).padStart(2, "0");
       const month = String(today.getMonth() + 1).padStart(2, "0");
@@ -178,6 +178,88 @@ Python and Django experience`;
       expect(data.totalMessages).toBe(1);
       expect(data.parsedJobs).toBe(1);
       expect(data.added).toBe(1);
+    });
+
+    it("skips entries with path traversal (../evil.txt)", async () => {
+      const today = new Date();
+      const day = String(today.getDate()).padStart(2, "0");
+      const month = String(today.getMonth() + 1).padStart(2, "0");
+      const year = String(today.getFullYear()).slice(-2);
+
+      const evilText = `${day}/${month}/${year}, 10:00 - Hacker: Evil Role at Malicious https://evil.com/jobs/1`;
+      const validText = `${day}/${month}/${year}, 11:00 - Good: Junior Go Engineer at Freshworks https://freshworks.com/jobs/go-1`;
+
+      const zipped = zipSync({
+        "../evil.txt": strToU8(evilText),
+        "/absolute.txt": strToU8(evilText),
+        "C:\\drive.txt": strToU8(evilText),
+        "readme.md": strToU8(evilText),
+        "valid.txt": strToU8(validText),
+      });
+
+      const req = new NextRequest("http://localhost:3000/api/admin/inbound/whatsapp", {
+        method: "POST",
+        headers: {
+          Cookie: getValidCookie(),
+          Origin: "http://localhost:3000",
+          "Content-Type": "application/zip",
+        },
+        body: zipped,
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      // Only valid.txt is accepted and parsed
+      expect(data.totalMessages).toBe(1);
+      expect(data.parsedJobs).toBe(1);
+      expect(data.added).toBe(1);
+    });
+
+    it("rejects zip with oversized entry (>20 MB original size -> 400)", async () => {
+      // 21MB of zeros compresses to ~21KB, but originalSize exceeds 20MB limit
+      const bigBuffer = new Uint8Array(21 * 1024 * 1024);
+      const zipped = zipSync({
+        "huge.txt": bigBuffer,
+      });
+
+      const req = new NextRequest("http://localhost:3000/api/admin/inbound/whatsapp", {
+        method: "POST",
+        headers: {
+          Cookie: getValidCookie(),
+          Origin: "http://localhost:3000",
+          "Content-Type": "application/zip",
+        },
+        body: zipped,
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain("20MB limit");
+    });
+
+    it("rejects zip with 51 entries (-> 400)", async () => {
+      const files: Record<string, Uint8Array> = {};
+      for (let i = 0; i < 51; i++) {
+        files[`file_${i}.txt`] = strToU8("test");
+      }
+      const zipped = zipSync(files);
+
+      const req = new NextRequest("http://localhost:3000/api/admin/inbound/whatsapp", {
+        method: "POST",
+        headers: {
+          Cookie: getValidCookie(),
+          Origin: "http://localhost:3000",
+          "Content-Type": "application/zip",
+        },
+        body: zipped,
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain("max 50");
     });
   });
 });

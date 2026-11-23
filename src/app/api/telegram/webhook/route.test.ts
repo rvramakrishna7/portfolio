@@ -46,18 +46,42 @@ describe("POST /api/telegram/webhook", () => {
     });
   }
 
-  it("returns 401 when secret header is missing or incorrect", async () => {
-    const req1 = makeRequest({ message: { text: "hello" } });
-    const res1 = await POST(req1);
-    expect(res1.status).toBe(401);
-    expect(res1.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  it("returns 401 when secret header is missing", async () => {
+    const req = makeRequest({ message: { text: "hello" } });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+    expect(res.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
 
-    const req2 = makeRequest(
+  it("returns 401 when secret header has wrong value of the same length", async () => {
+    // process.env.TELEGRAM_WEBHOOK_SECRET is "correct_secret_xyz" (length 18)
+    const sameLengthWrongSecret = "wrong_secret_12345"; // length 18
+    const req = makeRequest(
       { message: { text: "hello" } },
-      { "x-telegram-bot-api-secret-token": "wrong_secret" }
+      { "x-telegram-bot-api-secret-token": sameLengthWrongSecret }
     );
-    const res2 = await POST(req2);
-    expect(res2.status).toBe(401);
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when secret header has wrong length", async () => {
+    const wrongLengthSecret = "short";
+    const req = makeRequest(
+      { message: { text: "hello" } },
+      { "x-telegram-bot-api-secret-token": wrongLengthSecret }
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when TELEGRAM_WEBHOOK_SECRET env is missing", async () => {
+    delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    const req = makeRequest(
+      { message: { text: "hello" } },
+      { "x-telegram-bot-api-secret-token": "correct_secret_xyz" }
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(401);
   });
 
   it("responds to /whoami with the sender's chat ID", async () => {
