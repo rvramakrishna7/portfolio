@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { StoredJob } from "@/lib/jobs/repository";
+import { StoredJob, CustomBoard } from "@/lib/jobs/repository";
 import { formatJobAge } from "@/lib/jobs/freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 
@@ -98,6 +98,25 @@ export function AdminDashboard() {
   // Pipeline search state
   const [isSearching, setIsSearching] = useState(false);
   const [searchProgress, setSearchProgress] = useState<string | null>(null);
+
+  // Inbound "Add jobs" state
+  const [showAddJobs, setShowAddJobs] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [waFile, setWaFile] = useState<File | null>(null);
+  const [isSubmittingPaste, setIsSubmittingPaste] = useState(false);
+  const [isSubmittingUrl, setIsSubmittingUrl] = useState(false);
+  const [isUploadingWa, setIsUploadingWa] = useState(false);
+  const [inboundFeedback, setInboundFeedback] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Settings: Custom Boards & Connections state
+  const [customBoards, setCustomBoards] = useState<CustomBoard[]>([]);
+  const [newBoardKind, setNewBoardKind] = useState<"greenhouse" | "lever" | "ashby">("greenhouse");
+  const [newBoardSlug, setNewBoardSlug] = useState("");
+  const [newBoardLabel, setNewBoardLabel] = useState("");
+  const [isAddingBoard, setIsAddingBoard] = useState(false);
+  const [boardFeedback, setBoardFeedback] = useState<string | null>(null);
 
   const fetchJobs = useCallback(async () => {
     setFetchError(null);
@@ -271,6 +290,159 @@ export function AdminDashboard() {
     }
   };
 
+  const handlePasteSubmit = async () => {
+    if (!pasteText.trim()) return;
+    setIsSubmittingPaste(true);
+    setInboundFeedback(null);
+    try {
+      const res = await fetch("/api/admin/inbound/paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: pasteText }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to process text");
+      }
+      setInboundFeedback(`Added ${data.added}, skipped ${data.duplicates} duplicates, ${data.filtered} filtered.`);
+      setPasteText("");
+      await fetchJobs();
+    } catch (err: unknown) {
+      setInboundFeedback(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmittingPaste(false);
+    }
+  };
+
+  const handleUrlSubmit = async () => {
+    if (!pasteUrl.trim()) return;
+    setIsSubmittingUrl(true);
+    setInboundFeedback(null);
+    try {
+      const res = await fetch("/api/admin/inbound/paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: pasteUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to fetch URL");
+      }
+      setInboundFeedback(`Added ${data.added}, skipped ${data.duplicates} duplicates, ${data.filtered} filtered.`);
+      setPasteUrl("");
+      await fetchJobs();
+    } catch (err: unknown) {
+      setInboundFeedback(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmittingUrl(false);
+    }
+  };
+
+  const handleWhatsAppUpload = async () => {
+    if (!waFile) return;
+    setIsUploadingWa(true);
+    setInboundFeedback(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", waFile);
+      const res = await fetch("/api/admin/inbound/whatsapp", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to import WhatsApp export");
+      }
+      setInboundFeedback(
+        `Imported: Added ${data.added}, skipped ${data.duplicates} duplicates, ${data.filtered} filtered (parsed ${data.parsedJobs} jobs from ${data.totalMessages} messages).`
+      );
+      setWaFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      await fetchJobs();
+    } catch (err: unknown) {
+      setInboundFeedback(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsUploadingWa(false);
+    }
+  };
+
+  const fetchCustomBoards = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/boards");
+      if (res.ok) {
+        const data = await res.json();
+        setCustomBoards(data.boards || []);
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "settings") {
+      let ignore = false;
+      const load = async () => {
+        try {
+          const res = await fetch("/api/admin/boards");
+          if (res.ok) {
+            const data = await res.json();
+            if (!ignore) {
+              setCustomBoards(data.boards || []);
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      };
+      load();
+      return () => {
+        ignore = true;
+      };
+    }
+  }, [activeTab]);
+
+  const handleAddBoard = async () => {
+    if (!newBoardSlug.trim()) return;
+    setIsAddingBoard(true);
+    setBoardFeedback(null);
+    try {
+      const res = await fetch("/api/admin/boards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: newBoardKind,
+          slug: newBoardSlug.trim(),
+          label: newBoardLabel.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to add custom board");
+      }
+      setBoardFeedback(`Board '${newBoardSlug}' added successfully.`);
+      setNewBoardSlug("");
+      setNewBoardLabel("");
+      await fetchCustomBoards();
+    } catch (err: unknown) {
+      setBoardFeedback(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsAddingBoard(false);
+    }
+  };
+
+  const handleDeleteBoard = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/boards?id=${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        await fetchCustomBoards();
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
   const currentTab = TABS.find((t) => t.key === activeTab) || TABS[0];
 
   const ALL_SOURCES = [
@@ -282,6 +454,11 @@ export function AdminDashboard() {
     "lever",
     "ashby",
     "hn",
+    "linkedin",
+    "email",
+    "telegram",
+    "whatsapp",
+    "paste",
   ] as const;
 
   const availableSources = Array.from(
@@ -361,6 +538,14 @@ export function AdminDashboard() {
                 <div className="admin-jobs-actions">
                   <button
                     type="button"
+                    className="btn ghost"
+                    onClick={() => setShowAddJobs(!showAddJobs)}
+                    aria-expanded={showAddJobs}
+                  >
+                    {showAddJobs ? "Close Add Jobs" : "+ Add jobs"}
+                  </button>
+                  <button
+                    type="button"
                     className="btn primary"
                     onClick={handleRunSearch}
                     disabled={isSearching}
@@ -373,6 +558,80 @@ export function AdminDashboard() {
 
             {activeTab === "jobs" && (
               <div className="admin-jobs-view">
+                {showAddJobs && (
+                  <div className="admin-add-jobs-panel" aria-label="Add jobs manually">
+                    <h3 style={{ margin: "0 0 12px 0", fontSize: "1rem" }}>Add Jobs</h3>
+                    <div className="admin-add-jobs-grid">
+                      <div className="admin-input-group">
+                        <label htmlFor="paste-job-text">Paste text / email forward / chat</label>
+                        <textarea
+                          id="paste-job-text"
+                          className="admin-textarea"
+                          placeholder="Paste job posting, forward, or chat message..."
+                          rows={4}
+                          value={pasteText}
+                          onChange={(e) => setPasteText(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="btn primary btn-sm"
+                          onClick={handlePasteSubmit}
+                          disabled={isSubmittingPaste || !pasteText.trim()}
+                        >
+                          {isSubmittingPaste ? "Parsing..." : "Add from text"}
+                        </button>
+                      </div>
+
+                      <div className="admin-input-group">
+                        <label htmlFor="paste-job-url">Job or board URL</label>
+                        <input
+                          id="paste-job-url"
+                          type="url"
+                          className="admin-input"
+                          placeholder="https://..."
+                          value={pasteUrl}
+                          onChange={(e) => setPasteUrl(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="btn ghost btn-sm"
+                          onClick={handleUrlSubmit}
+                          disabled={isSubmittingUrl || !pasteUrl.trim()}
+                        >
+                          {isSubmittingUrl ? "Fetching..." : "Fetch & parse"}
+                        </button>
+
+                        <label htmlFor="wa-file-upload" style={{ marginTop: "12px" }}>
+                          WhatsApp Export (.txt / .zip)
+                        </label>
+                        <div className="admin-file-upload">
+                          <input
+                            id="wa-file-upload"
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".txt,.zip"
+                            className="admin-file-input"
+                            onChange={(e) => setWaFile(e.target.files?.[0] || null)}
+                          />
+                          <button
+                            type="button"
+                            className="btn ghost btn-sm"
+                            onClick={handleWhatsAppUpload}
+                            disabled={isUploadingWa || !waFile}
+                          >
+                            {isUploadingWa ? "Uploading..." : "Upload & import"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {inboundFeedback && (
+                      <div className="admin-feedback-box" role="status">
+                        <p style={{ margin: 0 }}>{inboundFeedback}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {searchProgress && (
                   <div className="admin-search-status" role="status">
                     <p>{searchProgress}</p>
@@ -596,7 +855,154 @@ export function AdminDashboard() {
               </div>
             )}
 
-            {activeTab !== "jobs" && (
+            {activeTab === "settings" && (
+              <div className="admin-connections-section" aria-label="Connections settings">
+                <div className="admin-connections-grid">
+                  {/* LinkedIn */}
+                  <div className="admin-connection-card">
+                    <div className="admin-connection-header">
+                      <h3 className="admin-connection-title">LinkedIn (Apify)</h3>
+                      <span className="admin-connection-badge ready">Ready</span>
+                    </div>
+                    <p className="admin-connection-desc">
+                      Automated search for early-career software engineer posts & listings via Apify actor.
+                    </p>
+                    <div className="admin-connection-hint">
+                      Requires APIFY_API_TOKEN in server environment.
+                    </div>
+                  </div>
+
+                  {/* Gmail IMAP */}
+                  <div className="admin-connection-card">
+                    <div className="admin-connection-header">
+                      <h3 className="admin-connection-title">Gmail Alert Ingestion</h3>
+                      <span className="admin-connection-badge ready">Ready</span>
+                    </div>
+                    <p className="admin-connection-desc">
+                      Read-only IMAP scanner for job alert emails from LinkedIn, Indeed, Glassdoor, Instahyre, and Wellfound.
+                    </p>
+                    <div className="admin-connection-hint">
+                      Requires GMAIL_IMAP_USER & GMAIL_IMAP_APP_PASSWORD (Google App Password).
+                    </div>
+                  </div>
+
+                  {/* Telegram */}
+                  <div className="admin-connection-card">
+                    <div className="admin-connection-header">
+                      <h3 className="admin-connection-title">Telegram Bot Webhook</h3>
+                      <span className="admin-connection-badge ready">Ready</span>
+                    </div>
+                    <p className="admin-connection-desc">
+                      Forward job links or messages to your personal Telegram bot with webhook verification.
+                    </p>
+                    <div className="admin-connection-hint">
+                      Register via <code>node scripts/telegram-webhook.mjs set &lt;url&gt;</code>. Send <code>/whoami</code> to get chat ID.
+                    </div>
+                  </div>
+
+                  {/* WhatsApp */}
+                  <div className="admin-connection-card">
+                    <div className="admin-connection-header">
+                      <h3 className="admin-connection-title">WhatsApp Import</h3>
+                      <span className="admin-connection-badge ready">Active</span>
+                    </div>
+                    <p className="admin-connection-desc">
+                      Upload chat export archives (.txt or .zip). Automatically strips PII and phone numbers.
+                    </p>
+                    <div className="admin-connection-hint">
+                      Use the &quot;Add jobs&quot; panel on the Jobs tab to import anytime.
+                    </div>
+                  </div>
+
+                  {/* Custom Boards Manager */}
+                  <div className="admin-custom-boards-card">
+                    <div className="admin-connection-header">
+                      <h3 className="admin-connection-title">Custom Company Boards</h3>
+                      <span className="admin-connection-badge">
+                        {customBoards.length} custom board{customBoards.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <p className="admin-connection-desc">
+                      Monitor Greenhouse, Lever, and Ashby job boards of specific target companies alongside verified boards.
+                    </p>
+
+                    <div className="admin-board-form">
+                      <label htmlFor="board-kind-select" className="sr-only">Platform</label>
+                      <select
+                        id="board-kind-select"
+                        className="admin-select"
+                        value={newBoardKind}
+                        onChange={(e) => setNewBoardKind(e.target.value as "greenhouse" | "lever" | "ashby")}
+                      >
+                        <option value="greenhouse">Greenhouse</option>
+                        <option value="lever">Lever</option>
+                        <option value="ashby">Ashby</option>
+                      </select>
+
+                      <label htmlFor="board-slug-input" className="sr-only">Board Slug</label>
+                      <input
+                        id="board-slug-input"
+                        type="text"
+                        className="admin-input"
+                        placeholder="board slug (e.g. figma)"
+                        value={newBoardSlug}
+                        onChange={(e) => setNewBoardSlug(e.target.value)}
+                      />
+
+                      <label htmlFor="board-label-input" className="sr-only">Label</label>
+                      <input
+                        id="board-label-input"
+                        type="text"
+                        className="admin-input"
+                        placeholder="label (e.g. Figma)"
+                        value={newBoardLabel}
+                        onChange={(e) => setNewBoardLabel(e.target.value)}
+                      />
+
+                      <button
+                        type="button"
+                        className="btn primary btn-sm"
+                        onClick={handleAddBoard}
+                        disabled={isAddingBoard || !newBoardSlug.trim()}
+                      >
+                        {isAddingBoard ? "Verifying..." : "Add board"}
+                      </button>
+                    </div>
+
+                    {boardFeedback && (
+                      <div className="admin-feedback-box" role="status">
+                        <p style={{ margin: 0 }}>{boardFeedback}</p>
+                      </div>
+                    )}
+
+                    {customBoards.length > 0 ? (
+                      <div className="admin-board-list" aria-label="Active custom boards">
+                        {customBoards.map((b) => (
+                          <div key={b.id} className="admin-board-item">
+                            <div className="admin-board-info">
+                              <span className="admin-board-kind">{b.kind}</span>
+                              <span className="admin-board-slug">{b.slug}</span>
+                              {b.label && <span className="admin-board-label">({b.label})</span>}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn ghost btn-sm btn-danger"
+                              onClick={() => handleDeleteBoard(b.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="admin-connection-hint" style={{ margin: 0 }}>No custom boards added yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab !== "jobs" && activeTab !== "settings" && (
               <div className="admin-empty-card">
                 <h3>{currentTab.emptyHeading}</h3>
                 <p>{currentTab.emptyText}</p>
