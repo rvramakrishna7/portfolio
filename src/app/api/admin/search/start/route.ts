@@ -3,6 +3,8 @@ import { requireAdminApi } from "@/lib/admin/require-admin";
 import { verifyAdminOrigin } from "@/lib/admin/origin";
 import { startJobSearch } from "@/lib/jobs/pipeline";
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   // 1. Same-origin check using shared helper
   if (!verifyAdminOrigin(req)) {

@@ -70,6 +70,11 @@ export function AdminDashboard() {
 
   // Job Search & List State
   const [jobs, setJobs] = useState<StoredJob[]>([]);
+  const [viewCounts, setViewCounts] = useState<{
+    shortlist: number;
+    hidden: number;
+    all: number;
+  }>({ shortlist: 0, hidden: 0, all: 0 });
   const [stats, setStats] = useState({
     jobsFound: 0,
     newToday: 0,
@@ -108,6 +113,7 @@ export function AdminDashboard() {
       }
       const data = await res.json();
       setJobs(data.jobs || []);
+      if (data.viewCounts) setViewCounts(data.viewCounts);
       if (data.stats) setStats(data.stats);
       if (data.lastRun?.finished_at) {
         setLastRunTime(data.lastRun.finished_at);
@@ -144,6 +150,7 @@ export function AdminDashboard() {
         const data = await res.json();
         if (!ignore) {
           setJobs(data.jobs || []);
+          if (data.viewCounts) setViewCounts(data.viewCounts);
           if (data.stats) setStats(data.stats);
           if (data.lastRun?.finished_at) {
             setLastRunTime(data.lastRun.finished_at);
@@ -186,13 +193,16 @@ export function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
       });
       if (!startRes.ok) throw new Error("Could not initiate job search");
-      const { runId, pendingTriage, totalFetched } = await startRes.json();
+      const { runId, pendingTriage, totalFetched, remainingBoards } = await startRes.json();
 
-      setSearchProgress(`Fetched ${totalFetched} listings. Triaging ${pendingTriage} opportunities...`);
+      if (remainingBoards > 0) {
+        setSearchProgress(`Fetched ${totalFetched} listings. Boards: ${remainingBoards} left. Triaging: ${pendingTriage} pending...`);
+      } else {
+        setSearchProgress(`Fetched ${totalFetched} listings. Triaging ${pendingTriage} opportunities...`);
+      }
 
       // 2. Loop step batches
       let done = false;
-      let remaining = pendingTriage;
 
       while (!done) {
         const stepRes = await fetch("/api/admin/search/step", {
@@ -203,8 +213,14 @@ export function AdminDashboard() {
         if (!stepRes.ok) throw new Error("Error during triage step");
         const stepData = await stepRes.json();
         done = stepData.done;
-        remaining = stepData.remaining;
-        setSearchProgress(`Triaging: ${remaining} opportunities remaining...`);
+        const boardsLeft = stepData.remainingBoards ?? 0;
+        const triageLeft = stepData.pendingTriage ?? stepData.remaining ?? 0;
+
+        if (boardsLeft > 0) {
+          setSearchProgress(`Boards: ${boardsLeft} left. Triaging: ${triageLeft} pending...`);
+        } else {
+          setSearchProgress(`Triaging: ${triageLeft} opportunities remaining...`);
+        }
         if (done) break;
       }
 
@@ -255,6 +271,24 @@ export function AdminDashboard() {
   };
 
   const currentTab = TABS.find((t) => t.key === activeTab) || TABS[0];
+
+  const ALL_SOURCES = [
+    "remoteok",
+    "jobicy",
+    "arbeitnow",
+    "weworkremotely",
+    "greenhouse",
+    "lever",
+    "ashby",
+    "hn",
+  ] as const;
+
+  const availableSources = Array.from(
+    new Set([
+      ...ALL_SOURCES,
+      ...jobs.map((j) => j.source).filter(Boolean),
+    ])
+  );
 
   const statItems: StatItem[] = [
     { id: "jobs-found", label: "Jobs found", value: stats.jobsFound, hint: "Total indexed opportunities" },
@@ -354,7 +388,7 @@ export function AdminDashboard() {
                     )}
                     {lastSourceCounts && (
                       <span className="admin-sources-summary">
-                        Sources: RemoteOK ({lastSourceCounts.remoteok ?? 0}), Jobicy ({lastSourceCounts.jobicy ?? 0}), Arbeitnow ({lastSourceCounts.arbeitnow ?? 0}), WeWorkRemotely ({lastSourceCounts.weworkremotely ?? 0})
+                        Sources: {Object.entries(lastSourceCounts).map(([k, v]) => `${k} (${v})`).join(", ")}
                       </span>
                     )}
                   </div>
@@ -368,21 +402,21 @@ export function AdminDashboard() {
                       className={`btn filter-btn${viewFilter === "shortlist" ? " active" : ""}`}
                       onClick={() => setViewFilter("shortlist")}
                     >
-                      Shortlist
+                      Shortlist ({viewCounts.shortlist})
                     </button>
                     <button
                       type="button"
                       className={`btn filter-btn${viewFilter === "hidden" ? " active" : ""}`}
                       onClick={() => setViewFilter("hidden")}
                     >
-                      Hidden
+                      Hidden ({viewCounts.hidden})
                     </button>
                     <button
                       type="button"
                       className={`btn filter-btn${viewFilter === "all" ? " active" : ""}`}
                       onClick={() => setViewFilter("all")}
                     >
-                      All
+                      All ({viewCounts.all})
                     </button>
                   </div>
 
@@ -407,10 +441,17 @@ export function AdminDashboard() {
                       onChange={(e) => setSourceFilter(e.target.value)}
                     >
                       <option value="">All Sources</option>
-                      <option value="remoteok">RemoteOK</option>
-                      <option value="jobicy">Jobicy</option>
-                      <option value="arbeitnow">Arbeitnow</option>
-                      <option value="weworkremotely">WeWorkRemotely</option>
+                      {availableSources.map((src) => {
+                        let label = src.charAt(0).toUpperCase() + src.slice(1);
+                        if (src === "hn") label = "Hacker News";
+                        if (src === "remoteok") label = "RemoteOK";
+                        if (src === "weworkremotely") label = "WeWorkRemotely";
+                        return (
+                          <option key={src} value={src}>
+                            {label}
+                          </option>
+                        );
+                      })}
                     </select>
 
                     <label htmlFor="job-search-input" className="sr-only">Search roles or skills</label>
@@ -472,11 +513,16 @@ export function AdminDashboard() {
                               <span className="badge score-badge">Match: {job.match_score}</span>
                             )}
                             <span className={`badge exp-badge ${job.exp_class}`}>
-                              {job.exp_class}
+                              Exp: {job.exp_class}
                             </span>
                             <span className={`badge geo-badge ${job.geo_eligibility}`}>
-                              {job.geo_eligibility}
+                              Geo: {job.geo_eligibility}
                             </span>
+                            {job.contact_email && (
+                              <span className="badge email-badge" title={job.contact_email}>
+                                Email available
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -500,7 +546,7 @@ export function AdminDashboard() {
 
                         <div className="admin-job-actions">
                           <a
-                            href={job.url}
+                            href={job.apply_url || job.url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="btn ghost btn-sm"

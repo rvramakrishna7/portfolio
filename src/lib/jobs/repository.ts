@@ -27,15 +27,23 @@ export interface StoredJob {
   status: "new" | "shortlisted" | "skipped" | "applied";
   raw: unknown;
   last_seen_at: string;
+  triaged_at?: string | null;
+  contact_email?: string | null;
+  apply_url?: string | null;
 }
 
 export interface SearchRunStats {
   llmCalls: number;
   llmErrors: number;
   llmSkippedStale: number;
+  llmSkippedAlready?: number;
+  llmSkippedIrrelevant?: number;
   shortlistCount: number;
   hiddenCount: number;
   languageHidden: number;
+  boardsTotal?: number;
+  boardsDone?: number;
+  boardErrors?: Record<string, string>;
 }
 
 export interface SearchRun {
@@ -62,7 +70,9 @@ export interface JobsQueryOptions {
 
 export interface JobsRepository {
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
+  getJob(source: string, sourceId: string): Promise<StoredJob | null>;
   getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }>;
+  getViewCounts(maxAgeDays?: number): Promise<{ shortlist: number; hidden: number; all: number }>;
   getStats(): Promise<{
     jobsFound: number;
     newToday: number;
@@ -79,6 +89,7 @@ export interface JobsRepository {
     id: string,
     updates: Partial<SearchRun>
   ): Promise<void>;
+  getSearchRun(id: string): Promise<SearchRun | null>;
   getLastSearchRun(): Promise<SearchRun | null>;
 }
 
@@ -111,6 +122,9 @@ export class InMemoryJobsRepository implements JobsRepository {
       existing.summary_line = triaged.summaryLine;
       existing.match_score = triaged.matchScore;
       existing.last_seen_at = nowIso;
+      if (triaged.triagedAt) existing.triaged_at = triaged.triagedAt;
+      if (job.contactEmail) existing.contact_email = job.contactEmail;
+      if (job.applyUrl) existing.apply_url = job.applyUrl;
       return "existing";
     }
 
@@ -135,12 +149,20 @@ export class InMemoryJobsRepository implements JobsRepository {
       summary_line: triaged.summaryLine,
       match_score: triaged.matchScore,
       status: "new",
-      raw: job,
+      raw: { ...job, descriptionHash: triaged.descriptionHash },
       last_seen_at: nowIso,
+      triaged_at: triaged.triagedAt || null,
+      contact_email: job.contactEmail || null,
+      apply_url: job.applyUrl || job.url,
     };
 
     this.jobs.set(key, stored);
     return "new";
+  }
+
+  async getJob(source: string, sourceId: string): Promise<StoredJob | null> {
+    const key = `${source}:${sourceId}`;
+    return this.jobs.get(key) || null;
   }
 
   async getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }> {
@@ -210,6 +232,40 @@ export class InMemoryJobsRepository implements JobsRepository {
     return { jobs: paginated, total };
   }
 
+  async getViewCounts(maxAgeDays: number = MAX_AGE_DAYS_DEFAULT): Promise<{ shortlist: number; hidden: number; all: number }> {
+    const list = Array.from(this.jobs.values());
+    let shortlist = 0;
+    let hidden = 0;
+    let all = 0;
+
+    for (const j of list) {
+      const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+      const isShortlistCandidate =
+        ["fresher", "junior", "unclear"].includes(j.exp_class) &&
+        ["worldwide", "india_ok", "unclear"].includes(j.geo_eligibility) &&
+        j.status !== "skipped";
+
+      const isHiddenCandidate =
+        j.exp_class === "senior" ||
+        j.geo_eligibility === "restricted" ||
+        j.status === "skipped" ||
+        Boolean(j.filter_reason) ||
+        age > maxAgeDays;
+
+      if (isShortlistCandidate && age <= maxAgeDays) {
+        shortlist++;
+      }
+      if (isHiddenCandidate) {
+        hidden++;
+      }
+      if (age <= maxAgeDays) {
+        all++;
+      }
+    }
+
+    return { shortlist, hidden, all };
+  }
+
   async getStats() {
     const list = Array.from(this.jobs.values());
     const today = new Date().toISOString().slice(0, 10);
@@ -261,6 +317,10 @@ export class InMemoryJobsRepository implements JobsRepository {
     }
   }
 
+  async getSearchRun(id: string): Promise<SearchRun | null> {
+    return this.runs.get(id) || null;
+  }
+
   async getLastSearchRun(): Promise<SearchRun | null> {
     const list = Array.from(this.runs.values());
     if (list.length === 0) return null;
@@ -276,54 +336,126 @@ export class NeonJobsRepository implements JobsRepository {
   ): Promise<"new" | "existing"> {
     const sql = getSql();
 
-    const rows = await sql`
-      INSERT INTO jobs (
-        source, source_id, url, title, company, location, remote_scope,
-        description, posted_at, exp_min_years, exp_class, geo_eligibility,
-        geo_reason, skills, filter_reason, summary_line, match_score,
-        raw, last_seen_at
-      ) VALUES (
-        ${job.source},
-        ${job.sourceId},
-        ${job.url},
-        ${job.title},
-        ${job.company},
-        ${job.location},
-        ${job.remoteScope},
-        ${job.description},
-        ${job.postedAt},
-        ${triaged.expMinYears},
-        ${triaged.expClass},
-        ${triaged.geoEligibility},
-        ${triaged.geoReason},
-        ${triaged.skills},
-        ${triaged.filterReason || null},
-        ${triaged.summaryLine},
-        ${triaged.matchScore},
-        ${JSON.stringify(job)},
-        NOW()
-      )
-      ON CONFLICT (source, source_id) DO UPDATE SET
-        title = EXCLUDED.title,
-        company = EXCLUDED.company,
-        location = EXCLUDED.location,
-        remote_scope = EXCLUDED.remote_scope,
-        description = EXCLUDED.description,
-        posted_at = EXCLUDED.posted_at,
-        exp_min_years = EXCLUDED.exp_min_years,
-        exp_class = EXCLUDED.exp_class,
-        geo_eligibility = EXCLUDED.geo_eligibility,
-        geo_reason = EXCLUDED.geo_reason,
-        skills = EXCLUDED.skills,
-        filter_reason = EXCLUDED.filter_reason,
-        summary_line = EXCLUDED.summary_line,
-        match_score = EXCLUDED.match_score,
-        raw = EXCLUDED.raw,
-        last_seen_at = NOW()
-      RETURNING (xmax = 0) AS is_new;
-    `;
+    const rawPayload = {
+      ...job,
+      descriptionHash: triaged.descriptionHash,
+    };
 
-    return rows[0]?.is_new ? "new" : "existing";
+    try {
+      // Try upserting with migration 004 columns (triaged_at, contact_email, apply_url)
+      const rows = await sql`
+        INSERT INTO jobs (
+          source, source_id, url, title, company, location, remote_scope,
+          description, posted_at, exp_min_years, exp_class, geo_eligibility,
+          geo_reason, skills, filter_reason, summary_line, match_score,
+          raw, last_seen_at, triaged_at, contact_email, apply_url
+        ) VALUES (
+          ${job.source},
+          ${job.sourceId},
+          ${job.url},
+          ${job.title},
+          ${job.company},
+          ${job.location},
+          ${job.remoteScope},
+          ${job.description},
+          ${job.postedAt},
+          ${triaged.expMinYears},
+          ${triaged.expClass},
+          ${triaged.geoEligibility},
+          ${triaged.geoReason},
+          ${triaged.skills},
+          ${triaged.filterReason || null},
+          ${triaged.summaryLine},
+          ${triaged.matchScore},
+          ${JSON.stringify(rawPayload)},
+          NOW(),
+          ${triaged.triagedAt ? new Date(triaged.triagedAt) : null},
+          ${job.contactEmail || null},
+          ${job.applyUrl || job.url}
+        )
+        ON CONFLICT (source, source_id) DO UPDATE SET
+          title = EXCLUDED.title,
+          company = EXCLUDED.company,
+          location = EXCLUDED.location,
+          remote_scope = EXCLUDED.remote_scope,
+          description = EXCLUDED.description,
+          posted_at = EXCLUDED.posted_at,
+          exp_min_years = EXCLUDED.exp_min_years,
+          exp_class = EXCLUDED.exp_class,
+          geo_eligibility = EXCLUDED.geo_eligibility,
+          geo_reason = EXCLUDED.geo_reason,
+          skills = EXCLUDED.skills,
+          filter_reason = EXCLUDED.filter_reason,
+          summary_line = EXCLUDED.summary_line,
+          match_score = EXCLUDED.match_score,
+          raw = EXCLUDED.raw,
+          last_seen_at = NOW(),
+          triaged_at = COALESCE(EXCLUDED.triaged_at, jobs.triaged_at),
+          contact_email = COALESCE(EXCLUDED.contact_email, jobs.contact_email),
+          apply_url = COALESCE(EXCLUDED.apply_url, jobs.apply_url)
+        RETURNING (xmax = 0) AS is_new;
+      `;
+      return rows[0]?.is_new ? "new" : "existing";
+    } catch {
+      // Fallback if migration 004 has not yet run in database
+      const rows = await sql`
+        INSERT INTO jobs (
+          source, source_id, url, title, company, location, remote_scope,
+          description, posted_at, exp_min_years, exp_class, geo_eligibility,
+          geo_reason, skills, filter_reason, summary_line, match_score,
+          raw, last_seen_at
+        ) VALUES (
+          ${job.source},
+          ${job.sourceId},
+          ${job.url},
+          ${job.title},
+          ${job.company},
+          ${job.location},
+          ${job.remoteScope},
+          ${job.description},
+          ${job.postedAt},
+          ${triaged.expMinYears},
+          ${triaged.expClass},
+          ${triaged.geoEligibility},
+          ${triaged.geoReason},
+          ${triaged.skills},
+          ${triaged.filterReason || null},
+          ${triaged.summaryLine},
+          ${triaged.matchScore},
+          ${JSON.stringify(rawPayload)},
+          NOW()
+        )
+        ON CONFLICT (source, source_id) DO UPDATE SET
+          title = EXCLUDED.title,
+          company = EXCLUDED.company,
+          location = EXCLUDED.location,
+          remote_scope = EXCLUDED.remote_scope,
+          description = EXCLUDED.description,
+          posted_at = EXCLUDED.posted_at,
+          exp_min_years = EXCLUDED.exp_min_years,
+          exp_class = EXCLUDED.exp_class,
+          geo_eligibility = EXCLUDED.geo_eligibility,
+          geo_reason = EXCLUDED.geo_reason,
+          skills = EXCLUDED.skills,
+          filter_reason = EXCLUDED.filter_reason,
+          summary_line = EXCLUDED.summary_line,
+          match_score = EXCLUDED.match_score,
+          raw = EXCLUDED.raw,
+          last_seen_at = NOW()
+        RETURNING (xmax = 0) AS is_new;
+      `;
+      return rows[0]?.is_new ? "new" : "existing";
+    }
+  }
+
+  async getJob(source: string, sourceId: string): Promise<StoredJob | null> {
+    const sql = getSql();
+    const rows = (await sql`
+      SELECT * FROM jobs
+      WHERE source = ${source} AND source_id = ${sourceId}
+      LIMIT 1
+    `) as StoredJob[];
+    return rows[0] || null;
   }
 
   async getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }> {
@@ -369,6 +501,39 @@ export class NeonJobsRepository implements JobsRepository {
     const total = countRows[0]?.count || 0;
 
     return { jobs: rows, total };
+  }
+
+  async getViewCounts(maxAgeDays: number = MAX_AGE_DAYS_DEFAULT): Promise<{ shortlist: number; hidden: number; all: number }> {
+    const sql = getSql();
+    try {
+      const rows = await sql`
+        SELECT
+          COUNT(*) FILTER (
+            WHERE exp_class IN ('fresher', 'junior', 'unclear')
+              AND geo_eligibility IN ('worldwide', 'india_ok', 'unclear')
+              AND status != 'skipped'
+              AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          )::int AS shortlist,
+          COUNT(*) FILTER (
+            WHERE exp_class = 'senior'
+               OR geo_eligibility = 'restricted'
+               OR status = 'skipped'
+               OR filter_reason IS NOT NULL
+               OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
+          )::int AS hidden,
+          COUNT(*) FILTER (
+            WHERE COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          )::int AS all
+        FROM jobs;
+      `;
+      return {
+        shortlist: Number(rows[0]?.shortlist || 0),
+        hidden: Number(rows[0]?.hidden || 0),
+        all: Number(rows[0]?.all || 0),
+      };
+    } catch {
+      return { shortlist: 0, hidden: 0, all: 0 };
+    }
   }
 
   async getStats() {
@@ -442,6 +607,14 @@ export class NeonJobsRepository implements JobsRepository {
         WHERE id = ${id}
       `;
     }
+  }
+
+  async getSearchRun(id: string): Promise<SearchRun | null> {
+    const sql = getSql();
+    const rows = (await sql`
+      SELECT * FROM search_runs WHERE id = ${id} LIMIT 1
+    `) as SearchRun[];
+    return rows[0] || null;
   }
 
   async getLastSearchRun(): Promise<SearchRun | null> {

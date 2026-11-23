@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { startJobSearch, stepJobSearch } from "@/lib/jobs/pipeline";
+import { getJobsRepository } from "@/lib/jobs/repository";
+
+export const maxDuration = 60;
 
 export async function GET(req: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -26,19 +29,32 @@ export async function GET(req: Request) {
   }
 
   const startTime = Date.now();
-  const maxExecutionMs = 8000; // 8s Hobby timeout safeguard
+  const maxExecutionMs = 8000; // 8s budget per invocation
 
   try {
-    const startResult = await startJobSearch();
-    const runId = startResult.runId;
+    const repo = getJobsRepository();
+    // Continue active running run if present, or start a new run
+    const lastRun = await repo.getLastSearchRun();
+    let runId: string;
+    if (lastRun && lastRun.status === "running") {
+      runId = lastRun.id;
+    } else {
+      const startResult = await startJobSearch(repo);
+      runId = startResult.runId;
+    }
+
     let done = false;
     let stepsRun = 0;
+    let remainingBoards = 0;
+    let pendingTriage = 0;
 
     // Run steps within 8-second budget
     while (!done && Date.now() - startTime < maxExecutionMs) {
-      const stepRes = await stepJobSearch(runId, 15);
+      const stepRes = await stepJobSearch(runId, 15, repo);
       stepsRun++;
       done = stepRes.done;
+      remainingBoards = stepRes.remainingBoards;
+      pendingTriage = stepRes.pendingTriage;
       if (done) break;
     }
 
@@ -47,6 +63,8 @@ export async function GET(req: Request) {
       runId,
       done,
       stepsRun,
+      remainingBoards,
+      pendingTriage,
     });
   } catch (err: unknown) {
     return NextResponse.json(
