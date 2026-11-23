@@ -1,8 +1,15 @@
 # Status: Portfolio site
 
-Current step: Bundle A: More Job Inputs implemented on branch `feat/bundle-a-inputs` (HEAD `a788d26`, NOT pushed).
+Current step: Hotfix NULL inbound_source SQL predicate merged and pushed to `main` (HEAD `21e6c53`).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Hotfix NULL `inbound_source` in Neon SQL queries:
+  - In `src/lib/jobs/repository.ts`, wrapped `inbound_source` with `COALESCE(inbound_source, '')` across all shortlist, maybe, hidden, inbox, and reclassify SQL queries to prevent three-valued NULL logic from excluding non-inbound rows where `inbound_source` is NULL.
+  - Added unit test in `src/lib/jobs/classify.test.ts` verifying `shortlist`, `maybe`, `hidden`, and `inbox` counts are > 0 when `inbound_source` is undefined/null.
+  - Added repository code lint test ensuring `NOT (inbound_source IN` without `COALESCE` never appears.
+  - Added unit test in `src/lib/inbound/parse.test.ts` verifying emoji/pin stripping on new messages.
+  - Verification: 184 vitest unit tests passed across 24 test suites, all 8 Playwright e2e tests passed (`e2e/admin-jobs.spec.ts`), `check:flat`, `check:copy`, `check:numbers`, `lint`, `typecheck`, and `build` passed cleanly. Pushed to `origin/main` (`21e6c53`).
+- Inbox Tab & Parser Improvements (`fix/inbox-and-parser`, merged `95063fb`):
 - Bundle A (More Job Inputs: Inbound Pipeline, Multi-channel Adapters, Custom Boards):
   - Migration 005 (`db/migrations/005_inputs.sql`):
     - Added `custom_boards` table (id UUID PK, kind TEXT, slug TEXT, label TEXT, created_at TIMESTAMPTZ, UNIQUE(kind, slug)).
