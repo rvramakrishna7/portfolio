@@ -154,7 +154,10 @@ export async function startJobSearch(
 
   for (const job of dedupedJobs) {
     const ruleExp = classifyExperience(job.title, job.description);
-    const ruleGeo = classifyGeo(job.title, job.location, job.remoteScope, job.description);
+    const ruleGeo = classifyGeo(job.title, job.location, job.remoteScope, job.description, {
+      isRemote: job.isRemote,
+      workplaceType: job.workplaceType,
+    });
     const ruleScore = scoreMatch({
       title: job.title,
       description: job.description,
@@ -327,7 +330,10 @@ export async function stepJobSearch(
           // Process and immediately upsert or queue jobs
           for (const job of res.jobs) {
             const ruleExp = classifyExperience(job.title, job.description);
-            const ruleGeo = classifyGeo(job.title, job.location, job.remoteScope, job.description);
+            const ruleGeo = classifyGeo(job.title, job.location, job.remoteScope, job.description, {
+              isRemote: job.isRemote,
+              workplaceType: job.workplaceType,
+            });
             const ruleScore = scoreMatch({
               title: job.title,
               description: job.description,
@@ -434,7 +440,14 @@ export async function stepJobSearch(
         geoReason: item.ruleGeo.reason,
         summaryLine: item.job.title,
         skills: item.ruleScore.matchedSkills,
-        filterReason: item.ruleExp.reason || item.ruleGeo.reason,
+        filterReason:
+          item.ruleExp.expClass === "senior"
+            ? item.ruleExp.reason || "Senior experience required"
+            : item.ruleGeo.geo === "restricted"
+            ? item.ruleGeo.reason || "Geographically restricted"
+            : item.ruleGeo.geo === "unclear"
+            ? "location not remote / not confirmed for India"
+            : undefined,
         matchScore: item.ruleScore.score,
         triagedAt: new Date().toISOString(),
         descriptionHash: existingData?.descriptionHash || undefined,

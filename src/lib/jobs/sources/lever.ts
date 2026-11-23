@@ -9,11 +9,13 @@ export interface LeverJobItem {
   createdAt?: number | string;
   hostedUrl: string;
   applyUrl?: string;
+  workplaceType?: string;
   categories?: {
     commitment?: string;
     department?: string;
     location?: string;
     team?: string;
+    workplaceType?: string;
   };
   description?: string;
   descriptionPlain?: string;
@@ -45,7 +47,12 @@ export function parseLeverJobs(data: unknown, site: string): NormalizedJob[] {
       continue;
     }
 
-    const location = raw.categories?.location?.trim() || "Remote";
+    const rawLoc = raw.categories?.location?.trim();
+    const workplaceType = raw.workplaceType?.trim() || raw.categories?.workplaceType?.trim();
+    const isRemote =
+      workplaceType?.toLowerCase() === "remote" ||
+      (rawLoc ? /\bremote\b/i.test(rawLoc) : false);
+    const location = rawLoc || (isRemote ? "Remote" : "Unknown");
     const descText = raw.descriptionPlain || stripHtml(raw.description || "");
     const description = descText.slice(0, 8000);
     const sourceId = `${site}_${raw.id}`;
@@ -64,6 +71,8 @@ export function parseLeverJobs(data: unknown, site: string): NormalizedJob[] {
       description,
       postedAt,
       tags: [site.toLowerCase()],
+      isRemote,
+      workplaceType,
     });
   }
 

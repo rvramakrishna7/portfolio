@@ -189,6 +189,8 @@ ${job.description.slice(0, 1500)}`;
     filterReason = ruleExp.reason || "Senior experience required";
   } else if (geoEligibility === "restricted") {
     filterReason = geoReason || "Geographically restricted";
+  } else if (geoEligibility === "unclear") {
+    filterReason = "location not remote / not confirmed for India";
   } else if (finalScoreResult.score < 25) {
     filterReason = "Low relevance score";
   }
