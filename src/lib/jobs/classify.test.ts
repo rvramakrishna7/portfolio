@@ -19,6 +19,7 @@ interface TestCaseGeo {
   location: string;
   remoteScope: string;
   description: string;
+  options?: { isRemote?: boolean; workplaceType?: string };
   expectedGeo: GeoEligibility;
 }
 
@@ -544,6 +545,242 @@ const GEO_TEST_CASES: TestCaseGeo[] = [
     description: "Candidates worldwide are invited to apply for our AI research team.",
     expectedGeo: "worldwide",
   },
+
+  // 32 Board Location & Workplace Type Test Cases (Step 3/4)
+  {
+    title: "Software Engineer",
+    location: "San Francisco, CA",
+    remoteScope: "San Francisco, CA",
+    options: { workplaceType: "OnSite" },
+    description: "Build distributed databases at our SF headquarters.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineer",
+    location: "San Francisco, California",
+    remoteScope: "San Francisco, California",
+    description: "Onsite role developing high throughput storage systems.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Frontend Developer",
+    location: "London, UK",
+    remoteScope: "London, UK",
+    options: { workplaceType: "Hybrid" },
+    description: "Hybrid role working 3 days a week in our London office.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Junior Backend Developer",
+    location: "London, United Kingdom",
+    remoteScope: "London, United Kingdom",
+    description: "Develop REST and GraphQL endpoints in our UK tech hub.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineer, High Availability",
+    location: "Seattle, WA",
+    remoteScope: "Seattle, WA",
+    description: "Work with engineering teams in our Seattle engineering center.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Systems Software Engineer",
+    location: "Mountain View, California; San Francisco, California",
+    remoteScope: "Mountain View, California; San Francisco, California",
+    description: "Systems programming in C++ and Go across Bay Area offices.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "AI Engineer",
+    location: "New York, NY",
+    remoteScope: "New York, NY",
+    options: { isRemote: false },
+    description: "Work with our machine learning team in Manhattan.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Full Stack Developer",
+    location: "Barcelona",
+    remoteScope: "Barcelona",
+    description: "Join our European product squad in Barcelona.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineer",
+    location: "Toronto",
+    remoteScope: "Toronto",
+    description: "Build financial services infrastructure in our Toronto office.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Technical Services Engineer",
+    location: "Sydney",
+    remoteScope: "Sydney",
+    description: "Support APAC enterprise clients from our Sydney headquarters.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineer",
+    location: "Dublin, Ireland",
+    remoteScope: "Dublin, Ireland",
+    description: "Data pipeline infrastructure in our Dublin office.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Platform Engineer",
+    location: "Amsterdam, Netherlands",
+    remoteScope: "Amsterdam, Netherlands",
+    description: "Cloud reliability engineering in Amsterdam.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineering Intern",
+    location: "Berlin, Germany",
+    remoteScope: "Berlin, Germany",
+    description: "Summer intern position in our Berlin office.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineer",
+    location: "Remote - US",
+    remoteScope: "Remote - US",
+    description: "Remote software engineer located anywhere in the United States.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Backend Engineer",
+    location: "US Remote",
+    remoteScope: "US Remote",
+    description: "Must reside within the continental United States.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Full Stack Engineer",
+    location: "US - Remote",
+    remoteScope: "US - Remote",
+    description: "Remote role for candidates authorized to work in the US.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Full Stack Engineer",
+    location: "Remote (US)",
+    remoteScope: "Remote (US)",
+    description: "Build next-generation customer portals across US timezones.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Full Stack Engineer (Open Banking)",
+    location: "Remote UK",
+    remoteScope: "Remote UK",
+    description: "UK-based remote role designing payments APIs.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Developer",
+    location: "Remote - Canada",
+    remoteScope: "Canada",
+    description: "Canadian remote developer role with benefits.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Developer",
+    location: "Remote - Germany",
+    remoteScope: "Germany",
+    description: "Work remotely within Germany for our cloud services team.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Developer in Observability",
+    location: "Home based - EMEA",
+    remoteScope: "Home based - EMEA",
+    description: "Remote engineering role across EMEA timezones.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Backend Engineer",
+    location: "Remote - LATAM",
+    remoteScope: "LATAM",
+    description: "Remote engineer located in Latin America.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Software Engineer",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "General software development position with no location details.",
+    expectedGeo: "unclear",
+  },
+  {
+    title: "Software Engineer",
+    location: "Remote - India",
+    remoteScope: "India",
+    description: "Work remotely from anywhere in India on our global backend.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "Junior Python Developer",
+    location: "Remote, India",
+    remoteScope: "India",
+    description: "FastAPI and Python developer based in India.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "Full Stack Engineer",
+    location: "Remote, Worldwide",
+    remoteScope: "Worldwide",
+    description: "Join our globally distributed team from any country.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "AI Automation Engineer",
+    location: "Remote - Worldwide",
+    remoteScope: "Worldwide",
+    description: "We are an all-remote, work from anywhere worldwide company.",
+    expectedGeo: "worldwide",
+  },
+  {
+    title: "Software Engineer",
+    location: "Bengaluru",
+    remoteScope: "Bengaluru",
+    description: "Build high performance microservices in our Bengaluru office.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "Junior Backend Engineer",
+    location: "Bengaluru, India",
+    remoteScope: "India",
+    description: "Work on backend systems with our Indian engineering team.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "Junior Full Stack Engineer",
+    location: "Hyderabad",
+    remoteScope: "Hyderabad",
+    description: "React and Node.js developer in Hyderabad.",
+    expectedGeo: "india_ok",
+  },
+  {
+    title: "Software Engineer, Public Sector - New Grad",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Work with US federal and public sector customers.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "AI Engineer – Forward Deployed Engineering, U.S. Public Sector (Federal Focus)",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Deploying AI models for government missions and federal programs.",
+    expectedGeo: "restricted",
+  },
+  {
+    title: "Solutions Engineer (Clearance Required)",
+    location: "Remote",
+    remoteScope: "Remote",
+    description: "Requires active security clearance and US citizenship.",
+    expectedGeo: "restricted",
+  },
 ];
 
 describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
@@ -561,7 +798,7 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
     let passedCount = 0;
     for (let i = 0; i < GEO_TEST_CASES.length; i++) {
       const tc = GEO_TEST_CASES[i];
-      const res = classifyGeo(tc.title || "Software Engineer", tc.location, tc.remoteScope, tc.description);
+      const res = classifyGeo(tc.title || "Software Engineer", tc.location, tc.remoteScope, tc.description, tc.options);
       if (res.geo !== tc.expectedGeo) {
         console.error(`Failed at index ${i}:`, tc, "got:", res);
       }

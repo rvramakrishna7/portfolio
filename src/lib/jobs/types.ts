@@ -22,6 +22,8 @@ export interface NormalizedJob {
   salaryText?: string;
   applyUrl?: string;
   contactEmail?: string;
+  isRemote?: boolean;
+  workplaceType?: string;
 }
 
 export interface AdapterResult {

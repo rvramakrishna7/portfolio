@@ -44,7 +44,13 @@ export function parseGreenhouseJobs(data: unknown, token: string): NormalizedJob
       continue;
     }
 
-    const location = item.location?.name?.trim() || "Remote";
+    const rawLoc = item.location?.name?.trim();
+    const location = rawLoc || "Unknown";
+    const workplaceType = (item as { workplace_type?: string }).workplace_type?.trim();
+    const isRemote =
+      workplaceType?.toLowerCase() === "remote" ||
+      (rawLoc ? /\bremote\b/i.test(rawLoc) : false);
+
     const description = stripHtml(item.content || "").slice(0, 8000);
     const sourceId = `${token}_${item.id}`;
     const url = item.absolute_url || `https://boards.greenhouse.io/${token}/jobs/${item.id}`;
@@ -61,6 +67,8 @@ export function parseGreenhouseJobs(data: unknown, token: string): NormalizedJob
       description,
       postedAt,
       tags: [token.toLowerCase()],
+      isRemote,
+      workplaceType,
     });
   }
 

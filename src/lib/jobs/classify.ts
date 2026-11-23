@@ -217,8 +217,10 @@ const RESTRICTED_COUNTRY_REGEXES = [
   new RegExp(`\\blocated\\s+in\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
   new RegExp(`\\bmust\\s+reside\\s+in\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
   new RegExp(`\\bwork\\s+from\\s+(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
-  new RegExp(`\\bremote\\s*\\(\\s*(${COUNTRIES_PATTERN})\\s*\\)`, "i"),
-  new RegExp(`\\bremote\\s*-\\s*(${COUNTRIES_PATTERN})\\b`, "i"),
+  new RegExp(`\\bremote\\s*\\(\\s*(?:the\\s+)?(${COUNTRIES_PATTERN})\\s*\\)`, "i"),
+  new RegExp(`\\bremote\\s*[-,\/:\\s]+\\s*(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
+  new RegExp(`\\b(${COUNTRIES_PATTERN})\\s*[-,\/:\\s]+\\s*remote\\b`, "i"),
+  new RegExp(`\\bhome[\\s-]based\\s*-\\s*(?:the\\s+)?(${COUNTRIES_PATTERN})\\b`, "i"),
 ];
 
 /**
@@ -249,8 +251,68 @@ export function classifyGeo(
   title: string,
   location: string,
   remoteScope: string,
-  description: string
+  description: string,
+  options?: { isRemote?: boolean; workplaceType?: string }
 ): ClassifyGeoResult {
+  // Public sector or security clearance is strictly restricted to domestic citizens/jurisdictions
+  const clearanceOrPublicSectorRegex =
+    /\b(?:public\s+sector|security\s+clearance|clearance\s+required|u\.?s\.?\s+public\s+sector|federal\s+(?:focus|client|government)|polygraph|secret\s+clearance)\b/i;
+  if (clearanceOrPublicSectorRegex.test(title)) {
+    return {
+      geo: "restricted",
+      reason: "Requires public sector or security clearance",
+    };
+  }
+
+  // Check explicit workplace type or on-site / hybrid markers
+  const wpLower = options?.workplaceType?.toLowerCase();
+  const isExplicitNonRemoteFlag =
+    options?.isRemote === false ||
+    wpLower === "onsite" ||
+    wpLower === "on-site" ||
+    wpLower === "hybrid";
+
+  const nonRemoteKeywordRegex =
+    /\b(?:hybrid|on-site|onsite|in-office|in\s+office|office-based|office\s+based)\b/i;
+  const hasNonRemoteInLocation =
+    nonRemoteKeywordRegex.test(location) ||
+    nonRemoteKeywordRegex.test(remoteScope) ||
+    nonRemoteKeywordRegex.test(title);
+
+  if (isExplicitNonRemoteFlag || hasNonRemoteInLocation) {
+    return {
+      geo: "restricted",
+      reason: `On-site or hybrid role, not remote (${options?.workplaceType || location || "non-remote"})`,
+    };
+  }
+
+  const remoteKeywordRegex =
+    /\b(?:remote|worldwide|anywhere|work\s+from\s+anywhere|distributed|virtual|telecommute|wfh|home[\s-]based)\b/i;
+  const isRemoteMarked =
+    options?.isRemote === true ||
+    wpLower === "remote" ||
+    remoteKeywordRegex.test(location) ||
+    remoteKeywordRegex.test(remoteScope);
+
+  const indiaLocationRegex =
+    /\b(?:india|bengaluru|bangalore|mumbai|delhi|hyderabad|pune|gurgaon|noida|chennai|kolkata)\b/i;
+  const hasIndiaInLocation =
+    indiaLocationRegex.test(location) ||
+    indiaLocationRegex.test(remoteScope) ||
+    indiaLocationRegex.test(title);
+
+  const isUnknownOrGenericLocation =
+    !location ||
+    /^(?:unknown|n\/?a|anywhere|flexible|various|multiple)$/i.test(location.trim());
+
+  // Non-remote physical location outside of India
+  if (!isRemoteMarked && !hasIndiaInLocation && !isUnknownOrGenericLocation) {
+    return {
+      geo: "restricted",
+      reason: `Non-remote location (${location})`,
+    };
+  }
+
   const titleScope = `${title} ${location} ${remoteScope}`.toLowerCase();
   const descriptionLower = description.toLowerCase();
   const combined = `${titleScope} ${descriptionLower}`.toLowerCase();

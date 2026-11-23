@@ -73,6 +73,8 @@ export function parseAshbyJobs(data: unknown, name: string): NormalizedJob[] {
       description,
       postedAt,
       tags: [name.toLowerCase()],
+      isRemote: item.isRemote,
+      workplaceType: item.workplaceType,
     });
   }
 
