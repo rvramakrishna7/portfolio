@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   }
 
   const repo = getJobsRepository();
-  const candidates = parseInboundCandidates(contentToParse, { source: "paste" });
+  const candidates = parseInboundCandidates(contentToParse, { source: "pasted" });
 
   if (candidates.length === 0) {
     return NextResponse.json(

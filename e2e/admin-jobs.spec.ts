@@ -267,4 +267,70 @@ test.describe("Admin Jobs Engine (J2)", () => {
       }
     }
   });
+
+  test("Inbox tab lists inbound jobs with source label and apply/contact links", async ({
+    page,
+    context,
+    request,
+  }) => {
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    // Ingest an inbound job via the paste API
+    const pasteRes = await request.post("/api/admin/inbound/paste", {
+      headers: {
+        cookie: `admin=${token}; __Host-admin=${token}`,
+        origin: "http://localhost:3000",
+        "Content-Type": "application/json",
+      },
+      data: {
+        text: `BMW is Hiring Software Engineers (6 months - 1yr ) 📍\n\nDm Hiring Manager on Linkedin :\nhttps://example.com/in/recruiter\n\nApplication form:\nhttps://forms.cloud.microsoft/r/bmw-form`,
+      },
+    });
+    expect(pasteRes.status()).toBe(200);
+
+    await context.addCookies([
+      {
+        name: "__Host-admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+        secure: true,
+      },
+      {
+        name: "admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+      },
+    ]);
+
+    await page.goto("/admin");
+    await expect(page).toHaveURL(/\/admin$/);
+
+    // Assert Inbox tab button exists and shows count
+    const inboxTabBtn = page.locator('button.filter-btn:has-text("Inbox")');
+    await expect(inboxTabBtn).toBeVisible();
+    await expect(inboxTabBtn).toHaveText(/Inbox \(\d+\)/);
+
+    // Switch to Inbox tab
+    await inboxTabBtn.click();
+    await page.waitForTimeout(300);
+
+    // Assert job card appears with title, source tag, apply link and contact link
+    const bmwCard = page.locator('.admin-job-card:has-text("Software Engineers (6 months - 1yr )")');
+    await expect(bmwCard).toBeVisible();
+    await expect(bmwCard.locator(".admin-job-company")).toHaveText("BMW");
+    await expect(bmwCard.locator(".admin-job-source-tag")).toContainText("pasted");
+
+    // Check Apply and Contact links
+    const applyLink = bmwCard.locator('a:has-text("Apply ↗")');
+    await expect(applyLink).toBeVisible();
+    await expect(applyLink).toHaveAttribute("href", /forms\.cloud\.microsoft/);
+
+    const contactLink = bmwCard.locator('a:has-text("Contact ↗")');
+    await expect(contactLink).toBeVisible();
+    await expect(contactLink).toHaveAttribute("href", /example\.com\/in\/recruiter/);
+  });
 });

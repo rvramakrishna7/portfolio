@@ -5,7 +5,7 @@ import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 import { z } from "zod";
 
 const QuerySchema = z.object({
-  view: z.enum(["shortlist", "maybe", "all", "hidden"]).optional(),
+  view: z.enum(["shortlist", "maybe", "inbox", "all", "hidden"]).optional(),
   source: z.string().optional(),
   q: z.string().optional(),
   status: z.enum(["new", "shortlisted", "skipped", "applied"]).optional(),

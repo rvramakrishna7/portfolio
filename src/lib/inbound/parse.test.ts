@@ -279,4 +279,135 @@ Rendez-vous sur https://moncompte.fr pour régler la facture.
       expect(res2.duplicates).toBe(1);
     });
   });
+
+  describe("Real Inbound Samples & Inbox Rules (Step 1/4 & 2/4)", () => {
+    it("Sample a: Delta Airlines forward with contact link and post apply URL", () => {
+      const text = `Delta Airlines is Hiring Associate Software Engineer (0-2 Yrs) 📍
+
+Dm Hiring Manager on Linkedin :
+https://example.com/in/someone?utm_source=share
+
+https://www.linkedin.com/posts/someone_hiring-java-payments-share-123-abcd/?utm_source=share`;
+
+      const candidates = parseInboundCandidates(text, { source: "whatsapp" });
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].company).toBe("Delta Airlines");
+      expect(candidates[0].title).toBe("Associate Software Engineer (0-2 Yrs)");
+      expect(candidates[0].url).toBe("https://www.linkedin.com/posts/someone_hiring-java-payments-share-123-abcd");
+      expect(candidates[0].contact_url).toBe("https://example.com/in/someone");
+    });
+
+    it("Sample b: Apple forward with graduation years and pin", () => {
+      const text = "Apple is Hiring Software Engineers (27/26/25 Grads) 📌";
+      const candidates = parseInboundCandidates(text, { source: "whatsapp" });
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].company).toBe("Apple");
+      expect(candidates[0].title).toBe("Software Engineers (27/26/25 Grads)");
+    });
+
+    it("Sample c: BMW forward with forms.cloud.microsoft link and linkedin post fallback", () => {
+      const text = `BMW is Hiring Software Engineers (6 months - 1yr )
+
+Application form:
+https://forms.cloud.microsoft/r/xyz123?utm_source=share&rcm=abc
+
+Post link:
+https://www.linkedin.com/posts/someone-bmw-hiring?utm_source=share`;
+
+      const candidates = parseInboundCandidates(text, { source: "telegram" });
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].company).toBe("BMW");
+      expect(candidates[0].title).toBe("Software Engineers (6 months - 1yr )");
+      expect(candidates[0].url).toBe("https://forms.cloud.microsoft/r/xyz123");
+    });
+
+    it("Sample d: Aixel SDE Intern with docs.google.com/forms", () => {
+      const text = `Aixel is Hiring SDE Intern 📍
+
+Fill this form :
+https://docs.google.com/forms/d/e/1FAIpQLSc-test-123/viewform?usp=sf_link`;
+
+      const candidates = parseInboundCandidates(text, { source: "pasted" });
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].company).toBe("Aixel");
+      expect(candidates[0].title).toBe("SDE Intern");
+      expect(candidates[0].url).toContain("docs.google.com/forms/d/e/1FAIpQLSc-test-123/viewform");
+    });
+
+    it("Sample e: Honeywell Aerospace with oraclecloud careers link", () => {
+      const text = `Honeywell Aerospace is Hiring Software Engineer-1 (26/25/24 Grads)
+
+Apply here:
+https://honeywell.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/98765?utm_source=share&highlightedUpdateUrn=urn:li:123`;
+
+      const candidates = parseInboundCandidates(text, { source: "telegram" });
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].company).toBe("Honeywell Aerospace");
+      expect(candidates[0].title).toBe("Software Engineer-1 (26/25/24 Grads)");
+      expect(candidates[0].url).toBe(
+        "https://honeywell.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/98765"
+      );
+    });
+
+    it("ensures 'Dm Hiring Manager on Linkedin :' or 'Fill this form :' never become a title", () => {
+      const text = `Dm Hiring Manager on Linkedin :
+https://example.com/in/recruiter
+
+Fill this form :
+https://forms.gle/xyz123
+
+Backend Developer at Acme Corp
+Apply: https://acme.corp/jobs/1`;
+
+      const candidates = parseInboundCandidates(text);
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].title).toBe("Backend Developer");
+      expect(candidates[0].company).toBe("Acme Corp");
+    });
+
+    it("splits message blocks on WhatsApp headers or blank-line-separated 'is Hiring' lines", () => {
+      const text = `Delta Airlines is Hiring Associate Software Engineer (0-2 Yrs) 📍
+
+Dm Hiring Manager on Linkedin :
+https://example.com/in/someone
+
+https://www.linkedin.com/posts/delta-post-123
+
+BMW is Hiring Software Engineers (6 months - 1yr )
+https://forms.cloud.microsoft/r/bmw-form`;
+
+      const candidates = parseInboundCandidates(text, { source: "whatsapp" });
+      expect(candidates).toHaveLength(2);
+      expect(candidates[0].company).toBe("Delta Airlines");
+      expect(candidates[1].company).toBe("BMW");
+    });
+
+    it("ingests inbox jobs without geo/onsite filter and appears in Inbox view", async () => {
+      const candidates = [
+        {
+          title: "Associate Software Engineer (0-2 Yrs)",
+          company: "Delta Airlines",
+          location: "On-site Atlanta",
+          url: "https://www.linkedin.com/posts/delta-1",
+          description: "Onsite Delta role in Atlanta, US. Junior engineers welcome.",
+          source: "whatsapp",
+          inbound_source: "whatsapp",
+          posted_at: new Date().toISOString(),
+        },
+      ];
+
+      const res = await processAndIngestInboundCandidates(candidates, repo);
+      expect(res.added).toBe(1);
+      expect(res.filtered).toBe(0); // Geo/onsite filter skipped for inbox!
+
+      const counts = await repo.getViewCounts(10);
+      expect(counts.inbox).toBe(1);
+      expect(counts.shortlist).toBe(0); // Never in shortlist count
+      expect(counts.hidden).toBe(0); // Never in hidden count
+
+      const inboxJobs = await repo.getJobs({ view: "inbox" });
+      expect(inboxJobs.jobs).toHaveLength(1);
+      expect(inboxJobs.jobs[0].title).toBe("Associate Software Engineer (0-2 Yrs)");
+    });
+  });
 });
