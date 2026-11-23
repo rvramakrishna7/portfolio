@@ -3,6 +3,7 @@ import { NormalizedJob } from "./types";
 import { TriagedJobResult } from "../llm/triage";
 import { calculateJobAgeDays } from "./freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "../../config/job-profile";
+import { classifyGeo } from "./classify";
 
 export interface StoredJob {
   id: string;
@@ -59,7 +60,7 @@ export interface SearchRun {
 }
 
 export interface JobsQueryOptions {
-  view?: "shortlist" | "all" | "hidden";
+  view?: "shortlist" | "maybe" | "all" | "hidden";
   source?: string;
   q?: string;
   status?: string;
@@ -68,11 +69,25 @@ export interface JobsQueryOptions {
   offset?: number;
 }
 
+export interface ReclassifyOptions {
+  timeBudgetMs?: number;
+  clock?: () => number;
+  batchSize?: number;
+  classifyFn?: typeof classifyGeo;
+}
+
+export interface ReclassifyResult {
+  updated: number;
+  remaining: number;
+  error?: boolean;
+}
+
 export interface JobsRepository {
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
   getJob(source: string, sourceId: string): Promise<StoredJob | null>;
   getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }>;
-  getViewCounts(maxAgeDays?: number): Promise<{ shortlist: number; hidden: number; all: number }>;
+  getViewCounts(maxAgeDays?: number): Promise<{ shortlist: number; maybe: number; hidden: number; all: number }>;
+  reclassifyUnclearJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
   getStats(): Promise<{
     jobsFound: number;
     newToday: number;
@@ -187,14 +202,34 @@ export class InMemoryJobsRepository implements JobsRepository {
         const timeB = b.posted_at ? new Date(b.posted_at).getTime() : 0;
         return timeB - timeA;
       });
+    } else if (view === "maybe") {
+      list = list.filter((j) => {
+        const isNotSkipped = j.status !== "skipped";
+        const hasValidExp = ["fresher", "junior", "unclear"].includes(j.exp_class);
+        const isUnclearGeo = j.geo_eligibility === "unclear";
+        const isRemoteUnconfirmed = Boolean(j.geo_reason && j.geo_reason.startsWith("remote-unconfirmed:"));
+        const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+        const isFresh = age <= maxAgeDays;
+        const noFilter = !j.filter_reason;
+        return isNotSkipped && hasValidExp && isUnclearGeo && isRemoteUnconfirmed && isFresh && noFilter;
+      });
+      list.sort((a, b) => {
+        const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        const timeA = a.posted_at ? new Date(a.posted_at).getTime() : 0;
+        const timeB = b.posted_at ? new Date(b.posted_at).getTime() : 0;
+        return timeB - timeA;
+      });
     } else if (view === "hidden") {
       list = list.filter((j) => {
         const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
         const isOlder = age > maxAgeDays;
+        const isUnclearNonRemote =
+          j.geo_eligibility === "unclear" && (!j.geo_reason || !j.geo_reason.startsWith("remote-unconfirmed:"));
         return (
           j.exp_class === "senior" ||
           j.geo_eligibility === "restricted" ||
-          j.geo_eligibility === "unclear" ||
+          isUnclearNonRemote ||
           j.status === "skipped" ||
           Boolean(j.filter_reason) ||
           isOlder
@@ -234,9 +269,10 @@ export class InMemoryJobsRepository implements JobsRepository {
     return { jobs: paginated, total };
   }
 
-  async getViewCounts(maxAgeDays: number = MAX_AGE_DAYS_DEFAULT): Promise<{ shortlist: number; hidden: number; all: number }> {
+  async getViewCounts(maxAgeDays: number = MAX_AGE_DAYS_DEFAULT): Promise<{ shortlist: number; maybe: number; hidden: number; all: number }> {
     const list = Array.from(this.jobs.values());
     let shortlist = 0;
+    let maybe = 0;
     let hidden = 0;
     let all = 0;
 
@@ -248,16 +284,26 @@ export class InMemoryJobsRepository implements JobsRepository {
         j.status !== "skipped" &&
         !j.filter_reason;
 
+      const isMaybeCandidate =
+        ["fresher", "junior", "unclear"].includes(j.exp_class) &&
+        j.geo_eligibility === "unclear" &&
+        Boolean(j.geo_reason && j.geo_reason.startsWith("remote-unconfirmed:")) &&
+        j.status !== "skipped" &&
+        !j.filter_reason;
+
       const isHiddenCandidate =
         j.exp_class === "senior" ||
         j.geo_eligibility === "restricted" ||
-        j.geo_eligibility === "unclear" ||
+        (j.geo_eligibility === "unclear" && (!j.geo_reason || !j.geo_reason.startsWith("remote-unconfirmed:"))) ||
         j.status === "skipped" ||
         Boolean(j.filter_reason) ||
         age > maxAgeDays;
 
       if (isShortlistCandidate && age <= maxAgeDays) {
         shortlist++;
+      }
+      if (isMaybeCandidate && age <= maxAgeDays) {
+        maybe++;
       }
       if (isHiddenCandidate) {
         hidden++;
@@ -267,7 +313,76 @@ export class InMemoryJobsRepository implements JobsRepository {
       }
     }
 
-    return { shortlist, hidden, all };
+    return { shortlist, maybe, hidden, all };
+  }
+
+  async reclassifyUnclearJobs(opts?: ReclassifyOptions): Promise<ReclassifyResult> {
+    const timeBudgetMs = opts?.timeBudgetMs ?? 15000;
+    const clock = opts?.clock ?? Date.now;
+    const classifyFn = opts?.classifyFn ?? classifyGeo;
+    const startTime = clock();
+
+    // (a) SELECT only rows where geo_eligibility = 'unclear' AND
+    // (geo_reason IS NULL OR (geo_reason NOT LIKE 'remote-unconfirmed:%' AND geo_reason NOT LIKE 'onsite:%'))
+    const candidates = Array.from(this.jobs.values()).filter((j) => {
+      if (j.geo_eligibility !== "unclear") return false;
+      if (!j.geo_reason) return true;
+      return (
+        !j.geo_reason.startsWith("remote-unconfirmed:") &&
+        !j.geo_reason.startsWith("onsite:")
+      );
+    });
+
+    let updated = 0;
+    let processedCount = 0;
+
+    for (const j of candidates) {
+      if (clock() - startTime >= timeBudgetMs) {
+        break;
+      }
+
+      const rawObj = j.raw as Record<string, unknown> | undefined;
+      const isRemote =
+        (rawObj?.isRemote as boolean | undefined) ??
+        (/\bremote\b/i.test(j.location || "") ||
+          /\bremote\b/i.test(j.remote_scope || "") ||
+          /\bremote\b/i.test(j.title || "") ||
+          /\bremote\b/i.test(j.description || ""));
+      const workplaceType = rawObj?.workplaceType as string | undefined;
+      const reclassified = classifyFn(
+        j.title || "",
+        j.location || "",
+        j.remote_scope || "",
+        j.description || "",
+        { isRemote, workplaceType }
+      );
+
+      const newFilterReason = reclassified.reason.startsWith("remote-unconfirmed:")
+        ? null
+        : reclassified.geo === "restricted"
+        ? reclassified.reason
+        : reclassified.reason.startsWith("onsite:")
+        ? "location not remote / not confirmed for India"
+        : null;
+
+      // (b) Skip the UPDATE when geo, geo_reason and filter_reason would not change
+      const changed =
+        j.geo_eligibility !== reclassified.geo ||
+        j.geo_reason !== reclassified.reason ||
+        (j.filter_reason ?? null) !== (newFilterReason ?? null);
+
+      if (changed) {
+        j.geo_eligibility = reclassified.geo;
+        j.geo_reason = reclassified.reason;
+        j.filter_reason = newFilterReason;
+        updated++;
+      }
+
+      processedCount++;
+    }
+
+    const remaining = candidates.length - processedCount;
+    return { updated, remaining };
   }
 
   async getStats() {
@@ -482,11 +597,24 @@ export class NeonJobsRepository implements JobsRepository {
         ORDER BY match_score DESC, posted_at DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
+    } else if (view === "maybe") {
+      rows = (await sql`
+        SELECT * FROM jobs
+        WHERE exp_class IN ('fresher', 'junior', 'unclear')
+          AND geo_eligibility = 'unclear'
+          AND geo_reason LIKE 'remote-unconfirmed:%'
+          AND status != 'skipped'
+          AND filter_reason IS NULL
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+        ORDER BY match_score DESC, posted_at DESC NULLS LAST
+        LIMIT ${limit} OFFSET ${offset}
+      `) as StoredJob[];
     } else if (view === "hidden") {
       rows = (await sql`
         SELECT * FROM jobs
         WHERE exp_class = 'senior'
-           OR geo_eligibility IN ('restricted', 'unclear')
+           OR geo_eligibility = 'restricted'
+           OR (geo_eligibility = 'unclear' AND (geo_reason NOT LIKE 'remote-unconfirmed:%' OR geo_reason IS NULL))
            OR status = 'skipped'
            OR filter_reason IS NOT NULL
            OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
@@ -508,7 +636,7 @@ export class NeonJobsRepository implements JobsRepository {
     return { jobs: rows, total };
   }
 
-  async getViewCounts(maxAgeDays: number = MAX_AGE_DAYS_DEFAULT): Promise<{ shortlist: number; hidden: number; all: number }> {
+  async getViewCounts(maxAgeDays: number = MAX_AGE_DAYS_DEFAULT): Promise<{ shortlist: number; maybe: number; hidden: number; all: number }> {
     const sql = getSql();
     try {
       const rows = await sql`
@@ -521,8 +649,17 @@ export class NeonJobsRepository implements JobsRepository {
               AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
           )::int AS shortlist,
           COUNT(*) FILTER (
+            WHERE exp_class IN ('fresher', 'junior', 'unclear')
+              AND geo_eligibility = 'unclear'
+              AND geo_reason LIKE 'remote-unconfirmed:%'
+              AND status != 'skipped'
+              AND filter_reason IS NULL
+              AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          )::int AS maybe,
+          COUNT(*) FILTER (
             WHERE exp_class = 'senior'
-               OR geo_eligibility IN ('restricted', 'unclear')
+               OR geo_eligibility = 'restricted'
+               OR (geo_eligibility = 'unclear' AND (geo_reason NOT LIKE 'remote-unconfirmed:%' OR geo_reason IS NULL))
                OR status = 'skipped'
                OR filter_reason IS NOT NULL
                OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
@@ -534,11 +671,138 @@ export class NeonJobsRepository implements JobsRepository {
       `;
       return {
         shortlist: Number(rows[0]?.shortlist || 0),
+        maybe: Number(rows[0]?.maybe || 0),
         hidden: Number(rows[0]?.hidden || 0),
         all: Number(rows[0]?.all || 0),
       };
     } catch {
-      return { shortlist: 0, hidden: 0, all: 0 };
+      return { shortlist: 0, maybe: 0, hidden: 0, all: 0 };
+    }
+  }
+
+  async reclassifyUnclearJobs(opts?: ReclassifyOptions): Promise<ReclassifyResult> {
+    const timeBudgetMs = opts?.timeBudgetMs ?? 15000;
+    const clock = opts?.clock ?? Date.now;
+    const batchSize = opts?.batchSize ?? 100;
+    const classifyFn = opts?.classifyFn ?? classifyGeo;
+    const startTime = clock();
+
+    const sql = getSql();
+    try {
+      const rows = (await sql`
+        SELECT id, title, location, remote_scope, description, raw, geo_eligibility, geo_reason, filter_reason
+        FROM jobs
+        WHERE geo_eligibility = 'unclear'
+          AND (
+            geo_reason IS NULL
+            OR (
+              geo_reason NOT LIKE 'remote-unconfirmed:%'
+              AND geo_reason NOT LIKE 'onsite:%'
+            )
+          )
+      `) as Array<{
+        id: string;
+        title: string;
+        location: string | null;
+        remote_scope: string | null;
+        description: string | null;
+        raw: unknown;
+        geo_eligibility: string;
+        geo_reason: string | null;
+        filter_reason: string | null;
+      }>;
+
+      let totalUpdated = 0;
+      let currentIndex = 0;
+
+      while (currentIndex < rows.length) {
+        if (clock() - startTime >= timeBudgetMs) {
+          break;
+        }
+
+        const batchEnd = Math.min(currentIndex + batchSize, rows.length);
+        const batch = rows.slice(currentIndex, batchEnd);
+
+        const ids: string[] = [];
+        const geos: string[] = [];
+        const reasons: string[] = [];
+        const filterReasons: Array<string | null> = [];
+
+        for (const row of batch) {
+          let rawObj: Record<string, unknown> | null = null;
+          if (typeof row.raw === "string") {
+            try {
+              rawObj = JSON.parse(row.raw);
+            } catch {
+              rawObj = null;
+            }
+          } else if (typeof row.raw === "object" && row.raw !== null) {
+            rawObj = row.raw as Record<string, unknown>;
+          }
+
+          const isRemote =
+            (rawObj?.isRemote as boolean | undefined) ??
+            (/\bremote\b/i.test(row.location || "") ||
+              /\bremote\b/i.test(row.remote_scope || "") ||
+              /\bremote\b/i.test(row.title || "") ||
+              /\bremote\b/i.test(row.description || ""));
+          const workplaceType = rawObj?.workplaceType as string | undefined;
+          const reclassified = classifyFn(
+            row.title || "",
+            row.location || "",
+            row.remote_scope || "",
+            row.description || "",
+            { isRemote, workplaceType }
+          );
+
+          const newFilterReason = reclassified.reason.startsWith("remote-unconfirmed:")
+            ? null
+            : reclassified.geo === "restricted"
+            ? reclassified.reason
+            : reclassified.reason.startsWith("onsite:")
+            ? "location not remote / not confirmed for India"
+            : null;
+
+          const changed =
+            row.geo_eligibility !== reclassified.geo ||
+            row.geo_reason !== reclassified.reason ||
+            (row.filter_reason ?? null) !== (newFilterReason ?? null);
+
+          if (changed) {
+            ids.push(row.id);
+            geos.push(reclassified.geo);
+            reasons.push(reclassified.reason);
+            filterReasons.push(newFilterReason);
+          }
+        }
+
+        if (ids.length > 0) {
+          await sql`
+            UPDATE jobs AS j
+            SET
+              geo_eligibility = u.geo,
+              geo_reason = u.geo_reason,
+              filter_reason = u.filter_reason
+            FROM (
+              SELECT
+                UNNEST(${ids}::uuid[]) AS id,
+                UNNEST(${geos}::text[]) AS geo,
+                UNNEST(${reasons}::text[]) AS geo_reason,
+                UNNEST(${filterReasons}::text[]) AS filter_reason
+            ) AS u
+            WHERE j.id = u.id;
+          `;
+          totalUpdated += ids.length;
+        }
+
+        currentIndex = batchEnd;
+      }
+
+      const remaining = rows.length - currentIndex;
+      return { updated: totalUpdated, remaining };
+    } catch (err) {
+      console.error("[reclassifyUnclearJobs] Error reclassifying jobs:", err);
+      return { updated: 0, remaining: 0, error: true };
     }
   }
 

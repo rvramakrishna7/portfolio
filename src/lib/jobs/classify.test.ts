@@ -843,4 +843,324 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
     });
     expect(seniorMatch.score).toBeLessThanOrEqual(15);
   });
+
+  it("correctly routes jobs into shortlist, maybe, and hidden buckets", () => {
+    // 1. Onsite "San Francisco" job -> hidden (geo: restricted, reason starts with onsite:)
+    const sfOnsite = classifyGeo("Junior Engineer", "San Francisco, CA", "San Francisco", "On-site office role in SF.", {
+      isRemote: false,
+    });
+    expect(sfOnsite.geo).toBe("restricted");
+    expect(sfOnsite.reason.startsWith("onsite:")).toBe(true);
+
+    // 2. "Remote" with no country -> maybe (geo: unclear, reason starts with remote-unconfirmed:)
+    const remoteNoCountry = classifyGeo("Junior Developer", "Remote", "Remote", "100% remote developer opening.", {
+      isRemote: true,
+    });
+    expect(remoteNoCountry.geo).toBe("unclear");
+    expect(remoteNoCountry.reason.startsWith("remote-unconfirmed:")).toBe(true);
+
+    // 3. "Remote - US" -> restricted/hidden
+    const remoteUs = classifyGeo("Software Engineer", "Remote - US", "US", "Must reside in US.");
+    expect(remoteUs.geo).toBe("restricted");
+
+    // 4. "Hybrid - London" -> hidden (geo: restricted, reason starts with onsite:)
+    const hybridLondon = classifyGeo("Frontend Developer", "Hybrid - London", "London", "Hybrid 2 days in office.");
+    expect(hybridLondon.geo).toBe("restricted");
+    expect(hybridLondon.reason.startsWith("onsite:")).toBe(true);
+
+    // 5. "Remote - Worldwide" -> shortlist (geo: worldwide)
+    const remoteWorldwide = classifyGeo("Full Stack Developer", "Remote - Worldwide", "Worldwide", "Work from anywhere in the world.");
+    expect(remoteWorldwide.geo).toBe("worldwide");
+  });
+
+  it("InMemoryJobsRepository buckets shortlist, maybe, and hidden correctly", async () => {
+    const { InMemoryJobsRepository } = await import("./repository");
+    const repo = new InMemoryJobsRepository();
+    const nowIso = new Date().toISOString();
+
+    // 1. Onsite San Francisco -> hidden
+    await repo.upsertJob(
+      {
+        source: "greenhouse",
+        sourceId: "case-sf",
+        url: "https://example.com/sf",
+        title: "Junior Engineer",
+        company: "SF Tech",
+        location: "San Francisco, CA",
+        remoteScope: "San Francisco",
+        description: "Onsite in SF.",
+        postedAt: nowIso,
+        tags: [],
+        isRemote: false,
+      },
+      {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "restricted",
+        geoReason: "onsite: Non-remote location (San Francisco, CA)",
+        filterReason: "onsite: Non-remote location (San Francisco, CA)",
+        summaryLine: "SF onsite role",
+        skills: ["TypeScript"],
+        matchScore: 60,
+      }
+    );
+
+    // 2. Remote with no country -> maybe
+    await repo.upsertJob(
+      {
+        source: "ashby",
+        sourceId: "case-remote",
+        url: "https://example.com/remote",
+        title: "Junior Developer",
+        company: "Remote Org",
+        location: "Remote",
+        remoteScope: "Remote",
+        description: "Remote developer role.",
+        postedAt: nowIso,
+        tags: [],
+        isRemote: true,
+      },
+      {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "unclear",
+        geoReason: "remote-unconfirmed: Remote role, India eligibility not stated",
+        filterReason: undefined,
+        summaryLine: "Remote role with no country named",
+        skills: ["TypeScript"],
+        matchScore: 80,
+      }
+    );
+
+    // 3. Remote - US -> hidden
+    await repo.upsertJob(
+      {
+        source: "lever",
+        sourceId: "case-us",
+        url: "https://example.com/us",
+        title: "Software Engineer",
+        company: "US Corp",
+        location: "Remote - US",
+        remoteScope: "US",
+        description: "Must reside in US.",
+        postedAt: nowIso,
+        tags: [],
+      },
+      {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "restricted",
+        geoReason: "Restricted to united states",
+        filterReason: "Restricted to united states",
+        summaryLine: "US only",
+        skills: ["React"],
+        matchScore: 0,
+      }
+    );
+
+    // 4. Hybrid - London -> hidden
+    await repo.upsertJob(
+      {
+        source: "greenhouse",
+        sourceId: "case-london",
+        url: "https://example.com/london",
+        title: "Frontend Developer",
+        company: "London Co",
+        location: "Hybrid - London",
+        remoteScope: "London",
+        description: "Hybrid London office.",
+        postedAt: nowIso,
+        tags: [],
+      },
+      {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "restricted",
+        geoReason: "onsite: On-site or hybrid role, not remote (Hybrid - London)",
+        filterReason: "onsite: On-site or hybrid role, not remote (Hybrid - London)",
+        summaryLine: "London hybrid role",
+        skills: ["CSS"],
+        matchScore: 50,
+      }
+    );
+
+    // 5. Remote - Worldwide -> shortlist
+    await repo.upsertJob(
+      {
+        source: "remoteok",
+        sourceId: "case-worldwide",
+        url: "https://example.com/worldwide",
+        title: "Full Stack Developer",
+        company: "Global Co",
+        location: "Remote - Worldwide",
+        remoteScope: "Worldwide",
+        description: "Work from anywhere in the world.",
+        postedAt: nowIso,
+        tags: [],
+      },
+      {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "worldwide",
+        geoReason: "Open worldwide / work from anywhere",
+        filterReason: undefined,
+        summaryLine: "Worldwide opening",
+        skills: ["TypeScript", "Next.js"],
+        matchScore: 90,
+      }
+    );
+
+    const counts = await repo.getViewCounts();
+    expect(counts.shortlist).toBe(1);
+    expect(counts.maybe).toBe(1);
+    expect(counts.hidden).toBe(3);
+    expect(counts.all).toBe(5);
+
+    const shortlistJobs = await repo.getJobs({ view: "shortlist" });
+    expect(shortlistJobs.jobs.map((j) => j.source_id)).toEqual(["case-worldwide"]);
+
+    const maybeJobs = await repo.getJobs({ view: "maybe" });
+    expect(maybeJobs.jobs.map((j) => j.source_id)).toEqual(["case-remote"]);
+
+    const hiddenJobs = await repo.getJobs({ view: "hidden" });
+    const hiddenIds = hiddenJobs.jobs.map((j) => j.source_id);
+    expect(hiddenIds).toContain("case-sf");
+    expect(hiddenIds).toContain("case-us");
+    expect(hiddenIds).toContain("case-london");
+  });
+
+  describe("reclassifyUnclearJobs cost and budget controls", () => {
+    it("second call updates 0 rows because rows are already classified", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      await repo.upsertJob(
+        {
+          source: "greenhouse",
+          sourceId: "reclass-1",
+          url: "https://example.com/1",
+          title: "Frontend Developer",
+          company: "Co A",
+          location: "Remote",
+          remoteScope: "Remote",
+          description: "Remote developer opening.",
+          postedAt: nowIso,
+          tags: [],
+          isRemote: true,
+        },
+        {
+          expClass: "junior",
+          expMinYears: 1,
+          geoEligibility: "unclear",
+          geoReason: "legacy unclassified reason",
+          filterReason: undefined,
+          summaryLine: "Legacy unclear job",
+          skills: ["React"],
+          matchScore: 70,
+        }
+      );
+
+      // First run: updates the 1 unclassified row
+      const firstRun = await repo.reclassifyUnclearJobs();
+      expect(firstRun.updated).toBe(1);
+      expect(firstRun.remaining).toBe(0);
+
+      // Second run: 0 rows selected because geo_reason now starts with remote-unconfirmed:
+      const secondRun = await repo.reclassifyUnclearJobs();
+      expect(secondRun.updated).toBe(0);
+      expect(secondRun.remaining).toBe(0);
+    });
+
+    it("skips updating unchanged rows when fields would not change", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      await repo.upsertJob(
+        {
+          source: "ashby",
+          sourceId: "reclass-unchanged",
+          url: "https://example.com/unchanged",
+          title: "Platform Engineer",
+          company: "Co B",
+          location: "Unknown",
+          remoteScope: "Unknown",
+          description: "Platform role.",
+          postedAt: nowIso,
+          tags: [],
+        },
+        {
+          expClass: "junior",
+          expMinYears: 1,
+          geoEligibility: "unclear",
+          geoReason: "legacy-match-reason",
+          filterReason: undefined,
+          summaryLine: "Role with matching mock",
+          skills: ["Docker"],
+          matchScore: 60,
+        }
+      );
+
+      // Pass classifyFn returning the exact same values already on the job
+      const res = await repo.reclassifyUnclearJobs({
+        classifyFn: () => ({
+          geo: "unclear",
+          reason: "legacy-match-reason",
+        }),
+      });
+      expect(res.updated).toBe(0);
+      expect(res.remaining).toBe(0);
+    });
+
+    it("stops after time budget is exceeded and returns remaining > 0", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      for (let i = 1; i <= 3; i++) {
+        await repo.upsertJob(
+          {
+            source: "lever",
+            sourceId: `budget-job-${i}`,
+            url: `https://example.com/${i}`,
+            title: `Developer ${i}`,
+            company: `Budget Co ${i}`,
+            location: "Remote",
+            remoteScope: "Remote",
+            description: "Remote role.",
+            postedAt: nowIso,
+            tags: [],
+            isRemote: true,
+          },
+          {
+            expClass: "junior",
+            expMinYears: 1,
+            geoEligibility: "unclear",
+            geoReason: `unclassified legacy ${i}`,
+            filterReason: undefined,
+            summaryLine: `Job ${i}`,
+            skills: ["Node.js"],
+            matchScore: 75,
+          }
+        );
+      }
+
+      // Simulated clock: advances past budget after 1 job is processed
+      let callCount = 0;
+      const clock = () => {
+        callCount++;
+        return callCount <= 2 ? 1000 : 7000;
+      };
+
+      const res = await repo.reclassifyUnclearJobs({
+        timeBudgetMs: 5000,
+        clock,
+      });
+
+      expect(res.updated).toBe(1);
+      expect(res.remaining).toBe(2);
+      expect(res.remaining).toBeGreaterThan(0);
+    });
+  });
 });
