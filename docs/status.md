@@ -1,8 +1,50 @@
 # Status: Portfolio site
 
-Current step: J1 admin foundation merged on main (merge commit `b47c73a`, push pending).
+Current step: Bundle A: More Job Inputs implemented on branch `feat/bundle-a-inputs` (HEAD `a788d26`, NOT pushed).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Bundle A (More Job Inputs: Inbound Pipeline, Multi-channel Adapters, Custom Boards):
+  - Migration 005 (`db/migrations/005_inputs.sql`):
+    - Added `custom_boards` table (id UUID PK, kind TEXT, slug TEXT, label TEXT, created_at TIMESTAMPTZ, UNIQUE(kind, slug)).
+    - Added `inbound_raw` and `inbound_source` columns to `jobs` table.
+  - Shared Inbound Parser (`src/lib/inbound/parse.ts`):
+    - Extracts candidates from free text, forwards, and HTML snippets.
+    - Robust heuristics for title/company/location/URL/email extraction, non-job rejection, normalized URL deduplication.
+    - Integrates title exclusion, exp/geo/language classification, freshness checks, and repo upserting.
+    - Comprehensive unit tests (16 tests covering >= 12 labelled cases) in `src/lib/inbound/parse.test.ts`.
+  - LinkedIn Apify Adapter (`src/lib/jobs/sources/linkedin-apify.ts`):
+    - Fetches LinkedIn jobs/posts via Apify sync actor run dataset API (`APIFY_API_TOKEN`, `APIFY_LINKEDIN_ACTOR_ID`).
+    - Maps dataset items to `NormalizedJob`; fails open with error message if credentials missing.
+    - 5 unit tests with mocked responses in `src/lib/jobs/sources/linkedin-apify.test.ts`.
+  - Gmail IMAP Alert Ingestion (`src/lib/inbound/imap.ts`, `src/config/alert-senders.ts`):
+    - Read-only INBOX scanner using `imapflow` and `mailparser`.
+    - Searches messages from last 3 days matching verified alert senders (LinkedIn, Indeed, Glassdoor, Instahyre, Wellfound, Google Alerts).
+    - 10s execution budget, max 30 messages; fixture tests with .eml samples in `src/lib/inbound/imap.test.ts`.
+  - Telegram Bot Webhook (`src/app/api/telegram/webhook/route.ts`, `scripts/telegram-webhook.mjs`):
+    - Protected via `X-Telegram-Bot-Api-Secret-Token` (401 on mismatch).
+    - Silently ignores non-owner chat updates; supports `/whoami` command.
+    - Ingests forwarded job posts and replies with status; management script for webhook setup/info.
+    - 6 unit tests in `src/app/api/telegram/webhook/route.test.ts`.
+  - WhatsApp Export Upload (`src/app/api/admin/inbound/whatsapp/route.ts`):
+    - Accepts `.txt` or `.zip` (decompressed via `fflate`); zip bomb defense (10MB compressed, 20MB uncompressed caps).
+    - Strips all sender names and phone numbers from raw storage and description (PII defense).
+    - Filters out messages older than 10 days; 7 unit tests in `src/app/api/admin/inbound/whatsapp/route.test.ts`.
+  - SSRF-Safe Fetcher & Paste Endpoint (`src/lib/inbound/safe-fetch.ts`, `src/app/api/admin/inbound/paste/route.ts`):
+    - Hardened fetcher validating DNS, blocking private/loopback/link-local/metadata IPs (127.0.0.1, 169.254.169.254, RFC1918, IPv6 ULA/link-local) on every redirect (max 3), 8s timeout, 1.5MB body cap.
+    - Accepts free text or URL; 12 unit tests in `safe-fetch.test.ts` and 6 tests in `paste/route.test.ts`.
+  - Custom Boards Management (`src/app/api/admin/boards/route.ts`, `src/lib/jobs/validate-board.ts`):
+    - GET, POST, DELETE endpoints for custom Greenhouse, Lever, and Ashby boards.
+    - Validates board existence via live check request before storing.
+    - Merges custom boards with `VERIFIED_COMPANY_BOARDS` in `pipeline.ts` without duplicates.
+    - 5 unit tests in `src/app/api/admin/boards/route.test.ts`.
+  - Admin Dashboard UI (`src/app/admin/AdminDashboard.tsx`):
+    - Jobs tab: added collapsible "Add jobs" panel with text/chat paste, single URL fetch, WhatsApp file dropzone, and live import feedback.
+    - Settings tab: added Connections status list for LinkedIn, Gmail IMAP, Telegram, WhatsApp, and interactive Custom Boards manager with instant add/remove.
+  - Verification & Safety:
+    - 161 unit tests passed across 23 test suites (`npm test`).
+    - 7 Playwright e2e tests passed in `e2e/admin-jobs.spec.ts`.
+    - `check:flat`, `check:copy`, `check:numbers`, `lint`, `typecheck`, and `build` all pass cleanly.
+    - Zero `sql(...)` function calls; zero hardcoded secrets. Port 3000 verified free.
 - Phase J1 (Private Owner-Only /admin & Job Desk Foundation):
   - Merge commit on main: `b47c73a` ("feat: merge J1 admin foundation (private login, schema, dashboard shell)").
   - Auth Core & Crypto (`src/lib/admin/*`):
