@@ -15,7 +15,7 @@ interface StatItem {
 }
 
 type TabKey = "jobs" | "pipeline" | "messages" | "visits" | "settings";
-type ViewFilter = "shortlist" | "maybe" | "hidden" | "all";
+type ViewFilter = "shortlist" | "maybe" | "inbox" | "hidden" | "all";
 
 interface TabConfig {
   key: TabKey;
@@ -73,9 +73,10 @@ export function AdminDashboard() {
   const [viewCounts, setViewCounts] = useState<{
     shortlist: number;
     maybe: number;
+    inbox: number;
     hidden: number;
     all: number;
-  }>({ shortlist: 0, maybe: 0, hidden: 0, all: 0 });
+  }>({ shortlist: 0, maybe: 0, inbox: 0, hidden: 0, all: 0 });
   const [stats, setStats] = useState({
     jobsFound: 0,
     newToday: 0,
@@ -673,6 +674,13 @@ export function AdminDashboard() {
                     </button>
                     <button
                       type="button"
+                      className={`btn filter-btn${viewFilter === "inbox" ? " active" : ""}`}
+                      onClick={() => setViewFilter("inbox")}
+                    >
+                      Inbox ({viewCounts.inbox})
+                    </button>
+                    <button
+                      type="button"
                       className={`btn filter-btn${viewFilter === "hidden" ? " active" : ""}`}
                       onClick={() => setViewFilter("hidden")}
                     >
@@ -757,99 +765,120 @@ export function AdminDashboard() {
 
                 {!isLoading && !fetchError && jobs.length > 0 && (
                   <div className="admin-jobs-list" role="feed" aria-label="Job listings">
-                    {jobs.map((job) => (
-                      <article key={job.id} className="admin-job-card" data-job-id={job.id}>
-                        <div className="admin-job-top">
-                          <div className="admin-job-main">
-                            <h3 className="admin-job-title">{job.title}</h3>
-                            <div className="admin-job-meta">
-                              <span className="admin-job-company">{job.company}</span>
-                              <span className="admin-meta-sep">•</span>
-                              <span className="admin-job-source-tag">
-                                via <a href={job.url} target="_blank" rel="noopener noreferrer">{job.source}</a>
+                    {jobs.map((job) => {
+                      const contactLink =
+                        (job.raw as { contact_url?: string; contactUrl?: string } | null)?.contact_url ||
+                        (job.raw as { contact_url?: string; contactUrl?: string } | null)?.contactUrl ||
+                        job.contact_url ||
+                        job.description?.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)*(?:linkedin\.com|example\.com)\/in\/[^\s\),]+/i)?.[0];
+
+                      return (
+                        <article key={job.id} className="admin-job-card" data-job-id={job.id}>
+                          <div className="admin-job-top">
+                            <div className="admin-job-main">
+                              <h3 className="admin-job-title">{job.title}</h3>
+                              <div className="admin-job-meta">
+                                <span className="admin-job-company">{job.company}</span>
+                                <span className="admin-meta-sep">•</span>
+                                <span className="admin-job-source-tag">
+                                  via <a href={job.url} target="_blank" rel="noopener noreferrer">{job.source}</a>
+                                  {job.inbound_source && (
+                                    <span className="admin-inbound-subtag"> ({job.inbound_source})</span>
+                                  )}
+                                </span>
+                                <span className="admin-meta-sep">•</span>
+                                <span className="admin-job-date">
+                                  {formatJobAge(job.posted_at, job.fetched_at)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="admin-job-badges">
+                              {job.match_score !== null && (
+                                <span className="badge score-badge">Match: {job.match_score}</span>
+                              )}
+                              <span className={`badge exp-badge ${job.exp_class}`}>
+                                Exp: {job.exp_class}
                               </span>
-                              <span className="admin-meta-sep">•</span>
-                              <span className="admin-job-date">
-                                {formatJobAge(job.posted_at, job.fetched_at)}
+                              <span className={`badge geo-badge ${job.geo_eligibility}`}>
+                                Geo: {job.geo_eligibility}
                               </span>
+                              {job.contact_email && (
+                                <span className="badge email-badge" title={job.contact_email}>
+                                  Email available
+                                </span>
+                              )}
                             </div>
                           </div>
 
-                          <div className="admin-job-badges">
-                            {job.match_score !== null && (
-                              <span className="badge score-badge">Match: {job.match_score}</span>
+                          {job.summary_line && (
+                            <p className="admin-job-summary">{job.summary_line}</p>
+                          )}
+
+                          {(viewFilter === "maybe" || (viewFilter === "all" && job.geo_eligibility === "unclear" && job.geo_reason?.startsWith("remote-unconfirmed:"))) && (
+                            <p className="admin-job-maybe-note">
+                              Remote, but India eligibility not stated - check before applying
+                            </p>
+                          )}
+
+                          {viewFilter === "hidden" && job.filter_reason && (
+                            <p className="admin-job-filter-reason">
+                              <strong>Reason:</strong> {job.filter_reason}
+                            </p>
+                          )}
+
+                          {job.skills && job.skills.length > 0 && (
+                            <div className="admin-job-skills">
+                              {job.skills.map((s) => (
+                                <span key={s} className="skill-pill">{s}</span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="admin-job-actions">
+                            <a
+                              href={job.apply_url || job.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn ghost btn-sm"
+                            >
+                              Apply ↗
+                            </a>
+                            {contactLink && (
+                              <a
+                                href={contactLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn ghost btn-sm admin-contact-btn"
+                              >
+                                Contact ↗
+                              </a>
                             )}
-                            <span className={`badge exp-badge ${job.exp_class}`}>
-                              Exp: {job.exp_class}
-                            </span>
-                            <span className={`badge geo-badge ${job.geo_eligibility}`}>
-                              Geo: {job.geo_eligibility}
-                            </span>
-                            {job.contact_email && (
-                              <span className="badge email-badge" title={job.contact_email}>
-                                Email available
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              className={`btn ${job.status === "shortlisted" ? "primary" : "ghost"} btn-sm`}
+                              onClick={() => handleUpdateStatus(job.id, "shortlisted")}
+                            >
+                              Shortlist
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn ${job.status === "applied" ? "primary" : "ghost"} btn-sm`}
+                              onClick={() => handleUpdateStatus(job.id, "applied")}
+                            >
+                              Mark applied
+                            </button>
+                            <button
+                              type="button"
+                              className="btn ghost btn-sm btn-danger"
+                              onClick={() => handleUpdateStatus(job.id, "skipped")}
+                            >
+                              Skip
+                            </button>
                           </div>
-                        </div>
-
-                        {job.summary_line && (
-                          <p className="admin-job-summary">{job.summary_line}</p>
-                        )}
-
-                        {(viewFilter === "maybe" || (viewFilter === "all" && job.geo_eligibility === "unclear" && job.geo_reason?.startsWith("remote-unconfirmed:"))) && (
-                          <p className="admin-job-maybe-note">
-                            Remote, but India eligibility not stated - check before applying
-                          </p>
-                        )}
-
-                        {viewFilter === "hidden" && job.filter_reason && (
-                          <p className="admin-job-filter-reason">
-                            <strong>Reason:</strong> {job.filter_reason}
-                          </p>
-                        )}
-
-                        {job.skills && job.skills.length > 0 && (
-                          <div className="admin-job-skills">
-                            {job.skills.map((s) => (
-                              <span key={s} className="skill-pill">{s}</span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="admin-job-actions">
-                          <a
-                            href={job.apply_url || job.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn ghost btn-sm"
-                          >
-                            Open ↗
-                          </a>
-                          <button
-                            type="button"
-                            className={`btn ${job.status === "shortlisted" ? "primary" : "ghost"} btn-sm`}
-                            onClick={() => handleUpdateStatus(job.id, "shortlisted")}
-                          >
-                            Shortlist
-                          </button>
-                          <button
-                            type="button"
-                            className={`btn ${job.status === "applied" ? "primary" : "ghost"} btn-sm`}
-                            onClick={() => handleUpdateStatus(job.id, "applied")}
-                          >
-                            Mark applied
-                          </button>
-                          <button
-                            type="button"
-                            className="btn ghost btn-sm btn-danger"
-                            onClick={() => handleUpdateStatus(job.id, "skipped")}
-                          >
-                            Skip
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                        </article>
+                      );
+                    })}
                   </div>
                 )}
               </div>

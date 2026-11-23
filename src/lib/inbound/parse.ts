@@ -14,6 +14,7 @@ export interface InboundCandidate {
   location?: string;
   url: string;
   contact_email?: string;
+  contact_url?: string;
   description: string;
   source: string;
   inbound_raw?: string;
@@ -32,7 +33,7 @@ export interface IngestResult {
 
 /**
  * Normalizes a URL by trimming, converting host to lowercase,
- * and stripping tracking query parameters (utm_*, ref, trk, etc.).
+ * and stripping tracking query parameters (utm_*, rcm, highlightedUpdate*, origin, ref, trk, etc.).
  */
 export function normalizeUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim();
@@ -45,6 +46,9 @@ export function normalizeUrl(rawUrl: string): string {
       const lower = key.toLowerCase();
       if (
         lower.startsWith("utm_") ||
+        lower.startsWith("highlightedupdate") ||
+        lower === "rcm" ||
+        lower === "origin" ||
         lower === "ref" ||
         lower === "trk" ||
         lower === "refid" ||
@@ -230,28 +234,100 @@ export function parseInboundCandidates(
 }
 
 /**
- * Splits multi-job digests (numbered lists, markdown sections, double newlines)
- * into distinct text segments if multiple URLs or distinct job headers exist.
+ * Strips emojis, pin symbols, trailing punctuation, and markdown formatting from titles.
  */
-function splitIntoJobSegments(text: string): string[] {
-  const allUrls = text.match(URL_REGEX) || [];
-  if (allUrls.length <= 1) {
-    return [text];
-  }
+export function cleanTitle(rawTitle: string): string {
+  let title = rawTitle.trim();
+  // Strip emojis, pictographs, symbols, pin emojis (📍, 📌, etc.)
+  title = title.replace(/[\p{Extended_Pictographic}\u{FE00}-\u{FE0F}]/gu, "").trim();
+  // Strip trailing punctuation and symbols (: . , ; ! ? -)
+  title = title.replace(/[:.,;!?-]+$/, "").trim();
+  // Strip markdown markers (*, #, _, ~)
+  title = title.replace(/^[*#\-_~]+|[*#\-_~]+$/g, "").trim();
+  return title;
+}
 
-  // If multiple URLs exist, try splitting on numbered list markers (e.g. "\n1. ", "\n2. ") or double newlines
-  const numberedSplit = text.split(/(?:^|\n)(?:\d+\.|\([0-9]+\)|•|\*|-)\s+/m).filter((s) => s.trim().length > 20);
-  if (numberedSplit.length > 1 && numberedSplit.length <= allUrls.length + 1) {
-    return numberedSplit;
-  }
-
-  // Try splitting by double newline if each chunk has a URL
-  const doubleNewlineSplit = text.split(/\n\s*\n/).filter((s) => s.trim().length > 20);
+/**
+ * Checks if a candidate line is an invalid title (action prompts, forms, DM requests).
+ */
+export function isInvalidTitleLine(line: string): boolean {
+  const lower = line.toLowerCase().trim();
+  if (!lower) return true;
   if (
-    doubleNewlineSplit.length > 1 &&
-    doubleNewlineSplit.every((chunk) => URL_REGEX.test(chunk) || containsJobSignal(chunk))
+    /^(?:dm\b|fill\b|apply\b|click\b|link\b|open\b|register\b|submit\b|check\b|visit\b|note\b|details\b|call\b|contact\b)/i.test(
+      lower
+    )
   ) {
-    return doubleNewlineSplit;
+    return true;
+  }
+  if (
+    lower.includes("hiring manager") ||
+    lower.includes("fill this form") ||
+    lower.includes("fill the form")
+  ) {
+    return true;
+  }
+  if (
+    lower.includes("on linkedin") ||
+    lower.includes("google form") ||
+    lower.includes("microsoft form")
+  ) {
+    return true;
+  }
+  if (/^https?:\/\//i.test(lower)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Splits multi-job digests (WhatsApp message exports, numbered lists, blank-line-separated 'is Hiring' lines)
+ * into distinct text segments.
+ */
+export function splitIntoJobSegments(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const blocks: string[] = [];
+  let currentBlock: string[] = [];
+  let prevLineWasBlank = false;
+
+  const waHeaderRegex = /^(?:\[\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?\]|\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]m)?\s*-\s*[^:]+:)/i;
+  const isHiringRegex = /^.+?\s+(?:is|are)\s+hiring\s+.+$/i;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isWaHeader = waHeaderRegex.test(trimmed);
+    const isNewHiringLine = prevLineWasBlank && isHiringRegex.test(trimmed);
+
+    if ((isWaHeader || isNewHiringLine) && currentBlock.length > 0) {
+      const blockStr = currentBlock.join("\n").trim();
+      if (blockStr.length > 10) {
+        blocks.push(blockStr);
+      }
+      currentBlock = [];
+    }
+
+    currentBlock.push(line);
+    prevLineWasBlank = trimmed.length === 0;
+  }
+
+  if (currentBlock.length > 0) {
+    const blockStr = currentBlock.join("\n").trim();
+    if (blockStr.length > 10) {
+      blocks.push(blockStr);
+    }
+  }
+
+  if (blocks.length > 1) {
+    return blocks;
+  }
+
+  // If no multi-block found above, check for numbered lists (e.g. "1. ... \n2. ...")
+  const allUrls = text.match(URL_REGEX) || [];
+  if (allUrls.length > 1) {
+    const numberedSplit = text.split(/(?:^|\n)(?:\d+\.|\([0-9]+\)|•|\*|-)\s+/m).filter((s) => s.trim().length > 20);
+    if (numberedSplit.length > 1 && numberedSplit.length <= allUrls.length + 1) {
+      return numberedSplit;
+    }
   }
 
   return [text];
@@ -270,27 +346,78 @@ function extractSingleCandidate(
   }
 ): InboundCandidate | null {
   const cleanText = text.trim();
-  const urls = cleanText.match(URL_REGEX) || [];
+  const allUrls = cleanText.match(URL_REGEX) || [];
   const emails = cleanText.match(EMAIL_REGEX) || [];
 
-  let candidateUrl = urls[0] || "";
-  const contactEmail = emails[0] || undefined;
+  let formUrl: string | undefined;
+  let postUrl: string | undefined;
+  let otherApplyUrl: string | undefined;
+  let contactUrl: string | undefined;
 
-  // If no URL in text segment, check if an htmlLink matches or use mailto
+  for (const rawUrl of allUrls) {
+    const norm = normalizeUrl(rawUrl);
+    const lower = norm.toLowerCase();
+
+    // Check if it's a contact profile link (e.g. linkedin.com/in/, example.com/in/)
+    const isContactLink =
+      lower.includes("linkedin.com/in/") ||
+      /\/in\/[a-z0-9_-]+/i.test(norm) ||
+      lower.includes("twitter.com/") ||
+      lower.includes("x.com/");
+
+    if (isContactLink) {
+      if (!contactUrl) contactUrl = norm;
+      continue;
+    }
+
+    // Check if it's a form or direct ATS link
+    const isFormOrAts =
+      lower.includes("forms.cloud.microsoft") ||
+      lower.includes("forms.office.com") ||
+      lower.includes("docs.google.com/forms") ||
+      lower.includes("forms.gle") ||
+      lower.includes("oraclecloud.com") ||
+      lower.includes("greenhouse.io") ||
+      lower.includes("lever.co") ||
+      lower.includes("ashbyhq.com") ||
+      lower.includes("myworkdayjobs.com");
+
+    if (isFormOrAts) {
+      if (!formUrl) formUrl = norm;
+      continue;
+    }
+
+    // Check if it's a LinkedIn post / feed update link
+    const isPostLink = lower.includes("linkedin.com/posts/") || lower.includes("linkedin.com/feed/update/");
+    if (isPostLink) {
+      if (!postUrl) postUrl = norm;
+      continue;
+    }
+
+    // Other general HTTP link
+    if (!otherApplyUrl) otherApplyUrl = norm;
+  }
+
+  // Priority for candidateUrl: formUrl > otherApplyUrl > postUrl > contactUrl > synthetic urn
+  let candidateUrl = formUrl || otherApplyUrl || postUrl || "";
   if (!candidateUrl && context.htmlLinks.length > 0) {
     for (const link of context.htmlLinks) {
-      if (cleanText.toLowerCase().includes(link.text.toLowerCase()) || link.text.length > 4) {
-        candidateUrl = link.href;
+      const norm = normalizeUrl(link.href);
+      if (!norm.includes("/in/")) {
+        candidateUrl = norm;
         break;
       }
     }
   }
 
+  const contactEmail = emails[0] || undefined;
+
   if (!candidateUrl) {
     if (contactEmail) {
       candidateUrl = `mailto:${contactEmail}`;
+    } else if (contactUrl) {
+      candidateUrl = contactUrl;
     } else {
-      // Fallback synthetic urn URL if text clearly describes a job
       const hash = createHash("sha256").update(cleanText).digest("hex").slice(0, 16);
       candidateUrl = `urn:inbound:${hash}`;
     }
@@ -301,16 +428,38 @@ function extractSingleCandidate(
   let location: string | undefined = context.defaultLocation;
 
   // Title / Company Heuristics
+  // 0. Primary rule: first line matching /^(.+?)\s+(?:is|are)\s+hiring\s+(.+)$/i gives company and title
+  const rawLines = cleanText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (const line of rawLines) {
+    const isHiringMatch = line.match(/^(.+?)\s+(?:is|are)\s+hiring\s+(.+)$/i);
+    if (isHiringMatch) {
+      const rawComp = isHiringMatch[1].trim().replace(/^[*#\-_~]+|[*#\-_~]+$/g, "").trim();
+      const rawTit = cleanTitle(isHiringMatch[2]);
+      if (rawComp && rawTit && !isInvalidTitleLine(rawTit)) {
+        company = rawComp;
+        title = rawTit;
+        break;
+      }
+    }
+  }
+
   // 1. Explicit labels: "Role: ...", "Title: ...", "Position: ..."
-  const roleMatch = cleanText.match(/(?:Role|Job Title|Title|Position)\s*:\s*([^\n\r,;|]+)/i);
-  if (roleMatch) {
-    title = roleMatch[1].trim();
+  if (!title) {
+    const roleMatch = cleanText.match(/(?:Role|Job Title|Title|Position)\s*:\s*([^\n\r,;|]+)/i);
+    if (roleMatch) {
+      const cand = cleanTitle(roleMatch[1]);
+      if (!isInvalidTitleLine(cand)) {
+        title = cand;
+      }
+    }
   }
 
   // 2. Explicit company labels: "Company: ...", "Organization: ..."
-  const companyMatch = cleanText.match(/(?:Company|Organization|Org)\s*:\s*([^\n\r,;|]+)/i);
-  if (companyMatch) {
-    company = companyMatch[1].trim();
+  if (!company) {
+    const companyMatch = cleanText.match(/(?:Company|Organization|Org)\s*:\s*([^\n\r,;|]+)/i);
+    if (companyMatch) {
+      company = companyMatch[1].trim().replace(/^[*#\-_~]+|[*#\-_~]+$/g, "").trim();
+    }
   }
 
   // 3. Location label: "Location: ..."
@@ -325,19 +474,23 @@ function extractSingleCandidate(
       /(?:Hiring(?:\s+Alert)?:\s*|We are hiring\s+)([^@\n\r|!]+?)[ \t]+(?:at|@)[ \t]+([A-Za-z0-9&. \t'-]+)/i
     );
     if (hiringAtMatch) {
-      if (!title) title = hiringAtMatch[1].replace(/^\*/, "").trim();
-      if (!company) company = hiringAtMatch[2].replace(/[*!.,;]+$/, "").trim();
+      const candTit = cleanTitle(hiringAtMatch[1]);
+      const candComp = hiringAtMatch[2].replace(/[*!.,;]+$/, "").trim();
+      if (!title && !isInvalidTitleLine(candTit)) title = candTit;
+      if (!company) company = candComp;
     }
   }
 
-  // 5. "[Company] is hiring [Title]" or "[Company] is looking for [Title]"
+  // 5. "[Company] is hiring [Title]" or "[Company] is looking for [Title]" (inline fallback)
   if (!title || !company) {
     const isHiringMatch = cleanText.match(
       /([A-Za-z0-9&.\s'-]+?)\s+is\s+(?:hiring|looking for)\s+(?:an?\s+)?([^,\n\r;|.]+)/i
     );
     if (isHiringMatch) {
-      if (!company) company = isHiringMatch[1].trim();
-      if (!title) title = isHiringMatch[2].trim();
+      const candComp = isHiringMatch[1].trim();
+      const candTit = cleanTitle(isHiringMatch[2]);
+      if (!company) company = candComp;
+      if (!title && !isInvalidTitleLine(candTit)) title = candTit;
     }
   }
 
@@ -347,9 +500,9 @@ function extractSingleCandidate(
       /^[ \t*#]*([A-Za-z0-9\s/+#.-]{3,40}?)[ \t]+(?:at|@)[ \t]+([A-Za-z0-9&. '-]{2,30})/im
     );
     if (titleAtMatch) {
-      const candidateTitle = titleAtMatch[1].trim();
+      const candidateTitle = cleanTitle(titleAtMatch[1]);
       const candidateCompany = titleAtMatch[2].trim();
-      if (!title) title = candidateTitle;
+      if (!title && !isInvalidTitleLine(candidateTitle)) title = candidateTitle;
       if (!company) company = candidateCompany;
     }
   }
@@ -361,10 +514,16 @@ function extractSingleCandidate(
       .map((l) => l.trim().replace(/^[*#\-_~]+|[*#\-_~]+$/g, "").trim())
       .filter((l) => l.length > 0 && !/^https?:\/\//i.test(l));
     if (lines.length >= 2) {
-      const l1 = lines[0];
+      const l1 = cleanTitle(lines[0]);
       const l2 = lines[1];
       // If line 1 matches a known role or job keyword and is concise
-      if (l1.length <= 50 && containsJobSignal(l1) && l2.length <= 40 && !containsJobSignal(l2)) {
+      if (
+        l1.length <= 50 &&
+        containsJobSignal(l1) &&
+        !isInvalidTitleLine(l1) &&
+        l2.length <= 40 &&
+        !containsJobSignal(l2)
+      ) {
         if (!title) title = l1;
         if (!company) company = l2;
         if (lines[2] && lines[2].length <= 50 && !location) {
@@ -380,8 +539,9 @@ function extractSingleCandidate(
       /^([A-Za-z0-9&.\s'-]{2,30})\s*\|\s*([^|\n\r]+?)\s*\|\s*([^|\n\r]+)/m
     );
     if (pipeMatch) {
+      const candTit = cleanTitle(pipeMatch[2]);
       if (!company) company = pipeMatch[1].trim();
-      if (!title) title = pipeMatch[2].trim();
+      if (!title && !isInvalidTitleLine(candTit)) title = candTit;
       if (!location) location = pipeMatch[3].trim();
     }
   }
@@ -393,13 +553,13 @@ function extractSingleCandidate(
     );
     if (dashMatch) {
       const first = dashMatch[1].trim();
-      const second = dashMatch[2].trim();
+      const second = cleanTitle(dashMatch[2]);
       // If second looks like a target role
       if (OWNER_PROFILE.targetRoles.some((tr) => second.toLowerCase().includes(tr))) {
         if (!company) company = first;
-        if (!title) title = second;
+        if (!title && !isInvalidTitleLine(second)) title = second;
       } else if (OWNER_PROFILE.targetRoles.some((tr) => first.toLowerCase().includes(tr))) {
-        if (!title) title = first;
+        if (!title && !isInvalidTitleLine(cleanTitle(first))) title = cleanTitle(first);
         if (!company) company = second;
       }
     }
@@ -430,8 +590,13 @@ function extractSingleCandidate(
 
   // If still missing title, check the first line of the text
   if (!title) {
-    const firstLine = cleanText.split("\n")[0].trim().replace(/^[*#\-_~]+|[*#\-_~]+$/g, "");
-    if (firstLine.length >= 3 && firstLine.length <= 60 && containsJobSignal(firstLine)) {
+    const firstLine = cleanTitle(cleanText.split("\n")[0]);
+    if (
+      firstLine.length >= 3 &&
+      firstLine.length <= 60 &&
+      containsJobSignal(firstLine) &&
+      !isInvalidTitleLine(firstLine)
+    ) {
       title = firstLine;
     }
   }
@@ -449,13 +614,20 @@ function extractSingleCandidate(
     /\b(remote|work from home|wfh|anywhere|telecommute)\b/i.test(location || "") ||
     /\b(remote|work from home|wfh|anywhere|telecommute)\b/i.test(cleanText);
 
+  // If contactUrl exists and is not present in description text, append it
+  let descriptionText = cleanText;
+  if (contactUrl && !descriptionText.includes(contactUrl)) {
+    descriptionText = `${descriptionText}\nContact: ${contactUrl}`;
+  }
+
   return {
     title,
     company,
     location: location || (isRemote ? "Remote" : "Unspecified"),
     url: candidateUrl,
     contact_email: contactEmail,
-    description: cleanText.length > 8000 ? cleanText.slice(0, 8000) : cleanText,
+    contact_url: contactUrl,
+    description: descriptionText.length > 8000 ? descriptionText.slice(0, 8000) : descriptionText,
     source: context.source,
     inbound_raw: context.inboundRaw,
     inbound_source: context.source,
@@ -516,11 +688,16 @@ export async function processAndIngestInboundCandidates(
       postedAt: candidate.posted_at || new Date().toISOString(),
       tags: [],
       contactEmail: candidate.contact_email,
+      contactUrl: candidate.contact_url,
       applyUrl: candidate.url,
       isRemote: candidate.isRemote,
       inboundRaw: candidate.inbound_raw,
       inboundSource: candidate.inbound_source,
     };
+
+    const isInbox =
+      (candidate.inbound_source && ["telegram", "whatsapp", "pasted", "paste"].includes(candidate.inbound_source)) ||
+      ["telegram", "whatsapp", "pasted", "paste"].includes(candidate.source);
 
     // 1. Language classification
     const lang = detectLanguage(normalizedJob.title, normalizedJob.description);
@@ -530,23 +707,19 @@ export async function processAndIngestInboundCandidates(
       filterReason = `Non-English posting (${lang.language})`;
     }
 
-    // 2. Freshness check
-    if (!filterReason && isJobStale(normalizedJob.postedAt, null, maxAgeDays)) {
-      filterReason = `Stale posting (older than ${maxAgeDays} days)`;
+    // 2. Freshness check (10 days default for inbox from message time if available)
+    const effectiveMaxAge = isInbox ? 10 : maxAgeDays;
+    if (!filterReason && isJobStale(normalizedJob.postedAt, null, effectiveMaxAge)) {
+      filterReason = `Stale posting (older than ${effectiveMaxAge} days)`;
     }
 
-    // 3. Title check
+    // 3. Title check: senior or non-engineering title rule applied only to final parsed title
     if (!filterReason && isExcludedTitle(normalizedJob.title)) {
       filterReason = "Excluded title (senior/management or non-engineering)";
     }
 
-    // 4. Experience classification
+    // Experience and Geo classification
     const ruleExp = classifyExperience(normalizedJob.title, normalizedJob.description);
-    if (!filterReason && ruleExp.expClass === "senior") {
-      filterReason = ruleExp.reason || "Senior experience required";
-    }
-
-    // 5. Geo classification
     const ruleGeo = classifyGeo(
       normalizedJob.title,
       normalizedJob.location,
@@ -554,11 +727,7 @@ export async function processAndIngestInboundCandidates(
       normalizedJob.description,
       { isRemote: normalizedJob.isRemote }
     );
-    if (!filterReason && ruleGeo.geo === "restricted") {
-      filterReason = ruleGeo.reason || "Geographically restricted";
-    }
 
-    // 6. Score match
     const ruleScore = scoreMatch({
       title: normalizedJob.title,
       description: normalizedJob.description,
@@ -567,8 +736,20 @@ export async function processAndIngestInboundCandidates(
       geoEligibility: ruleGeo.geo,
     });
 
-    if (!filterReason && ruleScore.score < 25) {
-      filterReason = "Low relevance score";
+    // Non-inbox jobs undergo full experience, geo, and score filtering
+    // Inbox jobs skip the geo/onsite filter and low match score filter
+    if (!isInbox) {
+      if (!filterReason && ruleExp.expClass === "senior") {
+        filterReason = ruleExp.reason || "Senior experience required";
+      }
+
+      if (!filterReason && ruleGeo.geo === "restricted") {
+        filterReason = ruleGeo.reason || "Geographically restricted";
+      }
+
+      if (!filterReason && ruleScore.score < 25) {
+        filterReason = "Low relevance score";
+      }
     }
 
     const triaged: TriagedJobResult = {

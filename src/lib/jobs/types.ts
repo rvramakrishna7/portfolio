@@ -22,6 +22,7 @@ export interface NormalizedJob {
   salaryText?: string;
   applyUrl?: string;
   contactEmail?: string;
+  contactUrl?: string;
   isRemote?: boolean;
   workplaceType?: string;
   inboundRaw?: string;

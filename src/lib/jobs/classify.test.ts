@@ -1163,4 +1163,90 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
       expect(res.remaining).toBeGreaterThan(0);
     });
   });
+
+  describe("reclassifyInboxJobs fix-up", () => {
+    it("re-buckets existing inbox jobs that had geo/onsite or matchScore filter reasons", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      await repo.upsertJob(
+        {
+          source: "whatsapp",
+          sourceId: "inbox-fix-1",
+          url: "https://example.com/wa-1",
+          title: "Associate Software Engineer (0-2 Yrs)",
+          company: "Delta Airlines",
+          location: "Onsite Atlanta",
+          remoteScope: "Onsite",
+          description: "Onsite Delta role in Atlanta, US.",
+          postedAt: nowIso,
+          tags: [],
+          inboundSource: "whatsapp",
+        },
+        {
+          expClass: "junior",
+          expMinYears: 1,
+          geoEligibility: "restricted",
+          geoReason: "onsite: Atlanta",
+          filterReason: "location not remote / not confirmed for India",
+          summaryLine: "Associate Software Engineer at Delta Airlines",
+          skills: ["Java"],
+          matchScore: 60,
+        }
+      );
+
+      // First run: clears the invalid geo filterReason from the inbox job
+      const res1 = await repo.reclassifyInboxJobs();
+      expect(res1.updated).toBe(1);
+      expect(res1.remaining).toBe(0);
+
+      // Verify the job now has filter_reason = null and appears in Inbox view
+      const inboxList = await repo.getJobs({ view: "inbox" });
+      expect(inboxList.jobs).toHaveLength(1);
+      expect(inboxList.jobs[0].filter_reason).toBeNull();
+
+      // Second run: 0 updates because filter_reason is already null (idempotent)
+      const res2 = await repo.reclassifyInboxJobs();
+      expect(res2.updated).toBe(0);
+      expect(res2.remaining).toBe(0);
+    });
+
+    it("preserves non-English and senior title filter reasons on inbox jobs", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      await repo.upsertJob(
+        {
+          source: "telegram",
+          sourceId: "inbox-senior-1",
+          url: "https://example.com/tg-1",
+          title: "Director of Engineering",
+          company: "Acme",
+          location: "Remote",
+          remoteScope: "Remote",
+          description: "Lead 5 teams.",
+          postedAt: nowIso,
+          tags: [],
+          inboundSource: "telegram",
+        },
+        {
+          expClass: "senior",
+          expMinYears: 10,
+          geoEligibility: "worldwide",
+          geoReason: "Open globally",
+          filterReason: "Excluded title (senior/management or non-engineering)",
+          summaryLine: "Director of Engineering at Acme",
+          skills: [],
+          matchScore: 10,
+        }
+      );
+
+      const res = await repo.reclassifyInboxJobs();
+      expect(res.updated).toBe(0); // Already Excluded title, unchanged
+      const job = await repo.getJob("telegram", "inbox-senior-1");
+      expect(job?.filter_reason).toBe("Excluded title (senior/management or non-engineering)");
+    });
+  });
 });

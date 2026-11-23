@@ -117,6 +117,12 @@ export async function startJobSearch(
         console.warn("[startJobSearch] reclassifyUnclearJobs encountered an error; continuing search run");
       }
     }
+    if (typeof repo.reclassifyInboxJobs === "function") {
+      const res = await repo.reclassifyInboxJobs();
+      if (res?.error) {
+        console.warn("[startJobSearch] reclassifyInboxJobs encountered an error; continuing search run");
+      }
+    }
   } catch (err) {
     console.warn("[startJobSearch] Unexpected reclassify error; continuing search run:", err);
   }
