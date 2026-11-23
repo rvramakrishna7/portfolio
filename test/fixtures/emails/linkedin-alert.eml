@@ -1,0 +1,17 @@
+From: "LinkedIn Job Alerts" <jobalerts-noreply@linkedin.com>
+To: <ramakrishna@example.com>
+Subject: 3 new jobs for "Software Engineer"
+Date: Sun, 22 Nov 2026 12:00:00 +0000
+Content-Type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html>
+<body>
+  <h1>New jobs matching your search</h1>
+  <div class="job-card">
+    <a href="https://www.linkedin.com/jobs/view/999888111">Junior Frontend Developer</a>
+    <p>Acme Corp - Bengaluru, Karnataka, India (Remote)</p>
+    <p>We are looking for a Junior Frontend Developer with React and TypeScript skills. Fresh graduates welcome.</p>
+  </div>
+</body>
+</html>
