@@ -1249,4 +1249,147 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
       expect(job?.filter_reason).toBe("Excluded title (senior/management or non-engineering)");
     });
   });
+
+  describe("NULL-safe inbound_source regression tests", () => {
+    it("asserts counts for shortlist, maybe, and hidden are > 0 when inbound_source is undefined/null", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      // 1. Shortlist candidate with inbound_source = undefined
+      await repo.upsertJob(
+        {
+          source: "adzuna",
+          sourceId: "shortlist-1",
+          url: "https://example.com/job-1",
+          title: "Junior Backend Developer",
+          company: "Acme",
+          location: "Remote",
+          remoteScope: "Worldwide",
+          description: "Junior dev role.",
+          postedAt: nowIso,
+          tags: [],
+          inboundSource: undefined,
+        },
+        {
+          expClass: "junior",
+          expMinYears: 1,
+          geoEligibility: "worldwide",
+          geoReason: "Open globally",
+          summaryLine: "Junior Backend Developer at Acme",
+          skills: ["Node.js"],
+          matchScore: 80,
+        }
+      );
+
+      // 2. Maybe candidate with inbound_source = null
+      await repo.upsertJob(
+        {
+          source: "remoteok",
+          sourceId: "maybe-1",
+          url: "https://example.com/job-2",
+          title: "Frontend Developer",
+          company: "Beta Corp",
+          location: "Remote",
+          remoteScope: "Remote",
+          description: "Frontend role.",
+          postedAt: nowIso,
+          tags: [],
+        },
+        {
+          expClass: "fresher",
+          expMinYears: 0,
+          geoEligibility: "unclear",
+          geoReason: "remote-unconfirmed:no geo mentions",
+          summaryLine: "Frontend Developer at Beta Corp",
+          skills: ["React"],
+          matchScore: 70,
+        }
+      );
+
+      // 3. Hidden candidate with inbound_source = undefined
+      await repo.upsertJob(
+        {
+          source: "adzuna",
+          sourceId: "hidden-1",
+          url: "https://example.com/job-3",
+          title: "Senior Principal Architect",
+          company: "Gamma Corp",
+          location: "New York",
+          remoteScope: "Onsite",
+          description: "10+ years exp.",
+          postedAt: nowIso,
+          tags: [],
+        },
+        {
+          expClass: "senior",
+          expMinYears: 10,
+          geoEligibility: "restricted",
+          geoReason: "US only",
+          filterReason: "Senior experience level (10+ yrs)",
+          summaryLine: "Senior Principal Architect at Gamma Corp",
+          skills: ["Java"],
+          matchScore: 20,
+        }
+      );
+
+      // 4. Inbox candidate
+      await repo.upsertJob(
+        {
+          source: "whatsapp",
+          sourceId: "inbox-1",
+          url: "https://example.com/job-4",
+          title: "Junior QA Tester",
+          company: "Delta Corp",
+          location: "Remote",
+          remoteScope: "Remote",
+          description: "Manual and automated QA.",
+          postedAt: nowIso,
+          tags: [],
+          inboundSource: "whatsapp",
+        },
+        {
+          expClass: "junior",
+          expMinYears: 1,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: "Junior QA Tester at Delta Corp",
+          skills: ["Testing"],
+          matchScore: 65,
+        }
+      );
+
+      const counts = await repo.getViewCounts(30);
+      expect(counts.shortlist).toBeGreaterThan(0);
+      expect(counts.maybe).toBeGreaterThan(0);
+      expect(counts.hidden).toBeGreaterThan(0);
+      expect(counts.inbox).toBeGreaterThan(0);
+
+      const shortlistJobs = await repo.getJobs({ view: "shortlist" });
+      expect(shortlistJobs.jobs.length).toBeGreaterThan(0);
+
+      const maybeJobs = await repo.getJobs({ view: "maybe" });
+      expect(maybeJobs.jobs.length).toBeGreaterThan(0);
+
+      const hiddenJobs = await repo.getJobs({ view: "hidden" });
+      expect(hiddenJobs.jobs.length).toBeGreaterThan(0);
+    });
+
+    it("ensures src/lib/jobs/repository.ts never has NOT (inbound_source IN without COALESCE", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const repoPath = path.resolve(process.cwd(), "src/lib/jobs/repository.ts");
+      const content = fs.readFileSync(repoPath, "utf-8");
+
+      // Check if any occurrence of NOT (inbound_source IN exists without COALESCE
+      const bareNotPattern = /NOT\s*\(\s*inbound_source\s+IN/i;
+      expect(content).not.toMatch(bareNotPattern);
+
+      // Also ensure that whenever inbound_source is queried with IN in SQL WHERE/FILTER clauses, COALESCE is present
+      const matches = content.match(/WHERE[^\n]*inbound_source[^\n]*IN/gi) || [];
+      for (const m of matches) {
+        expect(m).toContain("COALESCE(inbound_source, '')");
+      }
+    });
+  });
 });

@@ -382,6 +382,14 @@ https://forms.cloud.microsoft/r/bmw-form`;
       expect(candidates[1].company).toBe("BMW");
     });
 
+    it("strips pin emoji and variation selectors (📍, 📌) from titles for a brand-new message", () => {
+      const text = `Honeywell Aerospace is Hiring Software Engineer-1 (26/25/24 Grads) 📍\nhttps://example.com/honeywell-job`;
+      const candidates = parseInboundCandidates(text);
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].company).toBe("Honeywell Aerospace");
+      expect(candidates[0].title).toBe("Software Engineer-1 (26/25/24 Grads)");
+    });
+
     it("ingests inbox jobs without geo/onsite filter and appears in Inbox view", async () => {
       const candidates = [
         {

@@ -818,7 +818,7 @@ export class NeonJobsRepository implements JobsRepository {
     if (view === "shortlist") {
       rows = (await sql`
         SELECT * FROM jobs
-        WHERE NOT (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
           AND exp_class IN ('fresher', 'junior', 'unclear')
           AND geo_eligibility IN ('worldwide', 'india_ok')
           AND status != 'skipped'
@@ -830,7 +830,7 @@ export class NeonJobsRepository implements JobsRepository {
     } else if (view === "maybe") {
       rows = (await sql`
         SELECT * FROM jobs
-        WHERE NOT (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
           AND exp_class IN ('fresher', 'junior', 'unclear')
           AND geo_eligibility = 'unclear'
           AND geo_reason LIKE 'remote-unconfirmed:%'
@@ -843,7 +843,7 @@ export class NeonJobsRepository implements JobsRepository {
     } else if (view === "inbox") {
       rows = (await sql`
         SELECT * FROM jobs
-        WHERE (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+        WHERE (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
           AND status != 'skipped'
           AND filter_reason IS NULL
           AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
@@ -853,7 +853,7 @@ export class NeonJobsRepository implements JobsRepository {
     } else if (view === "hidden") {
       rows = (await sql`
         SELECT * FROM jobs
-        WHERE NOT (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
           AND (
             exp_class = 'senior'
             OR geo_eligibility = 'restricted'
@@ -888,7 +888,7 @@ export class NeonJobsRepository implements JobsRepository {
       const rows = await sql`
         SELECT
           COUNT(*) FILTER (
-            WHERE NOT (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
               AND exp_class IN ('fresher', 'junior', 'unclear')
               AND geo_eligibility IN ('worldwide', 'india_ok')
               AND status != 'skipped'
@@ -896,7 +896,7 @@ export class NeonJobsRepository implements JobsRepository {
               AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
           )::int AS shortlist,
           COUNT(*) FILTER (
-            WHERE NOT (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
               AND exp_class IN ('fresher', 'junior', 'unclear')
               AND geo_eligibility = 'unclear'
               AND geo_reason LIKE 'remote-unconfirmed:%'
@@ -905,13 +905,13 @@ export class NeonJobsRepository implements JobsRepository {
               AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
           )::int AS maybe,
           COUNT(*) FILTER (
-            WHERE (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+            WHERE (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
               AND status != 'skipped'
               AND filter_reason IS NULL
               AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
           )::int AS inbox,
           COUNT(*) FILTER (
-            WHERE NOT (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
               AND (
                 exp_class = 'senior'
                 OR geo_eligibility = 'restricted'
@@ -1075,7 +1075,7 @@ export class NeonJobsRepository implements JobsRepository {
       const rows = (await sql`
         SELECT id, title, description, filter_reason
         FROM jobs
-        WHERE (inbound_source IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+        WHERE (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
           AND filter_reason IS NOT NULL
           AND filter_reason NOT LIKE 'Non-English%'
           AND filter_reason NOT LIKE 'Excluded title%'
