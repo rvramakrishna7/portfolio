@@ -2451,3 +2451,229 @@ dialog.palette::backdrop {
   color: var(--muted);
   font: 400 0.9rem var(--sans);
 }
+
+/* Inbound Add Jobs & Connections Styles (Bundle A) */
+.admin-add-jobs-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-add-jobs-summary {
+  font: 600 0.95rem var(--sans);
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+}
+
+.admin-add-jobs-summary:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.admin-add-jobs-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+@media (min-width: 768px) {
+  .admin-add-jobs-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.admin-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-input-group label {
+  font: 500 0.85rem var(--mono);
+  color: var(--muted);
+}
+
+.admin-textarea {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: 400 0.85rem var(--mono);
+  padding: 10px;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.admin-input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: 400 0.85rem var(--sans);
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+
+.admin-textarea:focus,
+.admin-input:focus,
+.admin-select:focus {
+  outline: 2px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.admin-file-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px dashed var(--line-2);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--panel-2);
+}
+
+.admin-file-input {
+  font: 400 0.8rem var(--mono);
+  color: var(--muted);
+}
+
+.admin-feedback-box {
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+  border-radius: 4px;
+  font: 500 0.85rem var(--sans);
+  color: var(--text);
+  margin-top: 12px;
+}
+
+/* Settings Connections Grid */
+.admin-connections-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.admin-connections-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .admin-connections-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.admin-connection-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-connection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-connection-title {
+  font: 600 1rem var(--sans);
+  color: var(--text);
+  margin: 0;
+}
+
+.admin-connection-badge {
+  font: 600 0.75rem var(--mono);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.admin-connection-badge.ready {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-connection-desc {
+  font: 400 0.85rem/1.5 var(--sans);
+  color: var(--muted);
+  margin: 0;
+}
+
+.admin-connection-hint {
+  font: 400 0.78rem var(--mono);
+  color: var(--muted);
+  background: var(--panel-2);
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+/* Custom Boards Table / List */
+.admin-custom-boards-card {
+  grid-column: 1 / -1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-board-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-board-form .admin-select,
+.admin-board-form .admin-input {
+  max-width: 220px;
+}
+
+.admin-board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.admin-board-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.admin-board-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 500 0.85rem var(--mono);
+}
+
+.admin-board-kind {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted);
+}
+

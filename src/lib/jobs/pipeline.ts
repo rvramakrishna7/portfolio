@@ -7,6 +7,8 @@ import { fetchGreenhouseBoard } from "./sources/greenhouse";
 import { fetchLeverBoard } from "./sources/lever";
 import { fetchAshbyBoard } from "./sources/ashby";
 import { fetchHackerNews } from "./sources/hn";
+import { fetchLinkedInApify } from "./sources/linkedin-apify";
+import { ingestGmailAlerts } from "../inbound/imap";
 import { VERIFIED_COMPANY_BOARDS } from "../../config/company-boards";
 import {
   classifyExperience,
@@ -19,24 +21,49 @@ import {
 import { LlmProvider } from "../llm/types";
 import { GroqProvider } from "../llm/groq";
 import { triageJobWithLlm, hashString, TriagedJobResult } from "../llm/triage";
-import { getJobsRepository, JobsRepository, SearchRunStats } from "./repository";
+import { getJobsRepository, JobsRepository, SearchRunStats, CustomBoard } from "./repository";
 
 export interface BoardQueueItem {
   platform: "greenhouse" | "lever" | "ashby";
   name: string;
 }
 
-export function getAllCompanyBoardsQueue(): BoardQueueItem[] {
+export function getAllCompanyBoardsQueue(customBoards?: CustomBoard[]): BoardQueueItem[] {
   const queue: BoardQueueItem[] = [];
+  const seen = new Set<string>();
+
   for (const token of VERIFIED_COMPANY_BOARDS.greenhouse) {
-    queue.push({ platform: "greenhouse", name: token });
+    const key = `greenhouse:${token.toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      queue.push({ platform: "greenhouse", name: token });
+    }
   }
   for (const site of VERIFIED_COMPANY_BOARDS.lever) {
-    queue.push({ platform: "lever", name: site });
+    const key = `lever:${site.toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      queue.push({ platform: "lever", name: site });
+    }
   }
   for (const name of VERIFIED_COMPANY_BOARDS.ashby) {
-    queue.push({ platform: "ashby", name });
+    const key = `ashby:${name.toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      queue.push({ platform: "ashby", name });
+    }
   }
+
+  if (customBoards && customBoards.length > 0) {
+    for (const b of customBoards) {
+      const key = `${b.kind}:${b.slug.toLowerCase()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        queue.push({ platform: b.kind, name: b.slug });
+      }
+    }
+  }
+
   return queue;
 }
 
@@ -71,6 +98,8 @@ export async function startJobSearch(
   options?: {
     boardQueue?: BoardQueueItem[];
     fetchAggregatorsFn?: () => Promise<{ jobs: NormalizedJob[]; errors?: Record<string, string> }>;
+    fetchLinkedInFn?: () => Promise<AdapterResult>;
+    ingestImapFn?: () => Promise<{ fetched: number; added: number; duplicates?: number; filtered?: number; error?: string }>;
   }
 ): Promise<{
   runId: string;
@@ -102,6 +131,11 @@ export async function startJobSearch(
     greenhouse: 0,
     lever: 0,
     ashby: 0,
+    linkedin: 0,
+    email: 0,
+    telegram: 0,
+    whatsapp: 0,
+    paste: 0,
   };
   const sourceErrors: Record<string, string> = {};
 
@@ -113,7 +147,7 @@ export async function startJobSearch(
       sourceCounts[job.source] = (sourceCounts[job.source] || 0) + 1;
     }
   } else {
-    // 1. Fetch only fast aggregators + HN in parallel (finishes in ~1-2 seconds)
+    // 1. Fetch fast aggregators + HN in parallel
     const [remoteOkRes, jobicyRes, arbeitnowRes, wwrRes, hnRes] =
       await Promise.all([
         fetchRemoteOk(),
@@ -143,6 +177,20 @@ export async function startJobSearch(
       ...hnRes.jobs,
     ];
   }
+
+  // 1b. Fetch LinkedIn and Gmail IMAP in parallel
+  const [linkedInRes, imapRes] = await Promise.all([
+    options?.fetchLinkedInFn ? options.fetchLinkedInFn() : fetchLinkedInApify(),
+    options?.ingestImapFn ? options.ingestImapFn() : ingestGmailAlerts({ repo }),
+  ]);
+
+  sourceCounts.linkedin = linkedInRes.jobs.length;
+  sourceCounts.email = imapRes.added + (imapRes.duplicates || 0);
+
+  if (linkedInRes.error) sourceErrors.linkedin = linkedInRes.error;
+  if (imapRes.error) sourceErrors.email = imapRes.error;
+
+  rawJobs.push(...linkedInRes.jobs);
 
   // 2. Dedupe by URL and normalized (company + title)
   const dedupedJobs: NormalizedJob[] = [];
@@ -186,7 +234,16 @@ export async function startJobSearch(
     });
   }
 
-  const boardQueue = options?.boardQueue ? [...options.boardQueue] : getAllCompanyBoardsQueue();
+  let customBoards: CustomBoard[] = [];
+  if (typeof repo.getCustomBoards === "function") {
+    try {
+      customBoards = await repo.getCustomBoards();
+    } catch {
+      // Fallback
+    }
+  }
+
+  const boardQueue = options?.boardQueue ? [...options.boardQueue] : getAllCompanyBoardsQueue(customBoards);
   const boardsTotal = boardQueue.length;
 
   const stats: SearchRunStats = {
@@ -265,7 +322,16 @@ export async function stepJobSearch(
       };
     }
 
-    const fullQueue = getAllCompanyBoardsQueue();
+    let customBoards: CustomBoard[] = [];
+    if (typeof repo.getCustomBoards === "function") {
+      try {
+        customBoards = await repo.getCustomBoards();
+      } catch {
+        // Fallback
+      }
+    }
+
+    const fullQueue = getAllCompanyBoardsQueue(customBoards);
     const boardsDone = run.stats?.boardsDone ?? 0;
     const remainingQueue = fullQueue.slice(boardsDone);
 

@@ -51,6 +51,10 @@ test.describe("Admin Jobs Engine (J2)", () => {
       { url: "/api/admin/jobs/seed-101", method: "patch" },
       { url: "/api/admin/search/start", method: "post" },
       { url: "/api/admin/search/step", method: "post" },
+      { url: "/api/admin/inbound/whatsapp", method: "post" },
+      { url: "/api/admin/inbound/paste", method: "post" },
+      { url: "/api/admin/boards", method: "get" },
+      { url: "/api/admin/boards", method: "post" },
     ];
 
     for (const ep of endpoints) {
@@ -66,6 +70,13 @@ test.describe("Admin Jobs Engine (J2)", () => {
       expect(res.status()).toBe(401);
       expect(res.headers()["x-robots-tag"]).toBe("noindex, nofollow");
     }
+
+    // Telegram webhook without secret header returns 401
+    const tgRes = await request.post("/api/telegram/webhook", {
+      data: { message: { text: "hello" } },
+    });
+    expect(tgRes.status()).toBe(401);
+    expect(tgRes.headers()["x-robots-tag"]).toBe("noindex, nofollow");
   });
 
   test("cron search route without secret returns 401", async ({ request }) => {
