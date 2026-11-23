@@ -15,7 +15,7 @@ interface StatItem {
 }
 
 type TabKey = "jobs" | "pipeline" | "messages" | "visits" | "settings";
-type ViewFilter = "shortlist" | "hidden" | "all";
+type ViewFilter = "shortlist" | "maybe" | "hidden" | "all";
 
 interface TabConfig {
   key: TabKey;
@@ -72,9 +72,10 @@ export function AdminDashboard() {
   const [jobs, setJobs] = useState<StoredJob[]>([]);
   const [viewCounts, setViewCounts] = useState<{
     shortlist: number;
+    maybe: number;
     hidden: number;
     all: number;
-  }>({ shortlist: 0, hidden: 0, all: 0 });
+  }>({ shortlist: 0, maybe: 0, hidden: 0, all: 0 });
   const [stats, setStats] = useState({
     jobsFound: 0,
     newToday: 0,
@@ -406,6 +407,13 @@ export function AdminDashboard() {
                     </button>
                     <button
                       type="button"
+                      className={`btn filter-btn${viewFilter === "maybe" ? " active" : ""}`}
+                      onClick={() => setViewFilter("maybe")}
+                    >
+                      Maybe ({viewCounts.maybe})
+                    </button>
+                    <button
+                      type="button"
                       className={`btn filter-btn${viewFilter === "hidden" ? " active" : ""}`}
                       onClick={() => setViewFilter("hidden")}
                     >
@@ -528,6 +536,12 @@ export function AdminDashboard() {
 
                         {job.summary_line && (
                           <p className="admin-job-summary">{job.summary_line}</p>
+                        )}
+
+                        {(viewFilter === "maybe" || (viewFilter === "all" && job.geo_eligibility === "unclear" && job.geo_reason?.startsWith("remote-unconfirmed:"))) && (
+                          <p className="admin-job-maybe-note">
+                            Remote, but India eligibility not stated - check before applying
+                          </p>
                         )}
 
                         {viewFilter === "hidden" && job.filter_reason && (

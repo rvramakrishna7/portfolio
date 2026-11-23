@@ -80,6 +80,15 @@ export async function startJobSearch(
 }> {
   const runId = await repo.createSearchRun();
 
+  // One-off re-classification for existing stored rows with geo_eligibility = 'unclear'
+  try {
+    if (typeof repo.reclassifyUnclearJobs === "function") {
+      await repo.reclassifyUnclearJobs();
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+
   let rawJobs: NormalizedJob[] = [];
   const sourceCounts: Record<string, number> = {
     remoteok: 0,
@@ -446,7 +455,9 @@ export async function stepJobSearch(
             : item.ruleGeo.geo === "restricted"
             ? item.ruleGeo.reason || "Geographically restricted"
             : item.ruleGeo.geo === "unclear"
-            ? "location not remote / not confirmed for India"
+            ? item.ruleGeo.reason.startsWith("remote-unconfirmed:")
+              ? undefined
+              : "location not remote / not confirmed for India"
             : undefined,
         matchScore: item.ruleScore.score,
         triagedAt: new Date().toISOString(),

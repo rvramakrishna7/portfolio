@@ -2388,6 +2388,16 @@ dialog.palette::backdrop {
   margin: 0;
 }
 
+.admin-job-maybe-note {
+  font: 400 0.85rem/1.4 var(--sans);
+  color: var(--muted);
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  padding: 6px 12px;
+  border-radius: 4px;
+  margin: 0;
+}
+
 .admin-job-skills {
   display: flex;
   flex-wrap: wrap;

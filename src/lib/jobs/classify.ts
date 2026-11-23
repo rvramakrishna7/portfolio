@@ -282,7 +282,7 @@ export function classifyGeo(
   if (isExplicitNonRemoteFlag || hasNonRemoteInLocation) {
     return {
       geo: "restricted",
-      reason: `On-site or hybrid role, not remote (${options?.workplaceType || location || "non-remote"})`,
+      reason: `onsite: On-site or hybrid role, not remote (${options?.workplaceType || location || "non-remote"})`,
     };
   }
 
@@ -309,7 +309,7 @@ export function classifyGeo(
   if (!isRemoteMarked && !hasIndiaInLocation && !isUnknownOrGenericLocation) {
     return {
       geo: "restricted",
-      reason: `Non-remote location (${location})`,
+      reason: `onsite: Non-remote location (${location})`,
     };
   }
 
@@ -498,10 +498,21 @@ export function classifyGeo(
     };
   }
 
-  // A bare "Remote" with no region stays unclear
+  const isRemote =
+    isRemoteMarked ||
+    remoteKeywordRegex.test(descriptionLower) ||
+    remoteKeywordRegex.test(title);
+
+  if (isRemote) {
+    return {
+      geo: "unclear",
+      reason: "remote-unconfirmed: Remote role, India eligibility not stated",
+    };
+  }
+
   return {
     geo: "unclear",
-    reason: "No explicit geographic restrictions found",
+    reason: `onsite: Location not confirmed remote (${location || "unspecified"})`,
   };
 }
 
