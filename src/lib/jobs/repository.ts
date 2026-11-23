@@ -41,6 +41,9 @@ export interface SearchRunStats {
   shortlistCount: number;
   hiddenCount: number;
   languageHidden: number;
+  boardsTotal?: number;
+  boardsDone?: number;
+  boardErrors?: Record<string, string>;
 }
 
 export interface SearchRun {
@@ -86,6 +89,7 @@ export interface JobsRepository {
     id: string,
     updates: Partial<SearchRun>
   ): Promise<void>;
+  getSearchRun(id: string): Promise<SearchRun | null>;
   getLastSearchRun(): Promise<SearchRun | null>;
 }
 
@@ -311,6 +315,10 @@ export class InMemoryJobsRepository implements JobsRepository {
     if (run) {
       Object.assign(run, updates);
     }
+  }
+
+  async getSearchRun(id: string): Promise<SearchRun | null> {
+    return this.runs.get(id) || null;
   }
 
   async getLastSearchRun(): Promise<SearchRun | null> {
@@ -599,6 +607,14 @@ export class NeonJobsRepository implements JobsRepository {
         WHERE id = ${id}
       `;
     }
+  }
+
+  async getSearchRun(id: string): Promise<SearchRun | null> {
+    const sql = getSql();
+    const rows = (await sql`
+      SELECT * FROM search_runs WHERE id = ${id} LIMIT 1
+    `) as SearchRun[];
+    return rows[0] || null;
   }
 
   async getLastSearchRun(): Promise<SearchRun | null> {

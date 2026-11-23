@@ -1,6 +1,7 @@
 import { NormalizedJob, AdapterResult, USER_AGENT, REQUEST_TIMEOUT_MS } from "../types";
 import { stripHtml } from "../clean";
 import { calculateJobAgeDays } from "../freshness";
+import { isExcludedTitle } from "../../../config/job-profile";
 
 export interface GreenhouseJobItem {
   id: number | string;
@@ -17,9 +18,6 @@ export interface GreenhouseApiResponse {
   jobs?: GreenhouseJobItem[];
 }
 
-const EXCLUDED_TITLE_REGEX =
-  /\b(senior|lead|principal|staff|director|vp|vice president|manager|head of|counsel|account executive|sales)\b/i;
-
 export function parseGreenhouseJobs(data: unknown, token: string): NormalizedJob[] {
   if (!data || typeof data !== "object") return [];
   const resp = data as GreenhouseApiResponse;
@@ -32,8 +30,8 @@ export function parseGreenhouseJobs(data: unknown, token: string): NormalizedJob
     if (!item.id || !item.title) continue;
 
     const title = String(item.title).trim();
-    // Pre-filter: skip senior/management roles
-    if (EXCLUDED_TITLE_REGEX.test(title)) {
+    // Pre-filter: skip senior/management and non-engineering roles
+    if (isExcludedTitle(title)) {
       continue;
     }
 

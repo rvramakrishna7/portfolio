@@ -34,6 +34,18 @@ export const NON_ENGINEERING_TITLE_WORDS = [
   "business development",
 ] as const;
 
+const SENIOR_OR_MANAGEMENT_REGEX =
+  /\b(senior|lead|principal|staff|director|vp|vice president|manager|head of)\b/i;
+
+export function isExcludedTitle(title: string): boolean {
+  if (SENIOR_OR_MANAGEMENT_REGEX.test(title)) return true;
+  const lower = title.toLowerCase();
+  return NON_ENGINEERING_TITLE_WORDS.some((word) => {
+    const reg = new RegExp(`\\b${word}\\b`, "i");
+    return reg.test(lower);
+  });
+}
+
 export const OWNER_PROFILE = {
   name: "Ramakrishna",
   roleStatus: "Fresher",

@@ -4,6 +4,8 @@ import { verifyAdminOrigin } from "@/lib/admin/origin";
 import { stepJobSearch } from "@/lib/jobs/pipeline";
 import { z } from "zod";
 
+export const maxDuration = 60;
+
 const StepSchema = z.object({
   runId: z.string().min(1),
   batchSize: z.number().min(1).max(50).default(15),

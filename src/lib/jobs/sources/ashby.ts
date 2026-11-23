@@ -1,6 +1,7 @@
 import { NormalizedJob, AdapterResult, USER_AGENT, REQUEST_TIMEOUT_MS } from "../types";
 import { stripHtml } from "../clean";
 import { calculateJobAgeDays } from "../freshness";
+import { isExcludedTitle } from "../../../config/job-profile";
 
 export interface AshbyJobItem {
   id: string;
@@ -23,9 +24,6 @@ export interface AshbyApiResponse {
   jobs?: AshbyJobItem[];
 }
 
-const EXCLUDED_TITLE_REGEX =
-  /\b(senior|lead|principal|staff|director|vp|vice president|manager|head of|counsel|account executive|sales)\b/i;
-
 export function parseAshbyJobs(data: unknown, name: string): NormalizedJob[] {
   if (!data || typeof data !== "object") return [];
   const resp = data as AshbyApiResponse;
@@ -42,8 +40,8 @@ export function parseAshbyJobs(data: unknown, name: string): NormalizedJob[] {
     if (!item.id || !item.title) continue;
 
     const title = String(item.title).trim();
-    // Pre-filter: skip senior/management roles
-    if (EXCLUDED_TITLE_REGEX.test(title)) {
+    // Pre-filter: skip senior/management and non-engineering roles
+    if (isExcludedTitle(title)) {
       continue;
     }
 

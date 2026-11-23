@@ -193,13 +193,16 @@ export function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
       });
       if (!startRes.ok) throw new Error("Could not initiate job search");
-      const { runId, pendingTriage, totalFetched } = await startRes.json();
+      const { runId, pendingTriage, totalFetched, remainingBoards } = await startRes.json();
 
-      setSearchProgress(`Fetched ${totalFetched} listings. Triaging ${pendingTriage} opportunities...`);
+      if (remainingBoards > 0) {
+        setSearchProgress(`Fetched ${totalFetched} listings. Boards: ${remainingBoards} left. Triaging: ${pendingTriage} pending...`);
+      } else {
+        setSearchProgress(`Fetched ${totalFetched} listings. Triaging ${pendingTriage} opportunities...`);
+      }
 
       // 2. Loop step batches
       let done = false;
-      let remaining = pendingTriage;
 
       while (!done) {
         const stepRes = await fetch("/api/admin/search/step", {
@@ -210,8 +213,14 @@ export function AdminDashboard() {
         if (!stepRes.ok) throw new Error("Error during triage step");
         const stepData = await stepRes.json();
         done = stepData.done;
-        remaining = stepData.remaining;
-        setSearchProgress(`Triaging: ${remaining} opportunities remaining...`);
+        const boardsLeft = stepData.remainingBoards ?? 0;
+        const triageLeft = stepData.pendingTriage ?? stepData.remaining ?? 0;
+
+        if (boardsLeft > 0) {
+          setSearchProgress(`Boards: ${boardsLeft} left. Triaging: ${triageLeft} pending...`);
+        } else {
+          setSearchProgress(`Triaging: ${triageLeft} opportunities remaining...`);
+        }
         if (done) break;
       }
 

@@ -1,6 +1,7 @@
 import { NormalizedJob, AdapterResult, USER_AGENT, REQUEST_TIMEOUT_MS } from "../types";
 import { stripHtml } from "../clean";
 import { calculateJobAgeDays } from "../freshness";
+import { isExcludedTitle } from "../../../config/job-profile";
 
 export interface LeverJobItem {
   id: string;
@@ -18,9 +19,6 @@ export interface LeverJobItem {
   descriptionPlain?: string;
 }
 
-const EXCLUDED_TITLE_REGEX =
-  /\b(senior|lead|principal|staff|director|vp|vice president|manager|head of|counsel|account executive|sales)\b/i;
-
 export function parseLeverJobs(data: unknown, site: string): NormalizedJob[] {
   if (!Array.isArray(data)) return [];
 
@@ -33,8 +31,8 @@ export function parseLeverJobs(data: unknown, site: string): NormalizedJob[] {
     if (!raw.id || !raw.text) continue;
 
     const title = String(raw.text).trim();
-    // Pre-filter: skip senior/management roles
-    if (EXCLUDED_TITLE_REGEX.test(title)) {
+    // Pre-filter: skip senior/management and non-engineering roles
+    if (isExcludedTitle(title)) {
       continue;
     }
 

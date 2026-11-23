@@ -1,6 +1,7 @@
 import { NormalizedJob, AdapterResult, USER_AGENT, REQUEST_TIMEOUT_MS } from "../types";
 import { stripHtml } from "../clean";
 import { calculateJobAgeDays } from "../freshness";
+import { isExcludedTitle } from "../../../config/job-profile";
 
 export interface HnCommentItem {
   id: number | string;
@@ -18,8 +19,6 @@ export interface HnStoryItem {
 }
 
 const REMOTE_REGEX = /\b(remote|worldwide|anywhere|wfh)\b/i;
-const EXCLUDED_TITLE_REGEX =
-  /\b(senior|lead|principal|staff|director|vp|vice president|manager|head of|counsel|account executive)\b/i;
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
 const URL_REGEX = /https?:\/\/[^\s<>"'()]+/;
 
@@ -78,8 +77,8 @@ export function parseHnComments(
       if (parts.length > 2) location = parts.slice(2).join(", ");
     }
 
-    // Pre-filter: skip senior/management titles
-    if (EXCLUDED_TITLE_REGEX.test(title)) {
+    // Pre-filter: skip senior/management and non-engineering titles
+    if (isExcludedTitle(title)) {
       continue;
     }
 
