@@ -31,6 +31,8 @@ export interface StoredJob {
   triaged_at?: string | null;
   contact_email?: string | null;
   apply_url?: string | null;
+  inbound_raw?: string | null;
+  inbound_source?: string | null;
 }
 
 export interface SearchRunStats {
@@ -76,6 +78,14 @@ export interface ReclassifyOptions {
   classifyFn?: typeof classifyGeo;
 }
 
+export interface CustomBoard {
+  id: string;
+  kind: "greenhouse" | "lever" | "ashby";
+  slug: string;
+  label?: string | null;
+  created_at?: string;
+}
+
 export interface ReclassifyResult {
   updated: number;
   remaining: number;
@@ -84,6 +94,7 @@ export interface ReclassifyResult {
 
 export interface JobsRepository {
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
+  hasJobWithUrl?(url: string): Promise<boolean>;
   getJob(source: string, sourceId: string): Promise<StoredJob | null>;
   getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }>;
   getViewCounts(maxAgeDays?: number): Promise<{ shortlist: number; maybe: number; hidden: number; all: number }>;
@@ -106,12 +117,16 @@ export interface JobsRepository {
   ): Promise<void>;
   getSearchRun(id: string): Promise<SearchRun | null>;
   getLastSearchRun(): Promise<SearchRun | null>;
+  getCustomBoards?(): Promise<CustomBoard[]>;
+  addCustomBoard?(board: { kind: "greenhouse" | "lever" | "ashby"; slug: string; label?: string }): Promise<CustomBoard>;
+  deleteCustomBoard?(id: string): Promise<boolean>;
 }
 
 // In-Memory implementation for tests or when DB is not configured
 export class InMemoryJobsRepository implements JobsRepository {
   private jobs = new Map<string, StoredJob>();
   private runs = new Map<string, SearchRun>();
+  private customBoards = new Map<string, CustomBoard>();
 
   async upsertJob(
     job: NormalizedJob,
@@ -140,6 +155,8 @@ export class InMemoryJobsRepository implements JobsRepository {
       if (triaged.triagedAt) existing.triaged_at = triaged.triagedAt;
       if (job.contactEmail) existing.contact_email = job.contactEmail;
       if (job.applyUrl) existing.apply_url = job.applyUrl;
+      if (job.inboundRaw) existing.inbound_raw = job.inboundRaw;
+      if (job.inboundSource) existing.inbound_source = job.inboundSource;
       return "existing";
     }
 
@@ -169,10 +186,25 @@ export class InMemoryJobsRepository implements JobsRepository {
       triaged_at: triaged.triagedAt || null,
       contact_email: job.contactEmail || null,
       apply_url: job.applyUrl || job.url,
+      inbound_raw: job.inboundRaw || null,
+      inbound_source: job.inboundSource || null,
     };
 
     this.jobs.set(key, stored);
     return "new";
+  }
+
+  async hasJobWithUrl(url: string): Promise<boolean> {
+    const norm = url.trim().toLowerCase();
+    for (const j of this.jobs.values()) {
+      if (
+        j.url.trim().toLowerCase() === norm ||
+        (j.apply_url && j.apply_url.trim().toLowerCase() === norm)
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   async getJob(source: string, sourceId: string): Promise<StoredJob | null> {
@@ -445,6 +477,42 @@ export class InMemoryJobsRepository implements JobsRepository {
     if (list.length === 0) return null;
     return list[list.length - 1];
   }
+
+  async getCustomBoards(): Promise<CustomBoard[]> {
+    return Array.from(this.customBoards.values());
+  }
+
+  async addCustomBoard(board: {
+    kind: "greenhouse" | "lever" | "ashby";
+    slug: string;
+    label?: string;
+  }): Promise<CustomBoard> {
+    const key = `${board.kind}:${board.slug.toLowerCase()}`;
+    const existing = this.customBoards.get(key);
+    if (existing) {
+      if (board.label !== undefined) existing.label = board.label;
+      return existing;
+    }
+    const created: CustomBoard = {
+      id: `board-${this.customBoards.size + 1}`,
+      kind: board.kind,
+      slug: board.slug.toLowerCase(),
+      label: board.label || null,
+      created_at: new Date().toISOString(),
+    };
+    this.customBoards.set(key, created);
+    return created;
+  }
+
+  async deleteCustomBoard(id: string): Promise<boolean> {
+    for (const [key, b] of this.customBoards.entries()) {
+      if (b.id === id) {
+        this.customBoards.delete(key);
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 // Neon PostgreSQL Implementation with Parameterized Tagged Templates ONLY
@@ -461,13 +529,13 @@ export class NeonJobsRepository implements JobsRepository {
     };
 
     try {
-      // Try upserting with migration 004 columns (triaged_at, contact_email, apply_url)
+      // Try upserting with migration 005 columns (inbound_raw, inbound_source) + migration 004 columns
       const rows = await sql`
         INSERT INTO jobs (
           source, source_id, url, title, company, location, remote_scope,
           description, posted_at, exp_min_years, exp_class, geo_eligibility,
           geo_reason, skills, filter_reason, summary_line, match_score,
-          raw, last_seen_at, triaged_at, contact_email, apply_url
+          raw, last_seen_at, triaged_at, contact_email, apply_url, inbound_raw, inbound_source
         ) VALUES (
           ${job.source},
           ${job.sourceId},
@@ -490,7 +558,9 @@ export class NeonJobsRepository implements JobsRepository {
           NOW(),
           ${triaged.triagedAt ? new Date(triaged.triagedAt) : null},
           ${job.contactEmail || null},
-          ${job.applyUrl || job.url}
+          ${job.applyUrl || job.url},
+          ${job.inboundRaw || null},
+          ${job.inboundSource || null}
         )
         ON CONFLICT (source, source_id) DO UPDATE SET
           title = EXCLUDED.title,
@@ -511,12 +581,70 @@ export class NeonJobsRepository implements JobsRepository {
           last_seen_at = NOW(),
           triaged_at = COALESCE(EXCLUDED.triaged_at, jobs.triaged_at),
           contact_email = COALESCE(EXCLUDED.contact_email, jobs.contact_email),
-          apply_url = COALESCE(EXCLUDED.apply_url, jobs.apply_url)
+          apply_url = COALESCE(EXCLUDED.apply_url, jobs.apply_url),
+          inbound_raw = COALESCE(EXCLUDED.inbound_raw, jobs.inbound_raw),
+          inbound_source = COALESCE(EXCLUDED.inbound_source, jobs.inbound_source)
         RETURNING (xmax = 0) AS is_new;
       `;
       return rows[0]?.is_new ? "new" : "existing";
     } catch {
-      // Fallback if migration 004 has not yet run in database
+      // Fallback if migration 005 has not run yet: try migration 004 columns
+      try {
+        const rows = await sql`
+          INSERT INTO jobs (
+            source, source_id, url, title, company, location, remote_scope,
+            description, posted_at, exp_min_years, exp_class, geo_eligibility,
+            geo_reason, skills, filter_reason, summary_line, match_score,
+            raw, last_seen_at, triaged_at, contact_email, apply_url
+          ) VALUES (
+            ${job.source},
+            ${job.sourceId},
+            ${job.url},
+            ${job.title},
+            ${job.company},
+            ${job.location},
+            ${job.remoteScope},
+            ${job.description},
+            ${job.postedAt},
+            ${triaged.expMinYears},
+            ${triaged.expClass},
+            ${triaged.geoEligibility},
+            ${triaged.geoReason},
+            ${triaged.skills},
+            ${triaged.filterReason || null},
+            ${triaged.summaryLine},
+            ${triaged.matchScore},
+            ${JSON.stringify(rawPayload)},
+            NOW(),
+            ${triaged.triagedAt ? new Date(triaged.triagedAt) : null},
+            ${job.contactEmail || null},
+            ${job.applyUrl || job.url}
+          )
+          ON CONFLICT (source, source_id) DO UPDATE SET
+            title = EXCLUDED.title,
+            company = EXCLUDED.company,
+            location = EXCLUDED.location,
+            remote_scope = EXCLUDED.remote_scope,
+            description = EXCLUDED.description,
+            posted_at = EXCLUDED.posted_at,
+            exp_min_years = EXCLUDED.exp_min_years,
+            exp_class = EXCLUDED.exp_class,
+            geo_eligibility = EXCLUDED.geo_eligibility,
+            geo_reason = EXCLUDED.geo_reason,
+            skills = EXCLUDED.skills,
+            filter_reason = EXCLUDED.filter_reason,
+            summary_line = EXCLUDED.summary_line,
+            match_score = EXCLUDED.match_score,
+            raw = EXCLUDED.raw,
+            last_seen_at = NOW(),
+            triaged_at = COALESCE(EXCLUDED.triaged_at, jobs.triaged_at),
+            contact_email = COALESCE(EXCLUDED.contact_email, jobs.contact_email),
+            apply_url = COALESCE(EXCLUDED.apply_url, jobs.apply_url)
+          RETURNING (xmax = 0) AS is_new;
+        `;
+        return rows[0]?.is_new ? "new" : "existing";
+      } catch {
+        // Fallback if migration 004 has not yet run in database
       const rows = await sql`
         INSERT INTO jobs (
           source, source_id, url, title, company, location, remote_scope,
@@ -566,6 +694,7 @@ export class NeonJobsRepository implements JobsRepository {
       return rows[0]?.is_new ? "new" : "existing";
     }
   }
+}
 
   async getJob(source: string, sourceId: string): Promise<StoredJob | null> {
     const sql = getSql();
@@ -575,6 +704,17 @@ export class NeonJobsRepository implements JobsRepository {
       LIMIT 1
     `) as StoredJob[];
     return rows[0] || null;
+  }
+
+  async hasJobWithUrl(url: string): Promise<boolean> {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT 1 FROM jobs
+      WHERE LOWER(TRIM(url)) = LOWER(TRIM(${url}))
+         OR LOWER(TRIM(apply_url)) = LOWER(TRIM(${url}))
+      LIMIT 1
+    `;
+    return rows.length > 0;
   }
 
   async getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }> {
@@ -893,6 +1033,52 @@ export class NeonJobsRepository implements JobsRepository {
       SELECT * FROM search_runs ORDER BY started_at DESC LIMIT 1
     `) as SearchRun[];
     return rows[0] || null;
+  }
+
+  async getCustomBoards(): Promise<CustomBoard[]> {
+    const sql = getSql();
+    try {
+      const rows = (await sql`
+        SELECT id, kind, slug, label, created_at
+        FROM custom_boards
+        ORDER BY created_at DESC
+      `) as CustomBoard[];
+      return rows;
+    } catch {
+      return [];
+    }
+  }
+
+  async addCustomBoard(board: {
+    kind: "greenhouse" | "lever" | "ashby";
+    slug: string;
+    label?: string;
+  }): Promise<CustomBoard> {
+    const sql = getSql();
+    const cleanSlug = board.slug.trim().toLowerCase();
+    const cleanLabel = board.label?.trim() || null;
+    const rows = (await sql`
+      INSERT INTO custom_boards (kind, slug, label)
+      VALUES (${board.kind}, ${cleanSlug}, ${cleanLabel})
+      ON CONFLICT (kind, slug) DO UPDATE
+        SET label = COALESCE(EXCLUDED.label, custom_boards.label)
+      RETURNING id, kind, slug, label, created_at
+    `) as CustomBoard[];
+    return rows[0];
+  }
+
+  async deleteCustomBoard(id: string): Promise<boolean> {
+    const sql = getSql();
+    try {
+      const rows = await sql`
+        DELETE FROM custom_boards
+        WHERE id = ${id}
+        RETURNING id
+      `;
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
   }
 }
 

@@ -24,6 +24,8 @@ export interface NormalizedJob {
   contactEmail?: string;
   isRemote?: boolean;
   workplaceType?: string;
+  inboundRaw?: string;
+  inboundSource?: string;
 }
 
 export interface AdapterResult {

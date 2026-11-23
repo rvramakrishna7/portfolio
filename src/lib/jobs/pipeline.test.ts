@@ -258,4 +258,33 @@ describe("Resumable Job Search Pipeline", () => {
     expect(allSourceIds.length).toBe(uniqueSourceIds.size);
     expect(step2.boardsDone).toBeGreaterThanOrEqual(step1.boardsDone ?? 0);
   });
+
+  it("integrates LinkedIn and IMAP alert sources and tracks counts/errors", async () => {
+    const fakeLinkedInJob: NormalizedJob = {
+      source: "linkedin",
+      sourceId: "li-123",
+      url: "https://linkedin.com/jobs/view/123",
+      title: "Junior React Engineer",
+      company: "Acme Corp",
+      location: "Remote",
+      remoteScope: "Remote",
+      description: "React and Next.js role.",
+      postedAt: new Date().toISOString(),
+      tags: ["react"],
+    };
+
+    const startRes = await startJobSearch(repo, {
+      boardQueue: [],
+      fetchAggregatorsFn: async () => ({ jobs: [] }),
+      fetchLinkedInFn: async () => ({ jobs: [fakeLinkedInJob] }),
+      ingestImapFn: async () => ({ fetched: 2, added: 1, duplicates: 0 }),
+    });
+
+    const run = await repo.getSearchRun(startRes.runId);
+    expect(run?.source_counts.linkedin).toBe(1);
+    expect(run?.source_counts.email).toBe(1);
+    expect(run?.source_counts.telegram).toBe(0);
+    expect(run?.source_counts.whatsapp).toBe(0);
+    expect(run?.source_counts.paste).toBe(0);
+  });
 });
