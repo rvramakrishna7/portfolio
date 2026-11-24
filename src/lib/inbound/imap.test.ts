@@ -246,4 +246,111 @@ describe("IMAP Alert Ingestion (src/lib/inbound/imap.ts)", () => {
       expect(formatted).toContain("[MASKED]");
     });
   });
+
+  describe("Additional job alert senders (strict domain matching and look-alike rejection)", () => {
+    it("matches unstop (emails.unstop.com, unstop.com) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("noreply@emails.unstop.com", "New SDE Challenge")).toBe(true);
+      expect(isKnownAlertSender("alerts@unstop.com", "Hiring Now")).toBe(true);
+      expect(isKnownAlertSender("noreply@unstop.com.evil.io", "Hiring Now")).toBe(false);
+      expect(isKnownAlertSender("noreply@fakeunstop.com", "Hiring Now")).toBe(false);
+    });
+
+    it("matches flexjobs (mg.flexjobs.com, flexjobs.com) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("alerts@mg.flexjobs.com", "New Remote Jobs")).toBe(true);
+      expect(isKnownAlertSender("newsletter@flexjobs.com", "Weekly Digest")).toBe(true);
+      expect(isKnownAlertSender("alerts@flexjobs.com.evil.io", "New Remote Jobs")).toBe(false);
+      expect(isKnownAlertSender("alerts@myflexjobs.com", "New Remote Jobs")).toBe(false);
+    });
+
+    it("matches workindia (workindia.info, workindia.in) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("jobs@workindia.info", "Developer Role")).toBe(true);
+      expect(isKnownAlertSender("noreply@mail.workindia.in", "New Opening")).toBe(true);
+      expect(isKnownAlertSender("jobs@workindia.info.evil.io", "Developer Role")).toBe(false);
+      expect(isKnownAlertSender("jobs@workindia.org", "Developer Role")).toBe(false);
+    });
+
+    it("matches jobhai (jobhai.com) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("alerts@jobhai.com", "Software Engineer")).toBe(true);
+      expect(isKnownAlertSender("noreply@mail.jobhai.com", "New Matches")).toBe(true);
+      expect(isKnownAlertSender("alerts@jobhai.com.evil.io", "Software Engineer")).toBe(false);
+      expect(isKnownAlertSender("alerts@fakejobhai.com", "Software Engineer")).toBe(false);
+    });
+
+    it("matches micro1 (micro1.io, micro1.ai) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("talent@micro1.io", "AI Engineer Opportunity")).toBe(true);
+      expect(isKnownAlertSender("jobs@mail.micro1.ai", "Remote Role")).toBe(true);
+      expect(isKnownAlertSender("talent@micro1.io.evil.io", "AI Engineer Opportunity")).toBe(false);
+      expect(isKnownAlertSender("talent@micro1.com", "AI Engineer Opportunity")).toBe(false);
+    });
+
+    it("matches internshala (internshala.com) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("student@internshala.com", "Fresher Jobs")).toBe(true);
+      expect(isKnownAlertSender("noreply@mail.internshala.com", "New Internship")).toBe(true);
+      expect(isKnownAlertSender("student@internshala.com.evil.io", "Fresher Jobs")).toBe(false);
+      expect(isKnownAlertSender("student@fakeinternshala.com", "Fresher Jobs")).toBe(false);
+    });
+
+    it("matches shine (shine.com) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("jobalerts@shine.com", "Matching Jobs")).toBe(true);
+      expect(isKnownAlertSender("noreply@ alerts.shine.com".replace(" ", ""), "New Jobs")).toBe(true);
+      expect(isKnownAlertSender("jobalerts@shine.com.evil.io", "Matching Jobs")).toBe(false);
+      expect(isKnownAlertSender("jobalerts@myshine.com", "Matching Jobs")).toBe(false);
+    });
+
+    it("matches cuvette (cuvette.tech) and rejects look-alikes", () => {
+      expect(isKnownAlertSender("team@cuvette.tech", "Full Stack Role")).toBe(true);
+      expect(isKnownAlertSender("alerts@mail.cuvette.tech", "New Job Posted")).toBe(true);
+      expect(isKnownAlertSender("team@cuvette.tech.evil.io", "Full Stack Role")).toBe(false);
+      expect(isKnownAlertSender("team@cuvette.com", "Full Stack Role")).toBe(false);
+    });
+
+    it("matches indeed.com subdomains and rejects non-alert services (google.com, adobe, sbi, tradingview, railway, openai, resend.dev, uptimerobot)", () => {
+      expect(isKnownAlertSender("alert@indeed.com", "New Software Engineer Jobs")).toBe(true);
+      expect(isKnownAlertSender("donotreply@match.indeed.com", "New Job Matches")).toBe(true);
+      expect(isKnownAlertSender("alert@indeed.com.evil.io", "New Jobs")).toBe(false);
+
+      // Must NOT match excluded non-alert domains
+      expect(isKnownAlertSender("no-reply@accounts.google.com", "Security alert")).toBe(false);
+      expect(isKnownAlertSender("mail@adobe.com", "Creative Cloud")).toBe(false);
+      expect(isKnownAlertSender("alerts@sbi.co.in", "Account Statement")).toBe(false);
+      expect(isKnownAlertSender("noreply@tradingview.com", "Alert Triggered")).toBe(false);
+      expect(isKnownAlertSender("notify@railway.app", "Deployment Succeeded")).toBe(false);
+      expect(isKnownAlertSender("noreply@openai.com", "API Usage")).toBe(false);
+      expect(isKnownAlertSender("onboarding@resend.dev", "Test Email")).toBe(false);
+      expect(isKnownAlertSender("alert@uptimerobot.com", "Monitor Down")).toBe(false);
+    });
+
+    it("handles unknown email format from a known sender without crashing and records 0 job alerts", async () => {
+      const rawEml = [
+        'From: "Unstop Alerts" <noreply@emails.unstop.com>',
+        "To: <candidate@example.com>",
+        "Subject: Weekly digest update",
+        "Date: Tue, 24 Nov 2026 10:00:00 +0000",
+        "Content-Type: text/html; charset=UTF-8",
+        "",
+        "<html><body><div>Welcome to your Unstop weekly account summary! You have 3 profile views this week.</div></body></html>",
+      ].join("\r\n");
+
+      const mockClient = {
+        connect: vi.fn().mockResolvedValue(undefined),
+        logout: vi.fn().mockResolvedValue(undefined),
+        getMailboxLock: vi.fn().mockResolvedValue({ release: vi.fn() }),
+        search: vi.fn().mockResolvedValue([201]),
+        download: vi.fn().mockResolvedValue({ content: Buffer.from(rawEml, "utf-8") }),
+      };
+
+      const res = await ingestGmailAlerts({
+        user: "ramakrishna@example.com",
+        password: "app_password_123",
+        repo,
+        clientFactory: () => mockClient as unknown as ImapFlow,
+      });
+
+      expect(res.error).toBeUndefined();
+      expect(res.seen).toBe(1);
+      expect(res.fromKnownSender).toBe(1);
+      expect(res.added).toBe(0);
+      expect(res.parsedJobs).toBe(0);
+    });
+  });
 });
