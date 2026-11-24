@@ -280,6 +280,20 @@ export async function startJobSearch(
         apifyCount = itemsRes.jobs.length;
         sourceCounts.linkedin = itemsRes.jobs.length;
         if (itemsRes.error) apifyError = sanitizeErrorMessage(itemsRes.error);
+
+        // Update earlier search_runs row so it is marked collected and never collected twice
+        if (pendingApifyRun.id && pendingApifyRun.id !== runId) {
+          const earlierRun = await repo.getSearchRun(pendingApifyRun.id);
+          await repo.updateSearchRun(pendingApifyRun.id, {
+            stats: {
+              ...(earlierRun?.stats || pendingApifyRun.stats || {}),
+              apifyCollected: true,
+              apifyStatus: "SUCCEEDED",
+              apifyCount: itemsRes.jobs.length,
+            },
+          });
+        }
+
         return itemsRes.jobs;
       } else if (statusRes.status === "RUNNING" || statusRes.status === "READY") {
         apifyStatus = "RUNNING";
@@ -290,6 +304,18 @@ export async function startJobSearch(
         apifyStatus = statusRes.status;
         apifyError = `Apify run ${statusRes.status}`;
         sourceCounts.linkedin = 0;
+
+        if (pendingApifyRun.id && pendingApifyRun.id !== runId) {
+          const earlierRun = await repo.getSearchRun(pendingApifyRun.id);
+          await repo.updateSearchRun(pendingApifyRun.id, {
+            stats: {
+              ...(earlierRun?.stats || pendingApifyRun.stats || {}),
+              apifyStatus: statusRes.status,
+              apifyError: `Apify run ${statusRes.status}`,
+            },
+          });
+        }
+
         return [];
       }
     } else {
@@ -314,6 +340,20 @@ export async function startJobSearch(
             apifyStatus = "RUNNING";
             apifyNote = "apify run pending";
             sourceCounts.linkedin = 0;
+
+            // Immediately persist apify run metadata to current search_runs row
+            const currentRun = await repo.getSearchRun(runId);
+            await repo.updateSearchRun(runId, {
+              stats: {
+                ...(currentRun?.stats || {}),
+                apifyRunId,
+                apifyDatasetId,
+                apifyStartedAt,
+                apifyStatus: "RUNNING",
+                apifyNote: "apify run pending",
+              },
+            });
+
             return [];
           } else {
             apifyStatus = startRes.error === "apify not configured" ? "SKIPPED" : "FAILED";
@@ -355,8 +395,12 @@ export async function startJobSearch(
     dedupedJobs.push(job);
   }
 
-  // 3. Apply fast rule engine
+  // 3. Apply fast rule engine and immediately persist collected jobs
   const pendingJobs: PipelineState["pendingJobs"] = [];
+  let newJobsCount = 0;
+  let filteredOutCount = 0;
+  let shortlistCount = 0;
+  let hiddenCount = 0;
 
   for (const job of dedupedJobs) {
     const ruleExp = classifyExperience(job.title, job.description);
@@ -371,6 +415,46 @@ export async function startJobSearch(
       expClass: ruleExp.expClass,
       geoEligibility: ruleGeo.geo,
     });
+
+    let filterReason: string | undefined;
+    if (ruleExp.expClass === "senior") {
+      filterReason = ruleExp.reason || "Senior experience required";
+    } else if (ruleGeo.geo === "restricted") {
+      filterReason = ruleGeo.reason || "Geographically restricted";
+    } else if (ruleScore.score < 25) {
+      filterReason = "Low relevance score";
+    } else if (ruleGeo.geo === "unclear" && !ruleGeo.reason.startsWith("remote-unconfirmed:")) {
+      filterReason = "location not remote / not confirmed for India";
+    }
+
+    const defaultSummary =
+      ruleExp.expClass === "unclear" &&
+      !hasRealDescription(job.description, job.title, job.company)
+        ? getMissingDescriptionNote(job.source)
+        : job.title;
+
+    const initialTriaged: TriagedJobResult = {
+      expClass: ruleExp.expClass,
+      expMinYears: ruleExp.minYears,
+      geoEligibility: ruleGeo.geo,
+      geoReason: ruleGeo.reason,
+      summaryLine: defaultSummary,
+      skills: ruleScore.matchedSkills,
+      filterReason,
+      matchScore: ruleScore.score,
+      descriptionHash: hashString(job.description || ""),
+    };
+
+    const upsertRes = await repo.upsertJob(job, initialTriaged);
+    if (upsertRes === "new") {
+      newJobsCount++;
+    }
+    if (filterReason) {
+      filteredOutCount++;
+      hiddenCount++;
+    } else {
+      shortlistCount++;
+    }
 
     pendingJobs.push({
       job,
@@ -457,8 +541,8 @@ export async function startJobSearch(
     llmSkippedStale: 0,
     llmSkippedAlready: 0,
     llmSkippedIrrelevant: 0,
-    shortlistCount: 0,
-    hiddenCount: 0,
+    shortlistCount,
+    hiddenCount,
     languageHidden: 0,
     boardsTotal,
     boardsDone: 0,
@@ -481,8 +565,8 @@ export async function startJobSearch(
     boardQueue,
     boardsDone: 0,
     pendingJobs,
-    newJobsCount: 0,
-    filteredOutCount: 0,
+    newJobsCount,
+    filteredOutCount,
     stats,
   });
 
@@ -490,6 +574,8 @@ export async function startJobSearch(
   await repo.updateSearchRun(runId, {
     status: "running",
     source_counts: sourceCounts,
+    new_jobs: newJobsCount,
+    filtered_out: filteredOutCount,
     stats,
   });
 
@@ -552,27 +638,30 @@ export async function stepJobSearch(
     const boardsDone = run.stats?.boardsDone ?? 0;
     const remainingQueue = fullQueue.slice(boardsDone);
 
+    const runStats = (run.stats || {}) as SearchRunStats;
     state = {
       runId,
       sourceCounts: run.source_counts || {},
-      sourceErrors: run.stats?.boardErrors || {},
+      sourceErrors: runStats.boardErrors || {},
       boardQueue: remainingQueue,
       boardsDone,
       pendingJobs: [],
       newJobsCount: run.new_jobs || 0,
       filteredOutCount: run.filtered_out || 0,
       stats: {
-        llmCalls: run.stats?.llmCalls ?? 0,
-        llmErrors: run.stats?.llmErrors ?? 0,
-        llmSkippedStale: run.stats?.llmSkippedStale ?? 0,
-        llmSkippedAlready: run.stats?.llmSkippedAlready ?? 0,
-        llmSkippedIrrelevant: run.stats?.llmSkippedIrrelevant ?? 0,
-        shortlistCount: run.stats?.shortlistCount ?? 0,
-        hiddenCount: run.stats?.hiddenCount ?? 0,
-        languageHidden: run.stats?.languageHidden ?? 0,
-        boardsTotal: run.stats?.boardsTotal ?? fullQueue.length,
+        ...runStats,
+        llmCalls: runStats.llmCalls ?? 0,
+        llmErrors: runStats.llmErrors ?? 0,
+        llmSkippedStale: runStats.llmSkippedStale ?? 0,
+        llmSkippedAlready: runStats.llmSkippedAlready ?? 0,
+        llmSkippedIrrelevant: runStats.llmSkippedIrrelevant ?? 0,
+        shortlistCount: runStats.shortlistCount ?? 0,
+        hiddenCount: runStats.hiddenCount ?? 0,
+        languageHidden: runStats.languageHidden ?? 0,
+        boardsTotal: runStats.boardsTotal ?? fullQueue.length,
         boardsDone,
-        boardErrors: run.stats?.boardErrors || {},
+        boardErrors: runStats.boardErrors || {},
+        sources: runStats.sources ? { ...runStats.sources } : {},
       },
     };
     activePipelines.set(runId, state);
@@ -607,31 +696,51 @@ export async function stepJobSearch(
             geoEligibility: ruleGeo.geo,
           });
 
-          if (ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear") {
-            state.pendingJobs.push({ job, ruleExp, ruleGeo, ruleScore });
+          let filterReason: string | undefined;
+          if (ruleExp.expClass === "senior") {
+            filterReason = ruleExp.reason || "Senior experience required";
+          } else if (ruleGeo.geo === "restricted") {
+            filterReason = ruleGeo.reason || "Geographically restricted";
+          } else if (ruleScore.score < 25) {
+            filterReason = "Low relevance score";
+          } else if (ruleGeo.geo === "unclear" && !ruleGeo.reason.startsWith("remote-unconfirmed:")) {
+            filterReason = "location not remote / not confirmed for India";
+          }
+
+          const defaultSummary =
+            ruleExp.expClass === "unclear" &&
+            !hasRealDescription(job.description, job.title, job.company)
+              ? getMissingDescriptionNote(job.source)
+              : `${job.title} at ${job.company}`;
+
+          const isAmbiguous = ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear";
+
+          const triaged: TriagedJobResult = {
+            expClass: ruleExp.expClass,
+            expMinYears: ruleExp.minYears,
+            geoEligibility: ruleGeo.geo,
+            geoReason: ruleGeo.reason,
+            summaryLine: defaultSummary,
+            skills: ruleScore.matchedSkills,
+            filterReason,
+            matchScore: ruleScore.score,
+            descriptionHash: hashString(job.description || ""),
+            triagedAt: isAmbiguous ? undefined : new Date().toISOString(),
+          };
+
+          const upsertRes = await repo.upsertJob(job, triaged);
+          if (upsertRes === "new") {
+            state.newJobsCount++;
+          }
+          if (filterReason) {
+            state.filteredOutCount++;
+            state.stats.hiddenCount++;
           } else {
-            const isFiltered = ruleExp.expClass === "senior" || ruleGeo.geo === "restricted" || ruleScore.score < 25;
-            const filterReason = isFiltered
-              ? (ruleExp.expClass === "senior" ? ruleExp.reason || "Senior experience required" : ruleGeo.geo === "restricted" ? ruleGeo.reason || "Geographically restricted" : "Low relevance score")
-              : undefined;
-            const triaged: TriagedJobResult = {
-              expClass: ruleExp.expClass,
-              expMinYears: ruleExp.minYears,
-              geoEligibility: ruleGeo.geo,
-              geoReason: ruleGeo.reason,
-              summaryLine: `${job.title} at ${job.company}`,
-              skills: [],
-              filterReason,
-              matchScore: ruleScore.score,
-            };
-            await repo.upsertJob(job, triaged);
-            if (isFiltered) {
-              state.filteredOutCount++;
-              state.stats.hiddenCount++;
-            } else {
-              state.newJobsCount++;
-              state.stats.shortlistCount++;
-            }
+            state.stats.shortlistCount++;
+          }
+
+          if (isAmbiguous) {
+            state.pendingJobs.push({ job, ruleExp, ruleGeo, ruleScore });
           }
         }
         state.sourceCounts.linkedin = (state.sourceCounts.linkedin || 0) + itemsRes.jobs.length;
@@ -711,44 +820,52 @@ export async function stepJobSearch(
               geoEligibility: ruleGeo.geo,
             });
 
-            // Ambiguous jobs need LLM triage
-            if (ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear") {
-              state.pendingJobs.push({ job, ruleExp, ruleGeo, ruleScore });
+            let filterReason: string | undefined;
+            if (ruleExp.expClass === "senior") {
+              filterReason = ruleExp.reason || "Senior experience required";
+            } else if (ruleGeo.geo === "restricted") {
+              filterReason = ruleGeo.reason || "Geographically restricted";
+            } else if (ruleScore.score < 25) {
+              filterReason = "Low relevance score";
+            } else if (ruleGeo.geo === "unclear" && !ruleGeo.reason.startsWith("remote-unconfirmed:")) {
+              filterReason = "location not remote / not confirmed for India";
+            }
+
+            const defaultSummary =
+              ruleExp.expClass === "unclear" &&
+              !hasRealDescription(job.description, job.title, job.company)
+                ? getMissingDescriptionNote(job.source)
+                : job.title;
+
+            const isAmbiguous = ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear";
+
+            const triaged: TriagedJobResult = {
+              expClass: ruleExp.expClass,
+              expMinYears: ruleExp.minYears,
+              geoEligibility: ruleGeo.geo,
+              geoReason: ruleGeo.reason,
+              summaryLine: defaultSummary,
+              skills: ruleScore.matchedSkills,
+              filterReason,
+              matchScore: ruleScore.score,
+              triagedAt: isAmbiguous ? undefined : new Date().toISOString(),
+              descriptionHash: hashString(job.description || ""),
+              llmSkipped: isAmbiguous ? undefined : "irrelevant",
+            };
+
+            const upsertRes = await repo.upsertJob(job, triaged);
+            if (upsertRes === "new") {
+              state.newJobsCount++;
+            }
+            if (filterReason) {
+              state.filteredOutCount++;
+              state.stats.hiddenCount++;
             } else {
-              // Resolved by rules: upsert immediately
-              let filterReason: string | undefined;
-              if (ruleExp.expClass === "senior") {
-                filterReason = ruleExp.reason || "Senior experience required";
-              } else if (ruleGeo.geo === "restricted") {
-                filterReason = ruleGeo.reason || "Geographically restricted";
-              } else if (ruleScore.score < 25) {
-                filterReason = "Low relevance score";
-              }
+              state.stats.shortlistCount++;
+            }
 
-              const triaged: TriagedJobResult = {
-                expClass: ruleExp.expClass,
-                expMinYears: ruleExp.minYears,
-                geoEligibility: ruleGeo.geo,
-                geoReason: ruleGeo.reason,
-                summaryLine: job.title,
-                skills: ruleScore.matchedSkills,
-                filterReason,
-                matchScore: ruleScore.score,
-                triagedAt: new Date().toISOString(),
-                descriptionHash: hashString(job.description || ""),
-                llmSkipped: "irrelevant",
-              };
-
-              const upsertRes = await repo.upsertJob(job, triaged);
-              if (upsertRes === "new") {
-                state.newJobsCount++;
-              }
-              if (filterReason) {
-                state.filteredOutCount++;
-                state.stats.hiddenCount++;
-              } else {
-                state.stats.shortlistCount++;
-              }
+            if (isAmbiguous) {
+              state.pendingJobs.push({ job, ruleExp, ruleGeo, ruleScore });
             }
           }
         } catch (err: unknown) {
@@ -843,14 +960,24 @@ export async function stepJobSearch(
     if (upsertRes === "new") {
       state.newJobsCount++;
     }
-    if (triaged.filterReason) {
+    const previouslyFiltered =
+      item.ruleExp.expClass === "senior" ||
+      item.ruleGeo.geo === "restricted" ||
+      item.ruleScore.score < 25 ||
+      (item.ruleGeo.geo === "unclear" && !item.ruleGeo.reason.startsWith("remote-unconfirmed:"));
+    const nowFiltered = Boolean(triaged.filterReason);
+
+    if (!previouslyFiltered && nowFiltered) {
+      state.stats.shortlistCount = Math.max(0, state.stats.shortlistCount - 1);
       state.filteredOutCount++;
       state.stats.hiddenCount++;
-      if (triaged.filterReason.startsWith("description not in English")) {
-        state.stats.languageHidden++;
-      }
-    } else {
+    } else if (previouslyFiltered && !nowFiltered) {
+      state.filteredOutCount = Math.max(0, state.filteredOutCount - 1);
+      state.stats.hiddenCount = Math.max(0, state.stats.hiddenCount - 1);
       state.stats.shortlistCount++;
+    }
+    if (triaged.filterReason && triaged.filterReason.startsWith("description not in English")) {
+      state.stats.languageHidden++;
     }
   }
 
@@ -890,6 +1017,16 @@ export async function stepJobSearch(
     count: state.sourceCounts.ashby || 0,
   };
 
+  const currentRun = await repo.getSearchRun(runId);
+  const mergedStats: SearchRunStats = {
+    ...(currentRun?.stats || {}),
+    ...state.stats,
+    sources: {
+      ...(currentRun?.stats?.sources || {}),
+      ...(state.stats.sources || {}),
+    },
+  };
+
   if (isDone) {
     await repo.updateSearchRun(runId, {
       finished_at: new Date().toISOString(),
@@ -897,7 +1034,7 @@ export async function stepJobSearch(
       source_counts: state.sourceCounts,
       new_jobs: state.newJobsCount,
       filtered_out: state.filteredOutCount,
-      stats: state.stats,
+      stats: mergedStats,
     });
     activePipelines.delete(runId);
   } else {
@@ -907,7 +1044,7 @@ export async function stepJobSearch(
       source_counts: state.sourceCounts,
       new_jobs: state.newJobsCount,
       filtered_out: state.filteredOutCount,
-      stats: state.stats,
+      stats: mergedStats,
     });
   }
 

@@ -222,7 +222,10 @@ export function sanitizeErrorMessage(err: unknown): string {
  * A failed start does not count as a started run (only a successful start with a run id does).
  */
 export function canStartNewApifyRun(
-  recentRuns: Array<{ stats?: { apifyStartedAt?: string; apifyRunId?: string; apifyStatus?: string } | null }>,
+  recentRuns: Array<{
+    started_at?: string;
+    stats?: { apifyStartedAt?: string; apifyRunId?: string; apifyStatus?: string } | null;
+  }>,
   clock: () => number = Date.now
 ): { allowed: boolean; reason?: string } {
   const now = clock();
@@ -233,10 +236,20 @@ export function canStartNewApifyRun(
     const stats = run.stats;
     if (!stats) continue;
 
-    // Only successful starts with a real run id count as started runs
-    if (!stats.apifyRunId || stats.apifyStatus === "FAILED") continue;
+    // A failed start or skipped run does not count as a started run
+    if (stats.apifyStatus === "FAILED" || stats.apifyStatus === "SKIPPED") continue;
 
-    const startedAtStr = stats.apifyStartedAt;
+    // Count rows where apifyStartedAt is set, even if apifyRunId is missing,
+    // and rows with status RUNNING or SUCCEEDED (even if apifyRunId is missing)
+    const isCandidate =
+      Boolean(stats.apifyStartedAt) ||
+      Boolean(stats.apifyRunId) ||
+      stats.apifyStatus === "RUNNING" ||
+      stats.apifyStatus === "SUCCEEDED";
+
+    if (!isCandidate) continue;
+
+    const startedAtStr = stats.apifyStartedAt || run.started_at;
     if (!startedAtStr) continue;
 
     const startedTime = new Date(startedAtStr).getTime();

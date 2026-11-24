@@ -76,6 +76,7 @@ export interface SearchRunStats {
   apifyNote?: string;
   apifyError?: string;
   sources?: Record<string, SourceStatusInfo>;
+  [key: string]: unknown;
 }
 
 export interface SearchRun {
@@ -87,7 +88,7 @@ export interface SearchRun {
   new_jobs: number;
   filtered_out: number;
   error: string | null;
-  stats?: SearchRunStats | null;
+  stats?: Partial<SearchRunStats> | null;
 }
 
 export interface JobsQueryOptions {
@@ -243,16 +244,41 @@ export class InMemoryJobsRepository implements JobsRepository {
       existing.remote_scope = job.remoteScope;
       existing.description = job.description;
       existing.posted_at = job.postedAt;
-      existing.exp_min_years = triaged.expMinYears;
-      existing.exp_class = triaged.expClass;
-      existing.geo_eligibility = triaged.geoEligibility;
-      existing.geo_reason = triaged.geoReason;
-      existing.skills = triaged.skills;
-      existing.filter_reason = triaged.filterReason || null;
-      existing.summary_line = triaged.summaryLine;
-      existing.match_score = triaged.matchScore;
       existing.last_seen_at = nowIso;
-      if (triaged.triagedAt) existing.triaged_at = triaged.triagedAt;
+
+      const isIncomingTriaged = Boolean(triaged.triagedAt);
+      const isExistingTriaged = Boolean(existing.triaged_at);
+
+      if (isIncomingTriaged) {
+        existing.exp_min_years = triaged.expMinYears;
+        existing.exp_class = triaged.expClass;
+        existing.geo_eligibility = triaged.geoEligibility;
+        existing.geo_reason = triaged.geoReason;
+        existing.skills = triaged.skills;
+        existing.filter_reason = triaged.filterReason || null;
+        existing.summary_line = triaged.summaryLine;
+        existing.match_score = triaged.matchScore;
+        existing.triaged_at = triaged.triagedAt;
+      } else if (!isExistingTriaged) {
+        // Neither was LLM-triaged: only overwrite if incoming is not inferior
+        if (existing.exp_class === "unclear" || triaged.expClass !== "unclear") {
+          existing.exp_class = triaged.expClass;
+          existing.exp_min_years = triaged.expMinYears;
+        }
+        if (existing.geo_eligibility === "unclear" || triaged.geoEligibility !== "unclear") {
+          existing.geo_eligibility = triaged.geoEligibility;
+          existing.geo_reason = triaged.geoReason;
+        }
+        if (existing.exp_class === "unclear" && triaged.expClass !== "unclear") {
+          existing.filter_reason = triaged.filterReason || null;
+        } else if (existing.geo_eligibility === "unclear" && triaged.geoEligibility !== "unclear") {
+          existing.filter_reason = triaged.filterReason || null;
+        }
+        existing.skills = triaged.skills;
+        existing.summary_line = triaged.summaryLine;
+        existing.match_score = triaged.matchScore;
+      }
+
       if (job.contactEmail) existing.contact_email = job.contactEmail;
       if (job.contactUrl) existing.contact_url = job.contactUrl;
       if (job.applyUrl) existing.apply_url = job.applyUrl;
@@ -969,14 +995,52 @@ export class NeonJobsRepository implements JobsRepository {
           remote_scope = EXCLUDED.remote_scope,
           description = EXCLUDED.description,
           posted_at = EXCLUDED.posted_at,
-          exp_min_years = EXCLUDED.exp_min_years,
-          exp_class = EXCLUDED.exp_class,
-          geo_eligibility = EXCLUDED.geo_eligibility,
-          geo_reason = EXCLUDED.geo_reason,
-          skills = EXCLUDED.skills,
-          filter_reason = EXCLUDED.filter_reason,
-          summary_line = EXCLUDED.summary_line,
-          match_score = EXCLUDED.match_score,
+          exp_min_years = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.exp_min_years
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.exp_min_years
+            WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.exp_min_years
+            ELSE EXCLUDED.exp_min_years
+          END,
+          exp_class = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.exp_class
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.exp_class
+            WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.exp_class
+            ELSE EXCLUDED.exp_class
+          END,
+          geo_eligibility = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.geo_eligibility
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.geo_eligibility
+            WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.geo_eligibility
+            ELSE EXCLUDED.geo_eligibility
+          END,
+          geo_reason = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.geo_reason
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.geo_reason
+            WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.geo_reason
+            ELSE EXCLUDED.geo_reason
+          END,
+          skills = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.skills
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.skills
+            ELSE EXCLUDED.skills
+          END,
+          filter_reason = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.filter_reason
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.filter_reason
+            WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.filter_reason
+            WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.filter_reason
+            ELSE EXCLUDED.filter_reason
+          END,
+          summary_line = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.summary_line
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.summary_line
+            ELSE EXCLUDED.summary_line
+          END,
+          match_score = CASE
+            WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.match_score
+            WHEN jobs.triaged_at IS NOT NULL THEN jobs.match_score
+            ELSE EXCLUDED.match_score
+          END,
           raw = EXCLUDED.raw,
           last_seen_at = NOW(),
           triaged_at = COALESCE(EXCLUDED.triaged_at, jobs.triaged_at),
@@ -1027,14 +1091,52 @@ export class NeonJobsRepository implements JobsRepository {
             remote_scope = EXCLUDED.remote_scope,
             description = EXCLUDED.description,
             posted_at = EXCLUDED.posted_at,
-            exp_min_years = EXCLUDED.exp_min_years,
-            exp_class = EXCLUDED.exp_class,
-            geo_eligibility = EXCLUDED.geo_eligibility,
-            geo_reason = EXCLUDED.geo_reason,
-            skills = EXCLUDED.skills,
-            filter_reason = EXCLUDED.filter_reason,
-            summary_line = EXCLUDED.summary_line,
-            match_score = EXCLUDED.match_score,
+            exp_min_years = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.exp_min_years
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.exp_min_years
+              WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.exp_min_years
+              ELSE EXCLUDED.exp_min_years
+            END,
+            exp_class = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.exp_class
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.exp_class
+              WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.exp_class
+              ELSE EXCLUDED.exp_class
+            END,
+            geo_eligibility = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.geo_eligibility
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.geo_eligibility
+              WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.geo_eligibility
+              ELSE EXCLUDED.geo_eligibility
+            END,
+            geo_reason = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.geo_reason
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.geo_reason
+              WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.geo_reason
+              ELSE EXCLUDED.geo_reason
+            END,
+            skills = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.skills
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.skills
+              ELSE EXCLUDED.skills
+            END,
+            filter_reason = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.filter_reason
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.filter_reason
+              WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.filter_reason
+              WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.filter_reason
+              ELSE EXCLUDED.filter_reason
+            END,
+            summary_line = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.summary_line
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.summary_line
+              ELSE EXCLUDED.summary_line
+            END,
+            match_score = CASE
+              WHEN EXCLUDED.triaged_at IS NOT NULL THEN EXCLUDED.match_score
+              WHEN jobs.triaged_at IS NOT NULL THEN jobs.match_score
+              ELSE EXCLUDED.match_score
+            END,
             raw = EXCLUDED.raw,
             last_seen_at = NOW(),
             triaged_at = COALESCE(EXCLUDED.triaged_at, jobs.triaged_at),
@@ -1079,12 +1181,28 @@ export class NeonJobsRepository implements JobsRepository {
           remote_scope = EXCLUDED.remote_scope,
           description = EXCLUDED.description,
           posted_at = EXCLUDED.posted_at,
-          exp_min_years = EXCLUDED.exp_min_years,
-          exp_class = EXCLUDED.exp_class,
-          geo_eligibility = EXCLUDED.geo_eligibility,
-          geo_reason = EXCLUDED.geo_reason,
+          exp_min_years = CASE
+            WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.exp_min_years
+            ELSE EXCLUDED.exp_min_years
+          END,
+          exp_class = CASE
+            WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.exp_class
+            ELSE EXCLUDED.exp_class
+          END,
+          geo_eligibility = CASE
+            WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.geo_eligibility
+            ELSE EXCLUDED.geo_eligibility
+          END,
+          geo_reason = CASE
+            WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.geo_reason
+            ELSE EXCLUDED.geo_reason
+          END,
           skills = EXCLUDED.skills,
-          filter_reason = EXCLUDED.filter_reason,
+          filter_reason = CASE
+            WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.filter_reason
+            WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.filter_reason
+            ELSE EXCLUDED.filter_reason
+          END,
           summary_line = EXCLUDED.summary_line,
           match_score = EXCLUDED.match_score,
           raw = EXCLUDED.raw,

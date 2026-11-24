@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   startJobSearch,
   stepJobSearch,
@@ -7,6 +7,7 @@ import {
 } from "./pipeline";
 import { InMemoryJobsRepository } from "./repository";
 import { AdapterResult, NormalizedJob } from "./types";
+import { TriagedJobResult } from "../llm/triage";
 import { LlmProvider, LlmCompletionOpts } from "../llm/types";
 import { z } from "zod";
 
@@ -295,5 +296,198 @@ describe("Resumable Job Search Pipeline", () => {
     expect(run?.source_counts.telegram).toBe(0);
     expect(run?.source_counts.whatsapp).toBe(0);
     expect(run?.source_counts.paste).toBe(0);
+  });
+
+  it("rehydrates stats from stored run without dropping apify and email fields when activePipelines is empty", async () => {
+    const runId = await repo.createSearchRun();
+    await repo.updateSearchRun(runId, {
+      status: "running",
+      source_counts: { email: 3, remoteok: 2 },
+      stats: {
+        llmCalls: 0,
+        llmErrors: 0,
+        llmSkippedStale: 0,
+        shortlistCount: 1,
+        hiddenCount: 1,
+        languageHidden: 0,
+        boardsTotal: 1,
+        boardsDone: 0,
+        apifyRunId: "test-apify-run-999",
+        apifyDatasetId: "test-dataset-999",
+        apifyStartedAt: "2026-11-24T12:00:00.000Z",
+        apifyStatus: "RUNNING",
+        apifyCollected: false,
+        sources: {
+          email: {
+            status: "ok",
+            count: 3,
+            seen: 5,
+            parsedJobs: 3,
+            fromKnownSender: 3,
+          },
+        },
+      },
+    });
+
+    clearActivePipelinesForTest();
+
+    const fakeBoardFetch = async (): Promise<AdapterResult> => ({ jobs: [] });
+    await stepJobSearch(runId, 15, repo, fakeLlm, {
+      maxDurationMs: 5000,
+      fetchBoardFn: fakeBoardFetch,
+    });
+
+    const updatedRun = await repo.getSearchRun(runId);
+    expect(updatedRun?.stats?.apifyRunId).toBe("test-apify-run-999");
+    expect(updatedRun?.stats?.apifyDatasetId).toBe("test-dataset-999");
+    expect(updatedRun?.stats?.apifyStartedAt).toBe("2026-11-24T12:00:00.000Z");
+    expect(updatedRun?.stats?.sources?.email).toBeDefined();
+    expect(updatedRun?.stats?.sources?.email?.count).toBe(3);
+    expect(updatedRun?.stats?.sources?.email?.seen).toBe(5);
+  });
+
+  it("updates earlier search_runs row with apifyCollected: true and apifyStatus: SUCCEEDED when collecting pending run", async () => {
+    const earlierRunId = await repo.createSearchRun();
+    await repo.updateSearchRun(earlierRunId, {
+      status: "running",
+      stats: {
+        llmCalls: 0,
+        llmErrors: 0,
+        llmSkippedStale: 0,
+        shortlistCount: 0,
+        hiddenCount: 0,
+        languageHidden: 0,
+        apifyRunId: "earlier-apify-run-123",
+        apifyDatasetId: "earlier-dataset-123",
+        apifyStartedAt: "2026-11-24T10:00:00.000Z",
+        apifyStatus: "RUNNING",
+        apifyCollected: false,
+      },
+    });
+
+    const mockCheckStatus = vi.fn().mockResolvedValue({ status: "SUCCEEDED" });
+    const mockFetchItems = vi.fn().mockResolvedValue({
+      jobs: [
+        {
+          source: "linkedin",
+          sourceId: "li-collect-1",
+          url: "https://linkedin.com/jobs/view/101",
+          title: "Junior Backend Engineer",
+          company: "Acme",
+          location: "Remote",
+          remoteScope: "Remote",
+          description: "Junior developer role with Go and Node.js.",
+          postedAt: new Date().toISOString(),
+          tags: ["go"],
+        },
+      ],
+    });
+
+    const startRes = await startJobSearch(repo, {
+      boardQueue: [],
+      fetchAggregatorsFn: async () => ({ jobs: [] }),
+      checkApifyStatusFn: mockCheckStatus,
+      fetchApifyItemsFn: mockFetchItems,
+    });
+
+    expect(startRes.runId).toBeDefined();
+    expect(startRes.runId).not.toBe(earlierRunId);
+
+    const earlierRun = await repo.getSearchRun(earlierRunId);
+    expect(earlierRun?.stats?.apifyCollected).toBe(true);
+    expect(earlierRun?.stats?.apifyStatus).toBe("SUCCEEDED");
+    expect(earlierRun?.stats?.apifyCount).toBe(1);
+
+    const newRun = await repo.getSearchRun(startRes.runId);
+    expect(newRun?.stats?.apifyCollected).toBe(true);
+    expect(newRun?.stats?.apifyStatus).toBe("SUCCEEDED");
+    expect(newRun?.source_counts.linkedin).toBe(1);
+  });
+
+  it("immediately writes apifyRunId, apifyDatasetId, and apifyStartedAt to current search_runs row when started", async () => {
+    const mockStartRun = vi.fn().mockImplementation(async () => ({
+      started: true,
+      apifyRunId: "new-actor-run-456",
+      apifyDatasetId: "new-dataset-456",
+      startedAt: "2026-11-24T15:30:00.000Z",
+    }));
+
+    const startRes = await startJobSearch(repo, {
+      boardQueue: [],
+      fetchAggregatorsFn: async () => ({ jobs: [] }),
+      startApifyRunFn: mockStartRun,
+    });
+
+    const row = await repo.getSearchRun(startRes.runId);
+    expect(row?.stats?.apifyRunId).toBe("new-actor-run-456");
+    expect(row?.stats?.apifyDatasetId).toBe("new-dataset-456");
+    expect(row?.stats?.apifyStartedAt).toBe("2026-11-24T15:30:00.000Z");
+    expect(row?.stats?.apifyStatus).toBe("RUNNING");
+  });
+
+  it("persists collected jobs immediately to repository and ON CONFLICT UPDATE preserves refined classifications", async () => {
+    const ambiguousJob: NormalizedJob = {
+      source: "remoteok",
+      sourceId: "ro-ambiguous-1",
+      url: "https://remoteok.com/job/1",
+      title: "Full Stack Engineer",
+      company: "InnovateTech",
+      location: "Worldwide",
+      remoteScope: "Worldwide",
+      description: "Join us as a full stack engineer building modern web applications.",
+      postedAt: new Date().toISOString(),
+      tags: ["react", "node"],
+    };
+
+    // 1. In startJobSearch, ambiguous job is immediately persisted to the DB with rule defaults
+    await startJobSearch(repo, {
+      boardQueue: [],
+      fetchAggregatorsFn: async () => ({ jobs: [ambiguousJob] }),
+    });
+
+    const storedBeforeTriage = await repo.getJob("remoteok", "ro-ambiguous-1");
+    expect(storedBeforeTriage).toBeDefined();
+    expect(storedBeforeTriage?.title).toBe("Full Stack Engineer");
+    expect(storedBeforeTriage?.exp_class).toBe("unclear");
+    expect(storedBeforeTriage?.triaged_at).toBeNull();
+
+    // 2. Simulate server restart by clearing in-memory state
+    clearActivePipelinesForTest();
+
+    // 3. LLM triages and refines the job to "junior"
+    const refinedTriaged: TriagedJobResult = {
+      expClass: "junior",
+      expMinYears: 1,
+      geoEligibility: "worldwide",
+      geoReason: "Open globally",
+      summaryLine: "Junior Full Stack role",
+      skills: ["React", "Node.js"],
+      matchScore: 80,
+      triagedAt: new Date().toISOString(),
+    };
+    await repo.upsertJob(ambiguousJob, refinedTriaged);
+
+    const storedAfterTriage = await repo.getJob("remoteok", "ro-ambiguous-1");
+    expect(storedAfterTriage?.exp_class).toBe("junior");
+    expect(storedAfterTriage?.triaged_at).toBeTruthy();
+
+    // 4. A subsequent search run re-fetches the same job with unrefined/unclear rule defaults
+    const unrefinedTriaged: TriagedJobResult = {
+      expClass: "unclear",
+      expMinYears: null,
+      geoEligibility: "unclear",
+      geoReason: "Need more info",
+      summaryLine: "Full Stack Engineer",
+      skills: [],
+      matchScore: 50,
+    };
+    await repo.upsertJob(ambiguousJob, unrefinedTriaged);
+
+    // 5. Assert the good classification (junior, worldwide, triaged_at) was NOT downgraded to unclear
+    const storedAfterRefetch = await repo.getJob("remoteok", "ro-ambiguous-1");
+    expect(storedAfterRefetch?.exp_class).toBe("junior");
+    expect(storedAfterRefetch?.geo_eligibility).toBe("worldwide");
+    expect(storedAfterRefetch?.summary_line).toBe("Junior Full Stack role");
+    expect(storedAfterRefetch?.triaged_at).toBeTruthy();
   });
 });
