@@ -210,10 +210,58 @@ export interface ViewCounts {
   reasons?: HiddenReasonsCounts;
 }
 
+export type OutreachDraftKind = "email" | "linkedin_note" | "linkedin_dm";
+export type OutreachDraftStatus = "draft" | "approved" | "discarded";
+
+export interface OutreachDraft {
+  id: string;
+  job_id: string;
+  kind: OutreachDraftKind;
+  subject: string | null;
+  body: string;
+  status: OutreachDraftStatus;
+  model: string | null;
+  edited: boolean;
+  created_at: string;
+  updated_at: string;
+  job_title?: string;
+  job_company?: string;
+  job_url?: string;
+}
+
+export interface CreateDraftInput {
+  kind: OutreachDraftKind;
+  subject?: string | null;
+  body: string;
+  model?: string | null;
+  status?: OutreachDraftStatus;
+}
+
+export interface ListDraftsOptions {
+  status?: OutreachDraftStatus;
+  jobId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface UpdateDraftInput {
+  subject?: string | null;
+  body?: string;
+  status?: OutreachDraftStatus;
+}
+
+export interface DraftCountsByStatus {
+  all: number;
+  draft: number;
+  approved: number;
+  discarded: number;
+}
+
 export interface JobsRepository {
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
   hasJobWithUrl?(url: string): Promise<boolean>;
   getJob(source: string, sourceId: string): Promise<StoredJob | null>;
+  getJobById(id: string): Promise<StoredJob | null>;
   getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }>;
   getViewCounts(
     maxAgeDays?: number
@@ -244,6 +292,11 @@ export interface JobsRepository {
   getCustomBoards?(): Promise<CustomBoard[]>;
   addCustomBoard?(board: { kind: "greenhouse" | "lever" | "ashby"; slug: string; label?: string }): Promise<CustomBoard>;
   deleteCustomBoard?(id: string): Promise<boolean>;
+  createDrafts(jobId: string, drafts: CreateDraftInput[]): Promise<OutreachDraft[]>;
+  listDrafts(opts?: ListDraftsOptions): Promise<OutreachDraft[]>;
+  updateDraft(id: string, updates: UpdateDraftInput): Promise<OutreachDraft | null>;
+  countDrafts(jobId?: string): Promise<DraftCountsByStatus>;
+  countGenerationsToday(): Promise<number>;
 }
 
 // Helper to determine whether a job matches a specific hidden reason filter
@@ -318,6 +371,7 @@ export class InMemoryJobsRepository implements JobsRepository {
   private jobs = new Map<string, StoredJob>();
   private runs = new Map<string, SearchRun>();
   private customBoards = new Map<string, CustomBoard>();
+  private drafts = new Map<string, OutreachDraft>();
 
   async upsertJob(
     job: NormalizedJob,
@@ -428,6 +482,13 @@ export class InMemoryJobsRepository implements JobsRepository {
   async getJob(source: string, sourceId: string): Promise<StoredJob | null> {
     const key = `${source}:${sourceId}`;
     return this.jobs.get(key) || null;
+  }
+
+  async getJobById(id: string): Promise<StoredJob | null> {
+    for (const j of this.jobs.values()) {
+      if (j.id === id) return j;
+    }
+    return null;
   }
 
   async getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }> {
@@ -1051,6 +1112,106 @@ export class InMemoryJobsRepository implements JobsRepository {
     }
     return false;
   }
+
+  async createDrafts(jobId: string, drafts: CreateDraftInput[]): Promise<OutreachDraft[]> {
+    const nowIso = new Date().toISOString();
+    const created: OutreachDraft[] = [];
+    const job = await this.getJobById(jobId);
+
+    for (const d of drafts) {
+      // Replace earlier non-approved drafts of the same job and kind
+      for (const [key, existing] of this.drafts.entries()) {
+        if (existing.job_id === jobId && existing.kind === d.kind && existing.status !== "approved") {
+          this.drafts.delete(key);
+        }
+      }
+
+      const id = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const newDraft: OutreachDraft = {
+        id,
+        job_id: jobId,
+        kind: d.kind,
+        subject: d.subject || null,
+        body: d.body,
+        status: d.status || "draft",
+        model: d.model || null,
+        edited: false,
+        created_at: nowIso,
+        updated_at: nowIso,
+        job_title: job?.title,
+        job_company: job?.company,
+      };
+      this.drafts.set(id, newDraft);
+      created.push(newDraft);
+    }
+
+    return created;
+  }
+
+  async listDrafts(opts?: ListDraftsOptions): Promise<OutreachDraft[]> {
+    let list = Array.from(this.drafts.values());
+    if (opts?.status) {
+      list = list.filter((d) => d.status === opts.status);
+    }
+    if (opts?.jobId) {
+      list = list.filter((d) => d.job_id === opts.jobId);
+    }
+    list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    if (opts?.offset) list = list.slice(opts.offset);
+    if (opts?.limit) list = list.slice(0, opts.limit);
+    return list.map((d) => {
+      const job = Array.from(this.jobs.values()).find((j) => j.id === d.job_id);
+      return {
+        ...d,
+        job_title: d.job_title || job?.title,
+        job_company: d.job_company || job?.company,
+        job_url: d.job_url || job?.url,
+      };
+    });
+  }
+
+  async updateDraft(id: string, updates: UpdateDraftInput): Promise<OutreachDraft | null> {
+    const draft = this.drafts.get(id);
+    if (!draft) return null;
+
+    let edited = draft.edited;
+    if (updates.subject !== undefined && updates.subject !== draft.subject) {
+      draft.subject = updates.subject;
+      edited = true;
+    }
+    if (updates.body !== undefined && updates.body !== draft.body) {
+      draft.body = updates.body;
+      edited = true;
+    }
+    if (updates.status !== undefined) {
+      draft.status = updates.status;
+    }
+    draft.edited = edited;
+    draft.updated_at = new Date().toISOString();
+    return { ...draft };
+  }
+
+  async countDrafts(jobId?: string): Promise<DraftCountsByStatus> {
+    let list = Array.from(this.drafts.values());
+    if (jobId) list = list.filter((d) => d.job_id === jobId);
+    const counts: DraftCountsByStatus = { all: list.length, draft: 0, approved: 0, discarded: 0 };
+    for (const d of list) {
+      if (d.status === "draft") counts.draft++;
+      else if (d.status === "approved") counts.approved++;
+      else if (d.status === "discarded") counts.discarded++;
+    }
+    return counts;
+  }
+
+  async countGenerationsToday(): Promise<number> {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayJobIds = new Set(
+      Array.from(this.drafts.values())
+        .filter((d) => d.created_at.slice(0, 10) === today)
+        .map((d) => d.job_id)
+    );
+    return todayJobIds.size;
+  }
 }
 
 // Neon PostgreSQL Implementation with Parameterized Tagged Templates ONLY
@@ -1337,13 +1498,27 @@ export class NeonJobsRepository implements JobsRepository {
 }
 
   async getJob(source: string, sourceId: string): Promise<StoredJob | null> {
-    const sql = getSql();
+    const sql = this.resolveSql();
     const rows = (await sql`
       SELECT * FROM jobs
       WHERE source = ${source} AND source_id = ${sourceId}
       LIMIT 1
     `) as StoredJob[];
     return rows[0] || null;
+  }
+
+  async getJobById(id: string): Promise<StoredJob | null> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT * FROM jobs
+        WHERE id = ${id}::uuid
+        LIMIT 1
+      `) as StoredJob[];
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
   }
 
   async hasJobWithUrl(url: string): Promise<boolean> {
@@ -2599,6 +2774,140 @@ export class NeonJobsRepository implements JobsRepository {
       return rows.length > 0;
     } catch {
       return false;
+    }
+  }
+
+  async createDrafts(jobId: string, drafts: CreateDraftInput[]): Promise<OutreachDraft[]> {
+    const sql = this.resolveSql();
+    const created: OutreachDraft[] = [];
+
+    for (const d of drafts) {
+      // Replace earlier non-approved drafts of the same job and kind
+      await sql`
+        DELETE FROM outreach_drafts
+        WHERE job_id = ${jobId}::uuid
+          AND kind = ${d.kind}
+          AND status != 'approved'
+      `;
+
+      const rows = (await sql`
+        INSERT INTO outreach_drafts (
+          job_id, kind, subject, body, status, model, edited, created_at, updated_at
+        ) VALUES (
+          ${jobId}::uuid,
+          ${d.kind},
+          ${d.subject || null},
+          ${d.body},
+          ${d.status || "draft"},
+          ${d.model || null},
+          false,
+          NOW(),
+          NOW()
+        )
+        RETURNING *
+      `) as OutreachDraft[];
+
+      if (rows[0]) {
+        created.push(rows[0]);
+      }
+    }
+
+    return created;
+  }
+
+  async listDrafts(opts?: ListDraftsOptions): Promise<OutreachDraft[]> {
+    const sql = this.resolveSql();
+    const statusFilter = opts?.status || "";
+    const jobIdFilter = opts?.jobId || "";
+    const limit = opts?.limit ?? 100;
+    const offset = opts?.offset ?? 0;
+
+    const rows = (await sql`
+      SELECT d.*, j.title AS job_title, j.company AS job_company, j.url AS job_url
+      FROM outreach_drafts d
+      LEFT JOIN jobs j ON d.job_id = j.id
+      WHERE (${statusFilter} = '' OR d.status = ${statusFilter})
+        AND (${jobIdFilter} = '' OR d.job_id = ${jobIdFilter}::uuid)
+      ORDER BY d.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `) as OutreachDraft[];
+
+    return rows;
+  }
+
+  async updateDraft(id: string, updates: UpdateDraftInput): Promise<OutreachDraft | null> {
+    const sql = this.resolveSql();
+    try {
+      const currentRows = (await sql`
+        SELECT * FROM outreach_drafts WHERE id = ${id}::uuid LIMIT 1
+      `) as OutreachDraft[];
+      const current = currentRows[0];
+      if (!current) return null;
+
+      const newSubject = updates.subject !== undefined ? updates.subject : current.subject;
+      const newBody = updates.body !== undefined ? updates.body : current.body;
+      const newStatus = updates.status !== undefined ? updates.status : current.status;
+      const isEdited =
+        current.edited ||
+        (updates.subject !== undefined && updates.subject !== current.subject) ||
+        (updates.body !== undefined && updates.body !== current.body);
+
+      const rows = (await sql`
+        UPDATE outreach_drafts
+        SET
+          subject = ${newSubject},
+          body = ${newBody},
+          status = ${newStatus},
+          edited = ${isEdited},
+          updated_at = NOW()
+        WHERE id = ${id}::uuid
+        RETURNING *
+      `) as OutreachDraft[];
+
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async countDrafts(jobId?: string): Promise<DraftCountsByStatus> {
+    const sql = this.resolveSql();
+    const jobIdFilter = jobId || "";
+    try {
+      const rows = (await sql`
+        SELECT
+          COUNT(*)::int AS all,
+          COUNT(*) FILTER (WHERE status = 'draft')::int AS draft,
+          COUNT(*) FILTER (WHERE status = 'approved')::int AS approved,
+          COUNT(*) FILTER (WHERE status = 'discarded')::int AS discarded
+        FROM outreach_drafts
+        WHERE (${jobIdFilter} = '' OR job_id = ${jobIdFilter}::uuid)
+      `) as Array<DraftCountsByStatus>;
+
+      return (
+        rows[0] || {
+          all: 0,
+          draft: 0,
+          approved: 0,
+          discarded: 0,
+        }
+      );
+    } catch {
+      return { all: 0, draft: 0, approved: 0, discarded: 0 };
+    }
+  }
+
+  async countGenerationsToday(): Promise<number> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT COUNT(DISTINCT job_id)::int AS count
+        FROM outreach_drafts
+        WHERE created_at >= CURRENT_DATE
+      `) as Array<{ count?: number }>;
+      return Number(rows[0]?.count || 0);
+    } catch {
+      return 0;
     }
   }
 }

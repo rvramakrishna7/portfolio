@@ -3,7 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { StoredJob, CustomBoard, HiddenReasonsCounts } from "@/lib/jobs/repository";
+import {
+  StoredJob,
+  CustomBoard,
+  HiddenReasonsCounts,
+  OutreachDraft,
+  DraftCountsByStatus,
+} from "@/lib/jobs/repository";
 import { formatJobAge } from "@/lib/jobs/freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 import { hasRealDescription, getMissingDescriptionNote } from "@/lib/jobs/classify";
@@ -137,6 +143,24 @@ export function AdminDashboard() {
   const [newBoardLabel, setNewBoardLabel] = useState("");
   const [isAddingBoard, setIsAddingBoard] = useState(false);
   const [boardFeedback, setBoardFeedback] = useState<string | null>(null);
+
+  // Outreach Drafts state (Bundle B1)
+  const [drafts, setDrafts] = useState<OutreachDraft[]>([]);
+  const [draftCounts, setDraftCounts] = useState<DraftCountsByStatus>({
+    all: 0,
+    draft: 0,
+    approved: 0,
+    discarded: 0,
+  });
+  const [draftFilter, setDraftFilter] = useState<"all" | "draft" | "approved" | "discarded">("draft");
+  const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
+  const [draftingJobId, setDraftingJobId] = useState<string | null>(null);
+  const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
+  const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [editingDrafts, setEditingDrafts] = useState<
+    Record<string, { subject?: string; body: string }>
+  >({});
 
   const fetchJobs = useCallback(async () => {
     setFetchError(null);
@@ -468,6 +492,127 @@ export function AdminDashboard() {
       }
     } catch {
       // Ignore
+    }
+  };
+
+  const fetchDrafts = useCallback(async (status?: string, jobId?: string) => {
+    setIsLoadingDrafts(true);
+    try {
+      const params = new URLSearchParams();
+      if (status && status !== "all") params.set("status", status);
+      if (jobId) params.set("jobId", jobId);
+      const res = await fetch(`/api/admin/drafts?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to load drafts");
+      const data = await res.json();
+      setDrafts(data.drafts || []);
+      if (data.counts) setDraftCounts(data.counts);
+    } catch {
+      // Ignore
+    } finally {
+      setIsLoadingDrafts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "messages") {
+      let ignore = false;
+      const load = async () => {
+        try {
+          const params = new URLSearchParams();
+          if (draftFilter && draftFilter !== "all") params.set("status", draftFilter);
+          if (focusedJobId) params.set("jobId", focusedJobId);
+          const res = await fetch(`/api/admin/drafts?${params.toString()}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (!ignore) {
+              setDrafts(data.drafts || []);
+              if (data.counts) setDraftCounts(data.counts);
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      };
+      load();
+      return () => {
+        ignore = true;
+      };
+    }
+  }, [activeTab, draftFilter, focusedJobId]);
+
+  const handleDraftOutreach = async (jobId: string) => {
+    setDraftingJobId(jobId);
+    try {
+      const res = await fetch("/api/admin/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate outreach drafts");
+      }
+      setFocusedJobId(jobId);
+      setActiveTab("messages");
+      setDraftFilter("all");
+      await fetchDrafts("all", jobId);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDraftingJobId(null);
+    }
+  };
+
+  const handleUpdateDraft = async (
+    draftId: string,
+    updates: { subject?: string; body?: string; status?: "draft" | "approved" | "discarded" }
+  ) => {
+    setSavingDraftId(draftId);
+    try {
+      const res = await fetch(`/api/admin/drafts/${draftId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update draft");
+      }
+      setDrafts((prev) => prev.map((d) => (d.id === draftId ? data.draft : d)));
+      if (data.counts) setDraftCounts(data.counts);
+      setEditingDrafts((prev) => {
+        const next = { ...prev };
+        delete next[draftId];
+        return next;
+      });
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingDraftId(null);
+    }
+  };
+
+  const handleCopyDraft = async (draft: OutreachDraft) => {
+    const currentSubject =
+      editingDrafts[draft.id]?.subject !== undefined
+        ? editingDrafts[draft.id]?.subject
+        : draft.subject;
+    const currentBody =
+      editingDrafts[draft.id]?.body !== undefined
+        ? editingDrafts[draft.id]?.body
+        : draft.body;
+
+    const textToCopy =
+      draft.kind === "email" && currentSubject
+        ? `Subject: ${currentSubject}\n\n${currentBody}`
+        : currentBody;
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopyToast("Copied to clipboard!");
+      setTimeout(() => setCopyToast(null), 2500);
+    } catch {
+      // Fallback
     }
   };
 
@@ -957,6 +1102,16 @@ export function AdminDashboard() {
                             >
                               Skip
                             </button>
+                            {(viewFilter === "shortlist" || viewFilter === "maybe" || viewFilter === "inbox") && (
+                              <button
+                                type="button"
+                                className="btn ghost btn-sm admin-draft-outreach-btn"
+                                onClick={() => handleDraftOutreach(job.id)}
+                                disabled={draftingJobId === job.id}
+                              >
+                                {draftingJobId === job.id ? "Drafting..." : "Draft outreach"}
+                              </button>
+                            )}
                           </div>
                         </article>
                       );
@@ -1113,10 +1268,289 @@ export function AdminDashboard() {
               </div>
             )}
 
-            {activeTab !== "jobs" && activeTab !== "settings" && (
+            {activeTab === "messages" && (
+              <div className="admin-drafts-section" aria-label="Messages review queue">
+                <div className="admin-notice-banner" role="note">
+                  Nothing is sent from here. Copy the text and send it yourself.
+                </div>
+
+                <div className="admin-view-filters" role="group" aria-label="Filter drafts by status">
+                  <button
+                    type="button"
+                    className={`admin-filter-btn${draftFilter === "all" ? " active" : ""}`}
+                    onClick={() => setDraftFilter("all")}
+                  >
+                    All ({draftCounts.all})
+                  </button>
+                  <button
+                    type="button"
+                    className={`admin-filter-btn${draftFilter === "draft" ? " active" : ""}`}
+                    onClick={() => setDraftFilter("draft")}
+                  >
+                    Draft ({draftCounts.draft})
+                  </button>
+                  <button
+                    type="button"
+                    className={`admin-filter-btn${draftFilter === "approved" ? " active" : ""}`}
+                    onClick={() => setDraftFilter("approved")}
+                  >
+                    Approved ({draftCounts.approved})
+                  </button>
+                  <button
+                    type="button"
+                    className={`admin-filter-btn${draftFilter === "discarded" ? " active" : ""}`}
+                    onClick={() => setDraftFilter("discarded")}
+                  >
+                    Discarded ({draftCounts.discarded})
+                  </button>
+                </div>
+
+                {focusedJobId && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "12px 0" }}>
+                    <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>Filtered to single job</span>
+                    <button
+                      type="button"
+                      className="btn ghost btn-sm"
+                      onClick={() => setFocusedJobId(null)}
+                    >
+                      Show all jobs
+                    </button>
+                  </div>
+                )}
+
+                {isLoadingDrafts && (
+                  <div className="admin-loading-indicator">
+                    <p>Loading outreach drafts...</p>
+                  </div>
+                )}
+
+                {!isLoadingDrafts && drafts.length === 0 && (
+                  <div className="admin-empty-card">
+                    <h3>No messages to review</h3>
+                    <p>Select any job card from Shortlist, Maybe, or Inbox and click &apos;Draft outreach&apos; to generate personalized messages.</p>
+                  </div>
+                )}
+
+                {!isLoadingDrafts && drafts.length > 0 && (
+                  <div className="admin-drafts-container">
+                    {Array.from(
+                      drafts.reduce((acc, draft) => {
+                        let g = acc.get(draft.job_id);
+                        if (!g) {
+                          g = {
+                            jobId: draft.job_id,
+                            jobTitle: draft.job_title || "Untitled Role",
+                            jobCompany: draft.job_company || "Company",
+                            jobUrl: draft.job_url,
+                            drafts: [],
+                          };
+                          acc.set(draft.job_id, g);
+                        }
+                        g.drafts.push(draft);
+                        return acc;
+                      }, new Map<string, { jobId: string; jobTitle: string; jobCompany: string; jobUrl?: string; drafts: OutreachDraft[] }>()).values()
+                    ).map((group) => (
+                      <div key={group.jobId} className="admin-draft-group" data-job-id={group.jobId}>
+                        <div className="admin-draft-group-header">
+                          <div>
+                            <h3 className="admin-draft-job-title">{group.jobTitle}</h3>
+                            <div className="admin-draft-job-meta">
+                              <span>{group.jobCompany}</span>
+                              {group.jobUrl && (
+                                <>
+                                  <span>•</span>
+                                  <a href={group.jobUrl} target="_blank" rel="noopener noreferrer">
+                                    Source listing ↗
+                                  </a>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn ghost btn-sm admin-regenerate-btn"
+                            onClick={() => handleDraftOutreach(group.jobId)}
+                            disabled={draftingJobId === group.jobId}
+                          >
+                            {draftingJobId === group.jobId ? "Regenerating..." : "Regenerate"}
+                          </button>
+                        </div>
+
+                        <div className="admin-drafts-grid">
+                          {group.drafts.map((draft) => {
+                            const kindLabel =
+                              draft.kind === "email"
+                                ? "Cold email"
+                                : draft.kind === "linkedin_note"
+                                ? "LinkedIn note"
+                                : "LinkedIn DM";
+
+                            const currentSubject =
+                              editingDrafts[draft.id]?.subject !== undefined
+                                ? editingDrafts[draft.id].subject
+                                : (draft.subject || "");
+                            const currentBody =
+                              editingDrafts[draft.id]?.body !== undefined
+                                ? editingDrafts[draft.id].body
+                                : draft.body;
+
+                            const isEmail = draft.kind === "email";
+                            const emailWords = currentBody.trim().split(/\s+/).filter(Boolean).length;
+                            const isEmailWordWarn = isEmail && (emailWords < 90 || emailWords > 150);
+
+                            const isNote = draft.kind === "linkedin_note";
+                            const isNoteCharWarn = isNote && currentBody.length > 280;
+
+                            const isDm = draft.kind === "linkedin_dm";
+                            const isDmCharWarn = isDm && currentBody.length > 500;
+
+                            const isSubjectWarn = isEmail && (currentSubject?.length || 0) > 70;
+
+                            const hasEdits =
+                              editingDrafts[draft.id] !== undefined &&
+                              (editingDrafts[draft.id].body !== draft.body ||
+                                (draft.subject !== null &&
+                                  editingDrafts[draft.id].subject !== draft.subject));
+
+                            return (
+                              <article key={draft.id} className="admin-draft-card" data-draft-id={draft.id}>
+                                <div className="admin-draft-card-header">
+                                  <div className="admin-draft-badges">
+                                    <span className="badge-kind">{kindLabel}</span>
+                                    <span className={`badge-status ${draft.status}`}>{draft.status}</span>
+                                    {draft.edited && <span className="badge-edited">Edited</span>}
+                                  </div>
+                                </div>
+
+                                {isEmail && (
+                                  <div className="admin-draft-field">
+                                    <label htmlFor={`subject-${draft.id}`}>Subject</label>
+                                    <input
+                                      id={`subject-${draft.id}`}
+                                      type="text"
+                                      className="admin-input"
+                                      value={currentSubject || ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setEditingDrafts((prev) => ({
+                                          ...prev,
+                                          [draft.id]: {
+                                            subject: val,
+                                            body:
+                                              prev[draft.id]?.body !== undefined
+                                                ? prev[draft.id].body
+                                                : draft.body,
+                                          },
+                                        }));
+                                      }}
+                                    />
+                                    <div className={`admin-counter ${isSubjectWarn ? "warn" : ""}`}>
+                                      {(currentSubject?.length || 0)} / 70 characters
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="admin-draft-field">
+                                  <label htmlFor={`body-${draft.id}`}>Body</label>
+                                  <textarea
+                                    id={`body-${draft.id}`}
+                                    className="admin-textarea"
+                                    rows={isEmail ? 8 : 4}
+                                    value={currentBody}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setEditingDrafts((prev) => ({
+                                        ...prev,
+                                        [draft.id]: {
+                                          subject:
+                                            prev[draft.id]?.subject !== undefined
+                                              ? prev[draft.id].subject
+                                              : (draft.subject || undefined),
+                                          body: val,
+                                        },
+                                      }));
+                                    }}
+                                  />
+                                  <div
+                                    className={`admin-counter ${
+                                      isEmailWordWarn || isNoteCharWarn || isDmCharWarn ? "warn" : ""
+                                    }`}
+                                  >
+                                    {isEmail && `Word count: ${emailWords} (target 90-150 words)`}
+                                    {isNote && `${currentBody.length} / 280 characters`}
+                                    {isDm && `${currentBody.length} / 500 characters`}
+                                  </div>
+                                </div>
+
+                                <div className="admin-draft-card-actions">
+                                  <button
+                                    type="button"
+                                    className="btn ghost btn-sm admin-copy-btn"
+                                    onClick={() => handleCopyDraft(draft)}
+                                  >
+                                    Copy
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn primary btn-sm admin-approve-btn"
+                                    onClick={() =>
+                                      handleUpdateDraft(draft.id, {
+                                        status: "approved",
+                                        subject: isEmail ? currentSubject : undefined,
+                                        body: currentBody,
+                                      })
+                                    }
+                                    disabled={savingDraftId === draft.id}
+                                  >
+                                    {draft.status === "approved" && !hasEdits ? "Approved" : "Approve"}
+                                  </button>
+                                  {hasEdits && (
+                                    <button
+                                      type="button"
+                                      className="btn ghost btn-sm admin-save-btn"
+                                      onClick={() =>
+                                        handleUpdateDraft(draft.id, {
+                                          subject: isEmail ? currentSubject : undefined,
+                                          body: currentBody,
+                                        })
+                                      }
+                                      disabled={savingDraftId === draft.id}
+                                    >
+                                      Save edits
+                                    </button>
+                                  )}
+                                  {draft.status !== "discarded" && (
+                                    <button
+                                      type="button"
+                                      className="btn ghost btn-sm btn-danger admin-discard-btn"
+                                      onClick={() => handleUpdateDraft(draft.id, { status: "discarded" })}
+                                      disabled={savingDraftId === draft.id}
+                                    >
+                                      Discard
+                                    </button>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab !== "jobs" && activeTab !== "settings" && activeTab !== "messages" && (
               <div className="admin-empty-card">
                 <h3>{currentTab.emptyHeading}</h3>
                 <p>{currentTab.emptyText}</p>
+              </div>
+            )}
+
+            {copyToast && (
+              <div className="admin-toast" role="status">
+                {copyToast}
               </div>
             )}
           </div>

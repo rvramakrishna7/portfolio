@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NormalizedJob } from "./types";
-import { StoredJob } from "./repository";
+import { StoredJob, OutreachDraft } from "./repository";
 import { TriagedJobResult } from "../llm/triage";
 import {
   classifyExperience,
@@ -2507,3 +2507,150 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
     });
   });
 });
+
+describe("Outreach Drafts repository operations parity", () => {
+    it("creates, lists, updates, and counts outreach drafts with parity across repositories", async () => {
+      const { InMemoryJobsRepository, NeonJobsRepository } = await import("./repository");
+      const inMemRepo = new InMemoryJobsRepository();
+
+      // Backing store for Neon mock SQL
+      const neonDrafts = new Map<string, OutreachDraft>();
+      const mockSql = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sqlText = strings.join("$param");
+
+        if (sqlText.includes("DELETE FROM outreach_drafts")) {
+          const jobId = String(values[0]);
+          const kind = String(values[1]);
+          for (const [key, d] of neonDrafts.entries()) {
+            if (d.job_id === jobId && d.kind === kind && d.status !== "approved") {
+              neonDrafts.delete(key);
+            }
+          }
+          return [];
+        }
+
+        if (sqlText.includes("INSERT INTO outreach_drafts")) {
+          const id = `neon-draft-${neonDrafts.size + 1}`;
+          const nowIso = new Date().toISOString();
+          const draft: OutreachDraft = {
+            id,
+            job_id: String(values[0]),
+            kind: String(values[1]) as OutreachDraft["kind"],
+            subject: values[2] ? String(values[2]) : null,
+            body: String(values[3]),
+            status: (String(values[4]) as OutreachDraft["status"]) || "draft",
+            model: values[5] ? String(values[5]) : null,
+            edited: false,
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+          neonDrafts.set(id, draft);
+          return [draft];
+        }
+
+        if (sqlText.includes("SELECT d.*, j.title AS job_title")) {
+          const statusFilter = String(values[0] ?? "");
+          const jobIdFilter = String(values[1] ?? "");
+          let list = Array.from(neonDrafts.values());
+          if (statusFilter) list = list.filter((d) => d.status === statusFilter);
+          if (jobIdFilter) list = list.filter((d) => d.job_id === jobIdFilter);
+          list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          return list;
+        }
+
+        if (sqlText.includes("UPDATE outreach_drafts")) {
+          const id = String(values[values.length - 1]);
+          const draft = neonDrafts.get(id);
+          if (!draft) return [];
+          const newSubject = values[0] !== undefined ? (values[0] === null ? null : String(values[0])) : draft.subject;
+          const newBody = values[1] !== undefined ? String(values[1]) : draft.body;
+          const newStatus = (values[2] !== undefined ? String(values[2]) : draft.status) as OutreachDraft["status"];
+          const isEdited = Boolean(values[3]);
+          draft.subject = newSubject;
+          draft.body = newBody;
+          draft.status = newStatus;
+          draft.edited = isEdited;
+          draft.updated_at = new Date().toISOString();
+          return [draft];
+        }
+
+        if (sqlText.includes("SELECT * FROM outreach_drafts WHERE id = $param::uuid")) {
+          const id = String(values[0]);
+          const draft = neonDrafts.get(id);
+          return draft ? [draft] : [];
+        }
+
+        if (sqlText.includes("COUNT(*) FILTER (WHERE status = 'draft')")) {
+          const jobIdFilter = String(values[0] ?? "");
+          let list = Array.from(neonDrafts.values());
+          if (jobIdFilter) list = list.filter((d) => d.job_id === jobIdFilter);
+          const all = list.length;
+          const draft = list.filter((d) => d.status === "draft").length;
+          const approved = list.filter((d) => d.status === "approved").length;
+          const discarded = list.filter((d) => d.status === "discarded").length;
+          return [{ all, draft, approved, discarded }];
+        }
+
+        if (sqlText.includes("COUNT(DISTINCT job_id)")) {
+          const today = new Date().toISOString().slice(0, 10);
+          const todayJobs = new Set(
+            Array.from(neonDrafts.values())
+              .filter((d) => d.created_at.slice(0, 10) === today)
+              .map((d) => d.job_id)
+          );
+          return [{ count: todayJobs.size }];
+        }
+
+        return [];
+      }) as unknown as ConstructorParameters<typeof NeonJobsRepository>[0];
+
+      const neonRepo = new NeonJobsRepository(mockSql);
+      const testJobId = "e2e-job-uuid-1";
+
+      for (const repo of [inMemRepo, neonRepo]) {
+        // 1. Create initial drafts
+        const created = await repo.createDrafts(testJobId, [
+          { kind: "email", subject: "Initial subject", body: "Initial email body" },
+          { kind: "linkedin_note", body: "Initial note body" },
+          { kind: "linkedin_dm", body: "Initial dm body" },
+        ]);
+        expect(created).toHaveLength(3);
+        expect(created[0].status).toBe("draft");
+        expect(created[0].edited).toBe(false);
+
+        // 2. Count drafts
+        const counts1 = await repo.countDrafts(testJobId);
+        expect(counts1.all).toBe(3);
+        expect(counts1.draft).toBe(3);
+        expect(counts1.approved).toBe(0);
+
+        // 3. Update one draft body -> edited becomes true
+        const emailDraft = created.find((d) => d.kind === "email")!;
+        const updated = await repo.updateDraft(emailDraft.id, { body: "Edited email body" });
+        expect(updated).not.toBeNull();
+        expect(updated?.body).toBe("Edited email body");
+        expect(updated?.edited).toBe(true);
+
+        // 4. Approve linkedin_note
+        const noteDraft = created.find((d) => d.kind === "linkedin_note")!;
+        await repo.updateDraft(noteDraft.id, { status: "approved" });
+
+        // 5. Re-generate drafts for the same job:
+        // non-approved (email, dm) are replaced; approved note is PRESERVED
+        const regenerated = await repo.createDrafts(testJobId, [
+          { kind: "email", subject: "Fresh subject", body: "Fresh email body" },
+          { kind: "linkedin_note", body: "Fresh note body" },
+          { kind: "linkedin_dm", body: "Fresh dm body" },
+        ]);
+        expect(regenerated).toHaveLength(3);
+
+        const allDrafts = await repo.listDrafts({ jobId: testJobId });
+        // The approved note was preserved, plus the fresh drafts
+        expect(allDrafts.some((d) => d.status === "approved" && d.kind === "linkedin_note")).toBe(true);
+
+        // 6. countGenerationsToday
+        const gens = await repo.countGenerationsToday();
+        expect(gens).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
