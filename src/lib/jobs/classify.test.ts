@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NormalizedJob } from "./types";
+import { StoredJob } from "./repository";
 import { TriagedJobResult } from "../llm/triage";
 import {
   classifyExperience,
@@ -1969,7 +1970,7 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
 
   describe("InMemoryJobsRepository and NeonJobsRepository source & q filter parity", () => {
     it("runs identical filter cases (source, q, view, total) against both InMemoryJobsRepository and NeonJobsRepository", async () => {
-      const { InMemoryJobsRepository, NeonJobsRepository } = await import("./repository");
+      const { InMemoryJobsRepository, NeonJobsRepository, matchesHiddenReason } = await import("./repository");
       const { calculateJobAgeDays } = await import("./freshness");
 
       const inMemRepo = new InMemoryJobsRepository();
@@ -2130,7 +2131,9 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
       }
 
       // Extract the stored rows from inMemRepo to back the tagged-template Neon SQL evaluator
-      const allStored = (await inMemRepo.getJobs({ view: "all", limit: 100 })).jobs;
+      const allStored = Array.from(
+        (inMemRepo as unknown as { jobs: Map<string, StoredJob> }).jobs.values()
+      );
 
       // Tagged-template SQL mock for NeonJobsRepository that verifies the SQL template structure
       // and evaluates the parameterized predicates against allStored
@@ -2139,36 +2142,119 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
         const sqlText = strings.join("$param");
         executedQueries.push({ sqlText, values });
 
+        const isGetViewCounts = /SELECT\s+COUNT\(\*\)\s+FILTER/i.test(sqlText);
+        if (isGetViewCounts) {
+          const maxAgeDays = Number(values[0] ?? 10);
+          let shortlist = 0;
+          let maybe = 0;
+          let inbox = 0;
+          let hidden = 0;
+          let all = 0;
+          const reasons = {
+            senior_title: 0,
+            senior_desc: 0,
+            onsite: 0,
+            restricted: 0,
+            geo_unclear: 0,
+            stale: 0,
+            language: 0,
+            skipped: 0,
+            low_relevance: 0,
+            missing_desc: 0,
+          };
+          for (const j of allStored) {
+            const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+            const isInbox =
+              ["telegram", "whatsapp", "pasted", "paste"].includes(j.inbound_source || "") ||
+              ["telegram", "whatsapp", "pasted", "paste"].includes(j.source);
+
+            if (isInbox) {
+              if (j.status !== "skipped" && !j.filter_reason && age <= maxAgeDays) {
+                inbox++;
+              }
+              continue;
+            }
+
+            if (age <= maxAgeDays) {
+              all++;
+              const isShortlist =
+                (["fresher", "junior"].includes(j.exp_class) ||
+                  (j.exp_class === "unclear" && hasRealDescription(j.description, j.title, j.company))) &&
+                ["worldwide", "india_ok"].includes(j.geo_eligibility) &&
+                j.status !== "skipped" &&
+                !j.filter_reason;
+
+              const isMaybe =
+                !isShortlist &&
+                j.status !== "skipped" &&
+                !j.filter_reason &&
+                ((["fresher", "junior", "unclear"].includes(j.exp_class) &&
+                  j.geo_eligibility === "unclear" &&
+                  (j.geo_reason || "").startsWith("remote-unconfirmed:")) ||
+                  (j.exp_class === "unclear" &&
+                    ["worldwide", "india_ok"].includes(j.geo_eligibility) &&
+                    !hasRealDescription(j.description, j.title, j.company)));
+
+              if (isShortlist) {
+                shortlist++;
+              } else if (isMaybe) {
+                maybe++;
+              } else {
+                hidden++;
+              }
+            } else {
+              hidden++;
+            }
+
+            if (matchesHiddenReason(j, "senior_title", maxAgeDays)) reasons.senior_title++;
+            if (matchesHiddenReason(j, "senior_desc", maxAgeDays)) reasons.senior_desc++;
+            if (matchesHiddenReason(j, "onsite", maxAgeDays)) reasons.onsite++;
+            if (matchesHiddenReason(j, "restricted", maxAgeDays)) reasons.restricted++;
+            if (matchesHiddenReason(j, "geo_unclear", maxAgeDays)) reasons.geo_unclear++;
+            if (matchesHiddenReason(j, "stale", maxAgeDays)) reasons.stale++;
+            if (matchesHiddenReason(j, "language", maxAgeDays)) reasons.language++;
+            if (matchesHiddenReason(j, "skipped", maxAgeDays)) reasons.skipped++;
+            if (matchesHiddenReason(j, "low_relevance", maxAgeDays)) reasons.low_relevance++;
+            if (matchesHiddenReason(j, "missing_desc", maxAgeDays)) reasons.missing_desc++;
+          }
+
+          return [
+            {
+              shortlist,
+              maybe,
+              inbox,
+              hidden,
+              all,
+              ...reasons,
+            },
+          ];
+        }
+
         // Verify tagged-template SQL contains required source, status, and q clauses
         expect(sqlText).toContain("LOWER(COALESCE(source, ''))");
         expect(sqlText).toContain("LOWER(COALESCE(inbound_source, ''))");
         expect(sqlText).toContain("POSITION(");
         expect(sqlText).toContain("UNNEST(COALESCE(skills, '{}'::text[]))");
 
-        // Extract parameter values by their position in the query:
-        // In every view branch of NeonJobsRepository.getJobs:
-        // values[0] = maxAgeDays
-        // values[1] = sourceFilter, values[2] = sourceFilter, values[3] = sourceFilter
-        // values[4] = statusFilter, values[5] = statusFilter
-        // values[6] = qFilter, values[7] = qFilter (title), values[8] = qFilter (company), values[9] = qFilter (skills)
-        const maxAgeDays = Number(values[0]);
-        const sourceFilter = String(values[1] ?? "");
-        const statusFilter = String(values[4] ?? "");
-        const qFilter = String(values[6] ?? "");
-
         const isCountQuery = /SELECT\s+COUNT\(\*\)::int\s+AS\s+count/i.test(sqlText);
+        const isHiddenQuery = sqlText.includes("senior_title");
         const isShortlistQuery =
+          !isHiddenQuery &&
           sqlText.includes("WHERE NOT (COALESCE(inbound_source, '')") &&
           sqlText.includes("AND geo_eligibility IN ('worldwide', 'india_ok')") &&
           sqlText.includes("exp_class IN ('fresher', 'junior')");
         const isMaybeQuery =
+          !isHiddenQuery &&
           sqlText.includes("remote-unconfirmed:%") &&
           sqlText.includes("LENGTH(TRIM(COALESCE(description, ''))) < 80");
         const isInboxQuery =
           sqlText.includes("WHERE (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste')");
-        const isHiddenQuery =
-          sqlText.includes("exp_class = 'senior'") &&
-          sqlText.includes("OR filter_reason IS NOT NULL");
+
+        const maxAgeDays = Number(values[0]);
+        const sourceFilter = String(values[1] ?? "");
+        const statusFilter = String(values[4] ?? "");
+        const qFilter = String(values[6] ?? "");
+        const reasonFilter = isHiddenQuery ? String(values[10] ?? "") : "";
 
         const isInboxRow = (j: (typeof allStored)[number]) =>
           ["telegram", "whatsapp", "pasted", "paste"].includes(j.inbound_source || "") ||
@@ -2201,15 +2287,20 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
             if (j.status === "skipped" || j.filter_reason || age > maxAgeDays) return false;
           } else if (isHiddenQuery) {
             if (isInboxRow(j)) return false;
-            const isHidden =
-              j.exp_class === "senior" ||
-              j.geo_eligibility === "restricted" ||
-              (j.geo_eligibility === "unclear" && !(j.geo_reason || "").startsWith("remote-unconfirmed:")) ||
-              j.status === "skipped" ||
-              Boolean(j.filter_reason) ||
-              age > maxAgeDays;
-            if (!isHidden) return false;
+            if (reasonFilter !== "") {
+              if (!matchesHiddenReason(j, reasonFilter, maxAgeDays)) return false;
+            } else {
+              const isHidden =
+                j.exp_class === "senior" ||
+                j.geo_eligibility === "restricted" ||
+                (j.geo_eligibility === "unclear" && !(j.geo_reason || "").startsWith("remote-unconfirmed:")) ||
+                j.status === "skipped" ||
+                Boolean(j.filter_reason) ||
+                age > maxAgeDays;
+              if (!isHidden) return false;
+            }
           } else {
+            if (isInboxRow(j)) return false;
             if (age > maxAgeDays) return false;
           }
 
@@ -2228,7 +2319,7 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
             const matchQ =
               (j.title || "").toLowerCase().includes(qFilter) ||
               (j.company || "").toLowerCase().includes(qFilter) ||
-              (j.skills || []).some((s) => (s || "").toLowerCase().includes(qFilter));
+              (j.skills || []).some((s: string) => (s || "").toLowerCase().includes(qFilter));
             if (!matchQ) return false;
           }
 
@@ -2239,8 +2330,8 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
           return [{ count: filtered.length }];
         }
 
-        const limit = Number(values[10] ?? 50);
-        const offset = Number(values[11] ?? 0);
+        const limit = Number(values[values.length - 2] ?? 50);
+        const offset = Number(values[values.length - 1] ?? 0);
         return filtered.slice(offset, offset + limit);
       }) as unknown as ConstructorParameters<typeof NeonJobsRepository>[0];
 
@@ -2311,6 +2402,31 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
           opts: { view: "hidden", source: "email", q: "Next.js" },
           expectedIds: [],
         },
+        {
+          label: "hidden view filtered by reason=senior_title",
+          opts: { view: "hidden", reason: "senior_title" },
+          expectedIds: ["em-hidden-1", "li-hidden-1"],
+        },
+        {
+          label: "hidden view filtered by reason=senior_title + source=email",
+          opts: { view: "hidden", reason: "senior_title", source: "email" },
+          expectedIds: ["em-hidden-1"],
+        },
+        {
+          label: "hidden view filtered by reason=senior_title + q='Epsilon'",
+          opts: { view: "hidden", reason: "senior_title", q: "Epsilon" },
+          expectedIds: ["li-hidden-1"],
+        },
+        {
+          label: "hidden view filtered by reason=onsite (no matching jobs in fixture)",
+          opts: { view: "hidden", reason: "onsite" },
+          expectedIds: [],
+        },
+        {
+          label: "hidden view filtered by reason=stale (no stale jobs in fixture)",
+          opts: { view: "hidden", reason: "stale" },
+          expectedIds: [],
+        },
       ];
 
       for (const tc of PARITY_CASES) {
@@ -2327,15 +2443,29 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
         expect(neonRes.total, `Neon total mismatch on: ${tc.label}`).toBe(tc.expectedIds.length);
       }
 
-      // Tab counts (getViewCounts) remain unfiltered by source or q
-      const counts = await inMemRepo.getViewCounts();
-      expect(counts).toEqual({
-        shortlist: 2,
-        maybe: 1,
-        inbox: 1,
-        hidden: 2,
-        all: 6,
-      });
+      // Tab counts (getViewCounts) remain unfiltered by source, q, or reason
+      // Invariant: Shortlist + Maybe + Hidden = All for non-inbox jobs within window, in both repos
+      const memCounts = await inMemRepo.getViewCounts();
+      expect(memCounts.shortlist).toBe(2);
+      expect(memCounts.maybe).toBe(1);
+      expect(memCounts.inbox).toBe(1);
+      expect(memCounts.hidden).toBe(2);
+      expect(memCounts.all).toBe(5);
+      expect(memCounts.shortlist + memCounts.maybe + memCounts.hidden).toBe(memCounts.all);
+      expect(memCounts.reasons).toBeDefined();
+      expect(memCounts.reasons?.senior_title).toBe(2);
+      expect(memCounts.reasons?.onsite).toBe(0);
+
+      const neonCounts = await neonRepo.getViewCounts();
+      expect(neonCounts.shortlist).toBe(2);
+      expect(neonCounts.maybe).toBe(1);
+      expect(neonCounts.inbox).toBe(1);
+      expect(neonCounts.hidden).toBe(2);
+      expect(neonCounts.all).toBe(5);
+      expect(neonCounts.shortlist + neonCounts.maybe + neonCounts.hidden).toBe(neonCounts.all);
+      expect(neonCounts.reasons).toBeDefined();
+      expect(neonCounts.reasons?.senior_title).toBe(2);
+      expect(neonCounts.reasons?.onsite).toBe(0);
     });
 
     it("NeonJobsRepository.upsertJob includes non-downgrade ON CONFLICT clauses for exp_class and geo_eligibility", async () => {

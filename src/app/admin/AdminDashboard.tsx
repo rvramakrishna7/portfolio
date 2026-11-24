@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { StoredJob, CustomBoard } from "@/lib/jobs/repository";
+import { StoredJob, CustomBoard, HiddenReasonsCounts } from "@/lib/jobs/repository";
 import { formatJobAge } from "@/lib/jobs/freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 import { hasRealDescription, getMissingDescriptionNote } from "@/lib/jobs/classify";
@@ -64,6 +64,19 @@ const TABS: TabConfig[] = [
   },
 ];
 
+const HIDDEN_REASON_CHIPS: Array<{ key: keyof HiddenReasonsCounts; label: string }> = [
+  { key: "senior_title", label: "Senior (title)" },
+  { key: "senior_desc", label: "Senior (desc)" },
+  { key: "onsite", label: "Onsite" },
+  { key: "restricted", label: "Restricted" },
+  { key: "geo_unclear", label: "Geo unclear" },
+  { key: "stale", label: "Stale" },
+  { key: "language", label: "Language" },
+  { key: "skipped", label: "Skipped" },
+  { key: "low_relevance", label: "Low relevance" },
+  { key: "missing_desc", label: "Missing desc" },
+];
+
 export function AdminDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("jobs");
@@ -77,6 +90,7 @@ export function AdminDashboard() {
     inbox: number;
     hidden: number;
     all: number;
+    reasons?: HiddenReasonsCounts;
   }>({ shortlist: 0, maybe: 0, inbox: 0, hidden: 0, all: 0 });
   const [stats, setStats] = useState({
     jobsFound: 0,
@@ -99,6 +113,7 @@ export function AdminDashboard() {
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [maxAgeDays, setMaxAgeDays] = useState<number>(MAX_AGE_DAYS_DEFAULT);
+  const [reasonFilter, setReasonFilter] = useState<string>("");
 
   // Pipeline search state
   const [isSearching, setIsSearching] = useState(false);
@@ -131,6 +146,7 @@ export function AdminDashboard() {
       params.set("maxAgeDays", String(maxAgeDays));
       if (sourceFilter) params.set("source", sourceFilter);
       if (searchQuery) params.set("q", searchQuery);
+      if (viewFilter === "hidden" && reasonFilter) params.set("reason", reasonFilter);
 
       const res = await fetch(`/api/admin/jobs?${params.toString()}`);
       if (!res.ok) {
@@ -159,7 +175,7 @@ export function AdminDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays]);
+  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays, reasonFilter]);
 
   useEffect(() => {
     let ignore = false;
@@ -170,6 +186,7 @@ export function AdminDashboard() {
         params.set("maxAgeDays", String(maxAgeDays));
         if (sourceFilter) params.set("source", sourceFilter);
         if (searchQuery) params.set("q", searchQuery);
+        if (viewFilter === "hidden" && reasonFilter) params.set("reason", reasonFilter);
 
         const res = await fetch(`/api/admin/jobs?${params.toString()}`);
         if (!res.ok) {
@@ -210,7 +227,7 @@ export function AdminDashboard() {
     return () => {
       ignore = true;
     };
-  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays]);
+  }, [viewFilter, sourceFilter, searchQuery, maxAgeDays, reasonFilter]);
 
   const handleRunSearch = async () => {
     if (isSearching) return;
@@ -688,35 +705,50 @@ export function AdminDashboard() {
                     <button
                       type="button"
                       className={`btn filter-btn${viewFilter === "shortlist" ? " active" : ""}`}
-                      onClick={() => setViewFilter("shortlist")}
+                      onClick={() => {
+                        setViewFilter("shortlist");
+                        setReasonFilter("");
+                      }}
                     >
                       Shortlist ({viewCounts.shortlist})
                     </button>
                     <button
                       type="button"
                       className={`btn filter-btn${viewFilter === "maybe" ? " active" : ""}`}
-                      onClick={() => setViewFilter("maybe")}
+                      onClick={() => {
+                        setViewFilter("maybe");
+                        setReasonFilter("");
+                      }}
                     >
                       Maybe ({viewCounts.maybe})
                     </button>
                     <button
                       type="button"
                       className={`btn filter-btn${viewFilter === "inbox" ? " active" : ""}`}
-                      onClick={() => setViewFilter("inbox")}
+                      onClick={() => {
+                        setViewFilter("inbox");
+                        setReasonFilter("");
+                      }}
                     >
                       Inbox ({viewCounts.inbox})
                     </button>
                     <button
                       type="button"
                       className={`btn filter-btn${viewFilter === "hidden" ? " active" : ""}`}
-                      onClick={() => setViewFilter("hidden")}
+                      onClick={() => {
+                        setViewFilter("hidden");
+                        setReasonFilter("");
+                      }}
                     >
                       Hidden ({viewCounts.hidden})
                     </button>
                     <button
                       type="button"
                       className={`btn filter-btn${viewFilter === "all" ? " active" : ""}`}
-                      onClick={() => setViewFilter("all")}
+                      onClick={() => {
+                        setViewFilter("all");
+                        setReasonFilter("");
+                      }}
                     >
                       All ({viewCounts.all})
                     </button>
@@ -767,6 +799,27 @@ export function AdminDashboard() {
                     />
                   </div>
                 </div>
+
+                {viewFilter === "hidden" && (
+                  <div className="admin-reason-chips" role="group" aria-label="Filter by hidden reason">
+                    {HIDDEN_REASON_CHIPS.map((chip) => {
+                      const count = viewCounts.reasons?.[chip.key] ?? 0;
+                      const isActive = reasonFilter === chip.key;
+                      return (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          className={`reason-chip${isActive ? " active" : ""}`}
+                          onClick={() => setReasonFilter(isActive ? "" : chip.key)}
+                          aria-pressed={isActive}
+                        >
+                          <span className="reason-chip-label">{chip.label}</span>
+                          <span className="reason-chip-count">{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Error state */}
                 {fetchError && (

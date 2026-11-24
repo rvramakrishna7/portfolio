@@ -96,6 +96,7 @@ export interface JobsQueryOptions {
   source?: string;
   q?: string;
   status?: string;
+  reason?: string;
   maxAgeDays?: number;
   limit?: number;
   offset?: number;
@@ -187,6 +188,28 @@ export function stripHtmlToPlainText(html: string, maxChars = 6000): string {
   return text;
 }
 
+export interface HiddenReasonsCounts {
+  senior_title: number;
+  senior_desc: number;
+  onsite: number;
+  restricted: number;
+  geo_unclear: number;
+  stale: number;
+  language: number;
+  skipped: number;
+  low_relevance: number;
+  missing_desc: number;
+}
+
+export interface ViewCounts {
+  shortlist: number;
+  maybe: number;
+  inbox: number;
+  hidden: number;
+  all: number;
+  reasons?: HiddenReasonsCounts;
+}
+
 export interface JobsRepository {
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
   hasJobWithUrl?(url: string): Promise<boolean>;
@@ -194,7 +217,7 @@ export interface JobsRepository {
   getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }>;
   getViewCounts(
     maxAgeDays?: number
-  ): Promise<{ shortlist: number; maybe: number; inbox: number; hidden: number; all: number }>;
+  ): Promise<ViewCounts>;
   reclassifyUnclearJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
   reclassifyInboxJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
   reclassifyLinkedInJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
@@ -221,6 +244,73 @@ export interface JobsRepository {
   getCustomBoards?(): Promise<CustomBoard[]>;
   addCustomBoard?(board: { kind: "greenhouse" | "lever" | "ashby"; slug: string; label?: string }): Promise<CustomBoard>;
   deleteCustomBoard?(id: string): Promise<boolean>;
+}
+
+// Helper to determine whether a job matches a specific hidden reason filter
+export function matchesHiddenReason(
+  j: StoredJob,
+  reason: string,
+  maxAgeDays: number
+): boolean {
+  const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+  const filterReason = j.filter_reason || "";
+  const geoReason = j.geo_reason || "";
+
+  switch (reason) {
+    case "senior_title":
+      return (
+        j.exp_class === "senior" &&
+        (filterReason.startsWith("title level:") || filterReason.startsWith("Excluded title"))
+      );
+    case "senior_desc":
+      return (
+        j.exp_class === "senior" &&
+        !(filterReason.startsWith("title level:") || filterReason.startsWith("Excluded title"))
+      );
+    case "onsite":
+      return geoReason.startsWith("onsite:") || filterReason.startsWith("onsite:");
+    case "restricted":
+      return (
+        j.geo_eligibility === "restricted" &&
+        !(geoReason.startsWith("onsite:") || filterReason.startsWith("onsite:"))
+      );
+    case "geo_unclear":
+      return (
+        j.geo_eligibility === "unclear" &&
+        !geoReason.startsWith("remote-unconfirmed:") &&
+        !(geoReason.startsWith("onsite:") || filterReason.startsWith("onsite:"))
+      );
+    case "stale":
+      return age > maxAgeDays;
+    case "language":
+      return (
+        filterReason.startsWith("description not in English") ||
+        filterReason.startsWith("Non-English")
+      );
+    case "skipped":
+      return j.status === "skipped";
+    case "low_relevance":
+      return (
+        filterReason === "Low relevance score" ||
+        (Boolean(j.filter_reason) &&
+          !filterReason.startsWith("title level:") &&
+          !filterReason.startsWith("Excluded title") &&
+          !filterReason.startsWith("onsite:") &&
+          !filterReason.startsWith("description not in English") &&
+          !filterReason.startsWith("Non-English") &&
+          j.exp_class !== "senior" &&
+          j.geo_eligibility !== "restricted" &&
+          !(j.geo_eligibility === "unclear" && !geoReason.startsWith("remote-unconfirmed:")))
+      );
+    case "missing_desc":
+      return (
+        j.exp_class === "unclear" &&
+        (j.source || "").toLowerCase() !== "linkedin" &&
+        !hasRealDescription(j.description, j.title, j.company)
+      );
+    default:
+      return true;
+  }
 }
 
 // In-Memory implementation for tests or when DB is not configured
@@ -412,22 +502,26 @@ export class InMemoryJobsRepository implements JobsRepository {
     } else if (view === "hidden") {
       list = list.filter((j) => {
         if (isInboxJob(j)) return false;
+        if (opts.reason) {
+          return matchesHiddenReason(j, opts.reason, maxAgeDays);
+        }
         const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
         const isOlder = age > maxAgeDays;
         const isUnclearNonRemote =
           j.geo_eligibility === "unclear" && (!j.geo_reason || !j.geo_reason.startsWith("remote-unconfirmed:"));
-        return (
+        const isHiddenBase =
           j.exp_class === "senior" ||
           j.geo_eligibility === "restricted" ||
           isUnclearNonRemote ||
           j.status === "skipped" ||
-          Boolean(j.filter_reason) ||
-          isOlder
-        );
+          Boolean(j.filter_reason);
+        // Default hidden view lists all hidden jobs including older ones (matching viewCounts.hidden)
+        return isHiddenBase || isOlder;
       });
     } else {
-      // "all" view: also filter by maxAgeDays
+      // "all" view: every non-inbox job within the selected window
       list = list.filter((j) => {
+        if (isInboxJob(j)) return false;
         const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
         return age <= maxAgeDays;
       });
@@ -465,15 +559,36 @@ export class InMemoryJobsRepository implements JobsRepository {
     return { jobs: paginated, total };
   }
 
+  /**
+   * Tab and View Counts Consistency Invariant:
+   * - All = every non-inbox job within the selected "Posted within" window (age <= maxAgeDays).
+   * - Shortlist, Maybe, and Hidden within the same window partition All completely:
+   *     Shortlist + Maybe + Hidden === All
+   * - Inbox is separate (only inbound jobs like telegram, whatsapp, pasted).
+   * - Historical / Stale jobs (older than maxAgeDays) are classified under Hidden's
+   *   "stale (older than window)" reason breakdown chip.
+   */
   async getViewCounts(
     maxAgeDays: number = MAX_AGE_DAYS_DEFAULT
-  ): Promise<{ shortlist: number; maybe: number; inbox: number; hidden: number; all: number }> {
+  ): Promise<ViewCounts> {
     const list = Array.from(this.jobs.values());
     let shortlist = 0;
     let maybe = 0;
     let inbox = 0;
     let hidden = 0;
     let all = 0;
+    const reasons: HiddenReasonsCounts = {
+      senior_title: 0,
+      senior_desc: 0,
+      onsite: 0,
+      restricted: 0,
+      geo_unclear: 0,
+      stale: 0,
+      language: 0,
+      skipped: 0,
+      low_relevance: 0,
+      missing_desc: 0,
+    };
 
     for (const j of list) {
       const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
@@ -486,56 +601,63 @@ export class InMemoryJobsRepository implements JobsRepository {
           inbox++;
         }
       } else {
-        const hasValidExp =
-          ["fresher", "junior"].includes(j.exp_class) ||
-          (j.exp_class === "unclear" && hasRealDescription(j.description, j.title, j.company));
+        // Non-inbox jobs within the selected window count towards 'all'
+        if (age <= maxAgeDays) {
+          all++;
 
-        const isShortlistCandidate =
-          hasValidExp &&
-          ["worldwide", "india_ok"].includes(j.geo_eligibility) &&
-          j.status !== "skipped" &&
-          !j.filter_reason;
+          const hasValidExp =
+            ["fresher", "junior"].includes(j.exp_class) ||
+            (j.exp_class === "unclear" && hasRealDescription(j.description, j.title, j.company));
 
-        const isMissingDescMaybe =
-          j.exp_class === "unclear" &&
-          !hasRealDescription(j.description, j.title, j.company) &&
-          ["worldwide", "india_ok"].includes(j.geo_eligibility);
+          const isShortlistCandidate =
+            hasValidExp &&
+            ["worldwide", "india_ok"].includes(j.geo_eligibility) &&
+            j.status !== "skipped" &&
+            !j.filter_reason;
 
-        const isUnclearGeoRemote =
-          ["fresher", "junior", "unclear"].includes(j.exp_class) &&
-          j.geo_eligibility === "unclear" &&
-          Boolean(j.geo_reason && j.geo_reason.startsWith("remote-unconfirmed:"));
+          const isMissingDescMaybe =
+            j.exp_class === "unclear" &&
+            !hasRealDescription(j.description, j.title, j.company) &&
+            ["worldwide", "india_ok"].includes(j.geo_eligibility);
 
-        const isMaybeCandidate =
-          (isUnclearGeoRemote || isMissingDescMaybe) &&
-          j.status !== "skipped" &&
-          !j.filter_reason;
+          const isUnclearGeoRemote =
+            ["fresher", "junior", "unclear"].includes(j.exp_class) &&
+            j.geo_eligibility === "unclear" &&
+            Boolean(j.geo_reason && j.geo_reason.startsWith("remote-unconfirmed:"));
 
-        const isHiddenCandidate =
-          j.exp_class === "senior" ||
-          j.geo_eligibility === "restricted" ||
-          (j.geo_eligibility === "unclear" && (!j.geo_reason || !j.geo_reason.startsWith("remote-unconfirmed:"))) ||
-          j.status === "skipped" ||
-          Boolean(j.filter_reason) ||
-          age > maxAgeDays;
+          const isMaybeCandidate =
+            (isUnclearGeoRemote || isMissingDescMaybe) &&
+            j.status !== "skipped" &&
+            !j.filter_reason;
 
-        if (isShortlistCandidate && age <= maxAgeDays) {
-          shortlist++;
-        }
-        if (isMaybeCandidate && age <= maxAgeDays) {
-          maybe++;
-        }
-        if (isHiddenCandidate) {
+          if (isShortlistCandidate) {
+            shortlist++;
+          } else if (isMaybeCandidate) {
+            maybe++;
+          } else {
+            // Every other non-inbox job within the window is Hidden
+            hidden++;
+          }
+        } else {
+          // Jobs older than window are included in Hidden by design, matching what the tab lists
           hidden++;
         }
-      }
 
-      if (age <= maxAgeDays) {
-        all++;
+        // Reason breakdown for all non-inbox jobs
+        if (matchesHiddenReason(j, "senior_title", maxAgeDays)) reasons.senior_title++;
+        if (matchesHiddenReason(j, "senior_desc", maxAgeDays)) reasons.senior_desc++;
+        if (matchesHiddenReason(j, "onsite", maxAgeDays)) reasons.onsite++;
+        if (matchesHiddenReason(j, "restricted", maxAgeDays)) reasons.restricted++;
+        if (matchesHiddenReason(j, "geo_unclear", maxAgeDays)) reasons.geo_unclear++;
+        if (matchesHiddenReason(j, "stale", maxAgeDays)) reasons.stale++;
+        if (matchesHiddenReason(j, "language", maxAgeDays)) reasons.language++;
+        if (matchesHiddenReason(j, "skipped", maxAgeDays)) reasons.skipped++;
+        if (matchesHiddenReason(j, "low_relevance", maxAgeDays)) reasons.low_relevance++;
+        if (matchesHiddenReason(j, "missing_desc", maxAgeDays)) reasons.missing_desc++;
       }
     }
 
-    return { shortlist, maybe, inbox, hidden, all };
+    return { shortlist, maybe, inbox, hidden, all, reasons };
   }
 
   async reclassifyInboxJobs(opts?: ReclassifyOptions): Promise<ReclassifyResult> {
@@ -1425,17 +1547,11 @@ export class NeonJobsRepository implements JobsRepository {
           )
       `) as Array<{ count?: number }>;
     } else if (view === "hidden") {
+      const reasonFilter = opts.reason?.trim() || "";
       rows = (await sql`
         SELECT * FROM jobs
         WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
-          AND (
-            exp_class = 'senior'
-            OR geo_eligibility = 'restricted'
-            OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
-            OR status = 'skipped'
-            OR filter_reason IS NOT NULL
-            OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
-          )
+          AND (${maxAgeDays} > 0)
           AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
           AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
           AND (
@@ -1446,6 +1562,68 @@ export class NeonJobsRepository implements JobsRepository {
               SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
               WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
             )
+          )
+          AND (
+            CASE
+              WHEN ${reasonFilter} = 'senior_title' THEN
+                exp_class = 'senior' AND (COALESCE(filter_reason, '') LIKE 'title level:%' OR COALESCE(filter_reason, '') LIKE 'Excluded title%')
+              WHEN ${reasonFilter} = 'senior_desc' THEN
+                exp_class = 'senior' AND NOT (COALESCE(filter_reason, '') LIKE 'title level:%' OR COALESCE(filter_reason, '') LIKE 'Excluded title%')
+              WHEN ${reasonFilter} = 'onsite' THEN
+                (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+              WHEN ${reasonFilter} = 'restricted' THEN
+                geo_eligibility = 'restricted' AND NOT (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+              WHEN ${reasonFilter} = 'geo_unclear' THEN
+                geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%' AND NOT (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+              WHEN ${reasonFilter} = 'stale' THEN
+                COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
+              WHEN ${reasonFilter} = 'language' THEN
+                (COALESCE(filter_reason, '') LIKE 'description not in English%' OR COALESCE(filter_reason, '') LIKE 'Non-English%')
+              WHEN ${reasonFilter} = 'skipped' THEN
+                status = 'skipped'
+              WHEN ${reasonFilter} = 'low_relevance' THEN
+                (
+                  COALESCE(filter_reason, '') = 'Low relevance score'
+                  OR (
+                    filter_reason IS NOT NULL
+                    AND NOT (
+                      COALESCE(filter_reason, '') LIKE 'title level:%'
+                      OR COALESCE(filter_reason, '') LIKE 'Excluded title%'
+                      OR COALESCE(filter_reason, '') LIKE 'onsite:%'
+                      OR COALESCE(filter_reason, '') LIKE 'description not in English%'
+                      OR COALESCE(filter_reason, '') LIKE 'Non-English%'
+                    )
+                    AND exp_class != 'senior'
+                    AND geo_eligibility != 'restricted'
+                    AND NOT (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
+                  )
+                )
+              WHEN ${reasonFilter} = 'missing_desc' THEN
+                exp_class = 'unclear'
+                AND LOWER(COALESCE(source, '')) != 'linkedin'
+                AND (
+                  LENGTH(TRIM(COALESCE(description, ''))) < 80
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+                )
+              ELSE
+                (
+                  (
+                    COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+                    AND (
+                      exp_class = 'senior'
+                      OR geo_eligibility = 'restricted'
+                      OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
+                      OR status = 'skipped'
+                      OR filter_reason IS NOT NULL
+                    )
+                  )
+                  OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
+                )
+            END
           )
         ORDER BY last_seen_at DESC
         LIMIT ${limit} OFFSET ${offset}
@@ -1454,14 +1632,7 @@ export class NeonJobsRepository implements JobsRepository {
       countRows = (await sql`
         SELECT COUNT(*)::int AS count FROM jobs
         WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
-          AND (
-            exp_class = 'senior'
-            OR geo_eligibility = 'restricted'
-            OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
-            OR status = 'skipped'
-            OR filter_reason IS NOT NULL
-            OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
-          )
+          AND (${maxAgeDays} > 0)
           AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
           AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
           AND (
@@ -1472,12 +1643,75 @@ export class NeonJobsRepository implements JobsRepository {
               SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
               WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
             )
+          )
+          AND (
+            CASE
+              WHEN ${reasonFilter} = 'senior_title' THEN
+                exp_class = 'senior' AND (COALESCE(filter_reason, '') LIKE 'title level:%' OR COALESCE(filter_reason, '') LIKE 'Excluded title%')
+              WHEN ${reasonFilter} = 'senior_desc' THEN
+                exp_class = 'senior' AND NOT (COALESCE(filter_reason, '') LIKE 'title level:%' OR COALESCE(filter_reason, '') LIKE 'Excluded title%')
+              WHEN ${reasonFilter} = 'onsite' THEN
+                (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+              WHEN ${reasonFilter} = 'restricted' THEN
+                geo_eligibility = 'restricted' AND NOT (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+              WHEN ${reasonFilter} = 'geo_unclear' THEN
+                geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%' AND NOT (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+              WHEN ${reasonFilter} = 'stale' THEN
+                COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
+              WHEN ${reasonFilter} = 'language' THEN
+                (COALESCE(filter_reason, '') LIKE 'description not in English%' OR COALESCE(filter_reason, '') LIKE 'Non-English%')
+              WHEN ${reasonFilter} = 'skipped' THEN
+                status = 'skipped'
+              WHEN ${reasonFilter} = 'low_relevance' THEN
+                (
+                  COALESCE(filter_reason, '') = 'Low relevance score'
+                  OR (
+                    filter_reason IS NOT NULL
+                    AND NOT (
+                      COALESCE(filter_reason, '') LIKE 'title level:%'
+                      OR COALESCE(filter_reason, '') LIKE 'Excluded title%'
+                      OR COALESCE(filter_reason, '') LIKE 'onsite:%'
+                      OR COALESCE(filter_reason, '') LIKE 'description not in English%'
+                      OR COALESCE(filter_reason, '') LIKE 'Non-English%'
+                    )
+                    AND exp_class != 'senior'
+                    AND geo_eligibility != 'restricted'
+                    AND NOT (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
+                  )
+                )
+              WHEN ${reasonFilter} = 'missing_desc' THEN
+                exp_class = 'unclear'
+                AND LOWER(COALESCE(source, '')) != 'linkedin'
+                AND (
+                  LENGTH(TRIM(COALESCE(description, ''))) < 80
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+                  OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+                )
+              ELSE
+                (
+                  (
+                    COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+                    AND (
+                      exp_class = 'senior'
+                      OR geo_eligibility = 'restricted'
+                      OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
+                      OR status = 'skipped'
+                      OR filter_reason IS NOT NULL
+                    )
+                  )
+                  OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
+                )
+            END
           )
       `) as Array<{ count?: number }>;
     } else {
       rows = (await sql`
         SELECT * FROM jobs
-        WHERE COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
           AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
           AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
           AND (
@@ -1495,7 +1729,8 @@ export class NeonJobsRepository implements JobsRepository {
 
       countRows = (await sql`
         SELECT COUNT(*)::int AS count FROM jobs
-        WHERE COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
           AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
           AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
           AND (
@@ -1515,9 +1750,18 @@ export class NeonJobsRepository implements JobsRepository {
     return { jobs: rows, total };
   }
 
+  /**
+   * Tab and View Counts Consistency Invariant:
+   * - All = every non-inbox job within the selected "Posted within" window (age <= maxAgeDays).
+   * - Shortlist, Maybe, and Hidden within the same window partition All completely:
+   *     Shortlist + Maybe + Hidden === All
+   * - Inbox is separate (only inbound jobs like telegram, whatsapp, pasted).
+   * - Historical / Stale jobs (older than maxAgeDays) are classified under Hidden's
+   *   "stale (older than window)" reason breakdown chip.
+   */
   async getViewCounts(
     maxAgeDays: number = MAX_AGE_DAYS_DEFAULT
-  ): Promise<{ shortlist: number; maybe: number; inbox: number; hidden: number; all: number }> {
+  ): Promise<ViewCounts> {
     const sql = this.resolveSql();
     try {
       const rows = await sql`
@@ -1571,17 +1815,94 @@ export class NeonJobsRepository implements JobsRepository {
           COUNT(*) FILTER (
             WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
               AND (
-                exp_class = 'senior'
-                OR geo_eligibility = 'restricted'
-                OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
-                OR status = 'skipped'
-                OR filter_reason IS NOT NULL
+                (
+                  COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+                  AND (
+                    exp_class = 'senior'
+                    OR geo_eligibility = 'restricted'
+                    OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
+                    OR status = 'skipped'
+                    OR filter_reason IS NOT NULL
+                  )
+                )
                 OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
               )
           )::int AS hidden,
           COUNT(*) FILTER (
-            WHERE COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
-          )::int AS all
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          )::int AS all,
+
+          -- Reason breakdown
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND exp_class = 'senior'
+              AND (COALESCE(filter_reason, '') LIKE 'title level:%' OR COALESCE(filter_reason, '') LIKE 'Excluded title%')
+          )::int AS senior_title,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND exp_class = 'senior'
+              AND NOT (COALESCE(filter_reason, '') LIKE 'title level:%' OR COALESCE(filter_reason, '') LIKE 'Excluded title%')
+          )::int AS senior_desc,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+          )::int AS onsite,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND geo_eligibility = 'restricted'
+              AND NOT (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+          )::int AS restricted,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND geo_eligibility = 'unclear'
+              AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%'
+              AND NOT (COALESCE(geo_reason, '') LIKE 'onsite:%' OR COALESCE(filter_reason, '') LIKE 'onsite:%')
+          )::int AS geo_unclear,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
+          )::int AS stale,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND (COALESCE(filter_reason, '') LIKE 'description not in English%' OR COALESCE(filter_reason, '') LIKE 'Non-English%')
+          )::int AS language,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND status = 'skipped'
+          )::int AS skipped,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND (
+                COALESCE(filter_reason, '') = 'Low relevance score'
+                OR (
+                  filter_reason IS NOT NULL
+                  AND NOT (
+                    COALESCE(filter_reason, '') LIKE 'title level:%'
+                    OR COALESCE(filter_reason, '') LIKE 'Excluded title%'
+                    OR COALESCE(filter_reason, '') LIKE 'onsite:%'
+                    OR COALESCE(filter_reason, '') LIKE 'description not in English%'
+                    OR COALESCE(filter_reason, '') LIKE 'Non-English%'
+                  )
+                  AND exp_class != 'senior'
+                  AND geo_eligibility != 'restricted'
+                  AND NOT (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
+                )
+              )
+          )::int AS low_relevance,
+          COUNT(*) FILTER (
+            WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+              AND exp_class = 'unclear'
+              AND LOWER(COALESCE(source, '')) != 'linkedin'
+              AND (
+                LENGTH(TRIM(COALESCE(description, ''))) < 80
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+              )
+          )::int AS missing_desc
         FROM jobs;
       `;
       return {
@@ -1590,9 +1911,39 @@ export class NeonJobsRepository implements JobsRepository {
         inbox: Number(rows[0]?.inbox || 0),
         hidden: Number(rows[0]?.hidden || 0),
         all: Number(rows[0]?.all || 0),
+        reasons: {
+          senior_title: Number(rows[0]?.senior_title || 0),
+          senior_desc: Number(rows[0]?.senior_desc || 0),
+          onsite: Number(rows[0]?.onsite || 0),
+          restricted: Number(rows[0]?.restricted || 0),
+          geo_unclear: Number(rows[0]?.geo_unclear || 0),
+          stale: Number(rows[0]?.stale || 0),
+          language: Number(rows[0]?.language || 0),
+          skipped: Number(rows[0]?.skipped || 0),
+          low_relevance: Number(rows[0]?.low_relevance || 0),
+          missing_desc: Number(rows[0]?.missing_desc || 0),
+        },
       };
     } catch {
-      return { shortlist: 0, maybe: 0, inbox: 0, hidden: 0, all: 0 };
+      return {
+        shortlist: 0,
+        maybe: 0,
+        inbox: 0,
+        hidden: 0,
+        all: 0,
+        reasons: {
+          senior_title: 0,
+          senior_desc: 0,
+          onsite: 0,
+          restricted: 0,
+          geo_unclear: 0,
+          stale: 0,
+          language: 0,
+          skipped: 0,
+          low_relevance: 0,
+          missing_desc: 0,
+        },
+      };
     }
   }
 
