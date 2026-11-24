@@ -1,9 +1,15 @@
 # Status: Portfolio site
 
-Current step: Fix LinkedIn Apify (async) + email alerts + stored errors on branch `fix/apify-async-and-alerts` (HEAD `e99ff40`, NOT pushed).
+Current step: Merged async Apify LinkedIn runner, email alerts (Naukri, Wellfound), and proof strip row alignment into `main`.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
-- LinkedIn Apify Async Runner & Rate Guard:
+- Proof strip row alignment (`fix/proof-strip-align`):
+  - In `src/styles/globals.css`, aligned value (.big), label (.what), and details summary ("How was this measured?") across all cards using subgrid (`grid-template-rows: subgrid; grid-row: span 3;`) at `>= 600px`.
+  - Added plain 2-line min-height fallback on `.big` and `.what` for browsers without subgrid support.
+  - Maintained single-column natural flex stacking without min-height padding on mobile (`< 600px`).
+  - Added `e2e/proof-strip.spec.ts` covering 5 viewports (375, 768, 1024, 1280, 1440 px), baseline matching, details expansion without row shifting, and light/dark axe scans.
+  - Verification: 184 vitest tests passed, 17 Playwright e2e tests passed (`proof-strip`, `seo`, `accessibility`), `check:flat`, `check:copy`, `check:numbers`, `lint`, `typecheck`, `build` all passed cleanly. Lighthouse on production build: Desktop P100/A100/BP100/SEO100, Mobile P83/A100/BP100/SEO100.
+- LinkedIn Apify Async Runner & Rate Guard (`fix/apify-async-and-alerts`):
   - Replaced synchronous `run-sync-get-dataset-items` with asynchronous `POST /v2/acts/{actor}/runs?maxTotalChargeUsd=0.25` using `Authorization: Bearer <token>` header.
   - Stored run metadata (`apifyRunId`, `apifyDatasetId`, `apifyStartedAt`, `apifyStatus`, `apifyCollected`, `apifyCount`, `apifyNote`) in `search_runs.stats`.
   - Added pending run check via `GET /v2/actor-runs/{id}` during `startJobSearch` and subsequent step calls; ingests dataset items when SUCCEEDED.
