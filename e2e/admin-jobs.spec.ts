@@ -333,4 +333,74 @@ test.describe("Admin Jobs Engine (J2)", () => {
     await expect(contactLink).toBeVisible();
     await expect(contactLink).toHaveAttribute("href", /example\.com\/in\/recruiter/);
   });
+
+  test("Hidden tab displays reason chips breakdown and clicking filters by reason", async ({
+    page,
+    context,
+  }) => {
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    await context.addCookies([
+      {
+        name: "__Host-admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+        secure: true,
+      },
+      {
+        name: "admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+      },
+    ]);
+
+    await page.goto("/admin");
+    await expect(page).toHaveURL(/\/admin$/);
+
+    // Switch to Hidden tab
+    const hiddenTabBtn = page.locator('button.filter-btn:has-text("Hidden")');
+    await expect(hiddenTabBtn).toBeVisible();
+    await hiddenTabBtn.click();
+    await page.waitForTimeout(300);
+
+    // Assert reason chips container is rendered
+    const chipsContainer = page.locator(".admin-reason-chips");
+    await expect(chipsContainer).toBeVisible();
+    await expect(chipsContainer).toHaveAttribute("aria-label", "Filter by hidden reason");
+
+    // Assert chips exist for expected reasons
+    const seniorTitleChip = chipsContainer.locator('button.reason-chip:has-text("Senior (title)")');
+    await expect(seniorTitleChip).toBeVisible();
+
+    const onsiteChip = chipsContainer.locator('button.reason-chip:has-text("Onsite")');
+    await expect(onsiteChip).toBeVisible();
+
+    // Click Senior (title) chip to toggle filter
+    await seniorTitleChip.click();
+    await expect(seniorTitleChip).toHaveClass(/active/);
+    await expect(seniorTitleChip).toHaveAttribute("aria-pressed", "true");
+
+    // Click again to unfilter
+    await seniorTitleChip.click();
+    await expect(seniorTitleChip).not.toHaveClass(/active/);
+    await expect(seniorTitleChip).toHaveAttribute("aria-pressed", "false");
+
+    // Check responsive at 375px: no horizontal scroll
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.waitForTimeout(300);
+    const noHorizontalScroll = await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    );
+    expect(noHorizontalScroll).toBe(true);
+
+    // Axe scan of Hidden tab with chips
+    const axeResults = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(axeResults.violations).toEqual([]);
+  });
 });
