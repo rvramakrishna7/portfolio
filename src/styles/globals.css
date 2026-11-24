@@ -529,6 +529,42 @@ main#main {
   background: var(--bg);
 }
 
+/* Side-by-side alignment: 3-row grid with fallback min-heights */
+@media (min-width: 600px) {
+  .stat {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    align-content: start;
+    gap: 8px;
+  }
+
+  .stat .big {
+    min-height: calc(2 * 1.1em);
+  }
+
+  .stat .what {
+    min-height: calc(2 * 1.35em);
+  }
+}
+
+/* Subgrid for browsers that support it: dynamic row alignment across cards */
+@supports (grid-template-rows: subgrid) {
+  @media (min-width: 600px) {
+    .stat {
+      grid-template-rows: subgrid;
+      grid-row: span 3;
+    }
+
+    .stat .big {
+      min-height: 0;
+    }
+
+    .stat .what {
+      min-height: 0;
+    }
+  }
+}
+
 .stat .big {
   font: 650 clamp(1.2rem, 0.9rem + 0.8vw, 1.85rem)/1.1 var(--sans);
   color: var(--accent);

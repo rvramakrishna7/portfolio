@@ -1,8 +1,14 @@
 # Status: Portfolio site
 
-Current step: Hotfix NULL inbound_source SQL predicate merged and pushed to `main` (HEAD `21e6c53`).
+Current step: Proof strip alignment on branch `fix/proof-strip-align` (NOT pushed).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Proof strip row alignment (`fix/proof-strip-align`):
+  - In `src/styles/globals.css`, aligned value (.big), label (.what), and details summary ("How was this measured?") across all cards using subgrid (`grid-template-rows: subgrid; grid-row: span 3;`) at `>= 600px`.
+  - Added plain 2-line min-height fallback on `.big` and `.what` for browsers without subgrid support.
+  - Maintained single-column natural flex stacking without min-height padding on mobile (`< 600px`).
+  - Added `e2e/proof-strip.spec.ts` covering 5 viewports (375, 768, 1024, 1280, 1440 px), baseline matching, details expansion without row shifting, and light/dark axe scans.
+  - Verification: 184 vitest tests passed, 17 Playwright e2e tests passed (`proof-strip`, `seo`, `accessibility`), `check:flat`, `check:copy`, `check:numbers`, `lint`, `typecheck`, `build` all passed cleanly. Lighthouse on production build: Desktop P100/A100/BP100/SEO100, Mobile P83/A100/BP100/SEO100.
 - Hotfix NULL `inbound_source` in Neon SQL queries:
   - In `src/lib/jobs/repository.ts`, wrapped `inbound_source` with `COALESCE(inbound_source, '')` across all shortlist, maybe, hidden, inbox, and reclassify SQL queries to prevent three-valued NULL logic from excluding non-inbound rows where `inbound_source` is NULL.
   - Added unit test in `src/lib/jobs/classify.test.ts` verifying `shortlist`, `maybe`, `hidden`, and `inbox` counts are > 0 when `inbound_source` is undefined/null.
