@@ -6,7 +6,18 @@ import {
   LLM_TIMEOUT_MS,
 } from "./types";
 
+function sanitizeErrorMessage(msg: string): string {
+  return msg
+    .replace(/gsk_[a-zA-Z0-9_-]+/gi, "[REDACTED]")
+    .replace(/Bearer\s+[a-zA-Z0-9._-]+/gi, "[REDACTED]")
+    .replace(/\b[a-zA-Z0-9_-]{32,}\b/g, "[REDACTED]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
 export class GroqProvider implements LlmProvider {
+  public lastError: string | null = null;
   private apiKey: string;
   private defaultModel: string;
   private fetchFn: typeof fetch;
@@ -25,7 +36,10 @@ export class GroqProvider implements LlmProvider {
     opts: LlmCompletionOpts,
     schema: z.ZodType<T>
   ): Promise<T | null> {
+    this.lastError = null;
+
     if (!this.apiKey) {
+      this.lastError = "no api key";
       return null;
     }
 
@@ -77,24 +91,59 @@ export class GroqProvider implements LlmProvider {
           ) {
             console.warn("Groq rate/quota limit reached. Discontinuing LLM triage for this run.");
           }
+
+          let errorText = errBody;
+          try {
+            const parsed = JSON.parse(errBody);
+            if (parsed?.error?.message) {
+              errorText = parsed.error.message;
+            } else if (parsed?.message) {
+              errorText = parsed.message;
+            }
+          } catch {
+            // Not JSON
+          }
+
+          const sanitized = sanitizeErrorMessage(errorText);
+          this.lastError = sanitized ? `http ${res.status}: ${sanitized}` : `http ${res.status}`;
           return null;
         }
 
         const data = await res.json();
         const contentStr = data?.choices?.[0]?.message?.content;
         if (!contentStr) {
+          this.lastError = "empty response";
           return null;
         }
 
-        const parsedJson = JSON.parse(contentStr);
+        let parsedJson: unknown;
+        try {
+          parsedJson = JSON.parse(contentStr);
+        } catch {
+          this.lastError = "invalid json";
+          return null;
+        }
+
         const validated = schema.safeParse(parsedJson);
         if (!validated.success) {
+          const firstIssue = validated.error.issues[0];
+          const issuePath = firstIssue
+            ? firstIssue.path.length > 0
+              ? firstIssue.path.join(".")
+              : firstIssue.message
+            : "unknown";
+          this.lastError = `schema: ${issuePath}`;
           return null;
         }
 
+        this.lastError = null;
         return validated.data;
-      } catch {
+      } catch (err: unknown) {
         clearTimeout(timeout);
+        const isTimeout =
+          (err instanceof Error && err.name === "AbortError") ||
+          controller.signal.aborted;
+        this.lastError = isTimeout ? "timeout" : "network error";
         if (attempt === 1) {
           continue;
         }
@@ -102,6 +151,9 @@ export class GroqProvider implements LlmProvider {
       }
     }
 
+    if (!this.lastError) {
+      this.lastError = "empty response";
+    }
     return null;
   }
 }

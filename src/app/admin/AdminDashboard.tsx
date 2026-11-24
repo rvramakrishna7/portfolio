@@ -158,6 +158,7 @@ export function AdminDashboard() {
   const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
   const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [outreachError, setOutreachError] = useState<string | null>(null);
   const [editingDrafts, setEditingDrafts] = useState<
     Record<string, { subject?: string; body: string }>
   >({});
@@ -542,6 +543,7 @@ export function AdminDashboard() {
 
   const handleDraftOutreach = async (jobId: string) => {
     setDraftingJobId(jobId);
+    setOutreachError(null);
     try {
       const res = await fetch("/api/admin/drafts", {
         method: "POST",
@@ -557,7 +559,9 @@ export function AdminDashboard() {
       setDraftFilter("all");
       await fetchDrafts("all", jobId);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setOutreachError(errMsg);
+      alert(errMsg);
     } finally {
       setDraftingJobId(null);
     }
@@ -973,6 +977,12 @@ export function AdminDashboard() {
                   </div>
                 )}
 
+                {outreachError && (
+                  <div className="admin-error-box" role="alert">
+                    <p><strong>Outreach error:</strong> {outreachError}</p>
+                  </div>
+                )}
+
                 {/* Loading state */}
                 {isLoading && (
                   <div className="admin-loading-indicator">
@@ -1315,6 +1325,12 @@ export function AdminDashboard() {
                     >
                       Show all jobs
                     </button>
+                  </div>
+                )}
+
+                {outreachError && (
+                  <div className="admin-error-box" role="alert" style={{ marginBottom: "16px" }}>
+                    <p style={{ margin: 0 }}><strong>Outreach error:</strong> {outreachError}</p>
                   </div>
                 )}
 

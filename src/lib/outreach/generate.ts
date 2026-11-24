@@ -239,6 +239,9 @@ export async function generateOutreachDrafts(
     "   - NEVER use em dash or en dash. Use hyphens or commas.",
     "   - NEVER invent any metrics, statistics, or claims not given in the candidate facts.",
     "   - DO NOT include email addresses or phone numbers in any draft.",
+    "",
+    "Respond with a single JSON object and nothing else, exactly in this shape:",
+    '{"email":{"subject":"...","body":"..."},"linkedin_note":{"body":"..."},"linkedin_dm":{"body":"..."}}',
   ].join("\n");
 
   const userPrompt = [
@@ -260,13 +263,16 @@ export async function generateOutreachDrafts(
       messages,
       model,
       temperature: 0.6,
-      maxTokens: 900,
+      maxTokens: 1400,
     },
     OutreachLlmSchema
   );
 
   if (!completion) {
-    throw new Error("LLM failed to produce a valid response for outreach drafts.");
+    const reason = provider.lastError || "unknown error";
+    const msg = `LLM call failed (${reason})`;
+    console.warn(msg);
+    throw new Error(msg);
   }
 
   const validationErrors = validateOutreachDrafts(completion);
@@ -290,13 +296,16 @@ export async function generateOutreachDrafts(
         messages: retryMessages,
         model,
         temperature: 0.6,
-        maxTokens: 900,
+        maxTokens: 1400,
       },
       OutreachLlmSchema
     );
 
     if (!retryCompletion) {
-      throw new Error(`Outreach generation retry failed: ${validationErrors.join("; ")}`);
+      const reason = provider.lastError || "unknown error";
+      const msg = `LLM call failed (${reason})`;
+      console.warn(msg);
+      throw new Error(msg);
     }
 
     const secondErrors = validateOutreachDrafts(retryCompletion);
