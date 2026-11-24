@@ -1,8 +1,14 @@
 # Status: Portfolio site
 
-Current step: Fix Apify LinkedIn input schema and real output mapping (`fix/apify-input`).
+Current step: Footer line removal and clearer IMAP error handling (`fix/footer-and-imap-error`).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Footer line removal & IMAP error formatting (`fix/footer-and-imap-error`):
+  - Removed "Built with Next.js and plain CSS." from public footer (`src/components/Footer.tsx`). Footer now displays `© {year} Ramakrishna.`.
+  - Updated `e2e/shell.spec.ts` to assert `Ramakrishna.` and verify absence of the removed stack sentence, including screenshot capture at 375 and 1440.
+  - Updated `docs/content.md` and `docs/content-v2.md` line 152 to match the updated footer copy.
+  - Implemented `formatImapError` and `sanitizeImapText` in `src/lib/inbound/imap.ts` providing sanitized error summaries (`authenticationFailed`, `ETIMEDOUT`, command failure with `responseText` and status) without leaking user email, password, or URLs with credentials.
+  - Added unit tests for IMAP error formatting, timeout handling, command error formatting, and secret masking in `src/lib/inbound/imap.test.ts`.
 - Apify LinkedIn Actor Schema & Output Mapping Fixes (`fix/apify-input`):
   - Updated actor default to `automly~linkedin-jobs-scraper`.
   - Implemented `buildApifyLinkedInInput` adhering strictly to actor's verified input schema (`keywords`, `location`, `workplaceType`, `experienceLevel`, `timePosted`, `sortBy`, `maxResults`, `fetchDetails`, `scrapeCompany`, `proxyConfiguration`).

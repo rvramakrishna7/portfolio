@@ -228,7 +228,10 @@ test.describe("Shell and design system (S1)", () => {
     );
     await expect(
       page.locator("footer.site-footer")
-    ).toContainText("Ramakrishna. Built with Next.js and plain CSS.");
+    ).toContainText("Ramakrishna.");
+    await expect(
+      page.locator("footer.site-footer")
+    ).not.toContainText("Built with Next.js and plain CSS.");
     await expect(page.locator(".progress")).toBeHidden();
 
     await page.goto("/nope");
@@ -237,5 +240,37 @@ test.describe("Shell and design system (S1)", () => {
     );
 
     await context.close();
+  });
+
+  test("footer renders clean copy without removed stack sentence at 375 and 1440", async ({
+    page,
+  }) => {
+    const year = new Date().getFullYear();
+    for (const width of [375, 1440]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      const footer = page.locator("footer.site-footer");
+      await expect(footer).toBeVisible();
+
+      const copyrightText = await footer.locator("span").first().innerText();
+      expect(copyrightText.trim()).toBe(`© ${year} Ramakrishna.`);
+      expect(copyrightText).not.toContain("Built with Next.js and plain CSS.");
+      expect(copyrightText).not.toContain("  ");
+      expect(copyrightText).not.toContain("..");
+
+      const footerText = await footer.innerText();
+      expect(footerText).not.toContain("Built with Next.js and plain CSS.");
+      expect(footerText).not.toContain("  ");
+      expect(footerText).not.toContain("..");
+
+      await footer.screenshot({
+        path: path.join(
+          process.cwd(),
+          "e2e",
+          "screenshots",
+          `footer-${width}.png`
+        ),
+      });
+    }
   });
 });
