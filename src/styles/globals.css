@@ -2801,3 +2801,204 @@ dialog.palette::backdrop {
   color: var(--muted);
 }
 
+/* Outreach Review Queue & Drafts Styles (Bundle B1) */
+.admin-notice-banner {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 16px;
+  font: 500 0.85rem var(--sans);
+  color: var(--text);
+  margin-bottom: 20px;
+}
+
+.admin-drafts-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.admin-draft-group {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.admin-draft-group-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.admin-draft-job-title {
+  margin: 0;
+  font: 600 1.05rem var(--sans);
+  color: var(--text);
+}
+
+.admin-draft-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font: 400 0.85rem var(--sans);
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.admin-draft-job-meta a {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.admin-drafts-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.admin-draft-card {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-draft-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-draft-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-kind {
+  font: 600 0.75rem var(--mono);
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.badge-status {
+  font: 500 0.75rem var(--sans);
+  text-transform: capitalize;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.badge-status.draft {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.badge-status.approved {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+
+.badge-status.discarded {
+  background: var(--bg);
+  color: var(--muted);
+  text-decoration: line-through;
+  border: 1px solid var(--line);
+}
+
+.badge-edited {
+  font: 500 0.7rem var(--mono);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.admin-draft-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-draft-field label {
+  font: 600 0.75rem var(--mono);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.admin-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font: 400 0.88rem/1.5 var(--sans);
+  color: var(--text);
+  resize: vertical;
+}
+
+.admin-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.admin-counter {
+  font: 400 0.75rem var(--mono);
+  color: var(--muted);
+  text-align: right;
+  margin-top: 2px;
+}
+
+.admin-counter.warn {
+  color: #e11d48;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .admin-counter.warn {
+  color: #fb7185;
+}
+
+.admin-draft-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.admin-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 18px;
+  font: 500 0.85rem var(--sans);
+  color: var(--text);
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+
