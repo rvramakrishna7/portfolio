@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  fetchLinkedInApify,
   parseApifyLinkedInItems,
+  startApifyLinkedInRun,
+  checkApifyRunStatus,
+  fetchApifyDatasetItems,
+  canStartNewApifyRun,
+  sanitizeErrorMessage,
 } from "./linkedin-apify";
 
 describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () => {
@@ -19,8 +23,8 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
   });
 
   it("fails open when APIFY_API_TOKEN is missing", async () => {
-    const res = await fetchLinkedInApify();
-    expect(res.jobs).toEqual([]);
+    const res = await startApifyLinkedInRun();
+    expect(res.started).toBe(false);
     expect(res.error).toBe("apify not configured");
   });
 
@@ -68,53 +72,138 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
     expect(jobs[0].source).toBe("linkedin");
   });
 
-  it("fetches dataset items from Apify endpoint with proper parameters", async () => {
+  it("starts asynchronous Apify run with Authorization Bearer and maxTotalChargeUsd guard", async () => {
     process.env.APIFY_API_TOKEN = "test_token_123";
     process.env.APIFY_LINKEDIN_ACTOR_ID = "custom-actor/linkedin";
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        data: {
+          id: "run-xyz-123",
+          defaultDatasetId: "dataset-abc-789",
+          status: "RUNNING",
+        },
+      }),
+    });
+
+    const res = await startApifyLinkedInRun({ fetchFn: mockFetch });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const callUrl = mockFetch.mock.calls[0][0];
+    expect(callUrl).toContain("https://api.apify.com/v2/acts/custom-actor%2Flinkedin/runs");
+    expect(callUrl).toContain("maxTotalChargeUsd=0.25");
+    expect(callUrl).not.toContain("token=");
+
+    const callOpts = mockFetch.mock.calls[0][1];
+    expect(callOpts.method).toBe("POST");
+    expect(callOpts.headers.Authorization).toBe("Bearer test_token_123");
+
+    const body = JSON.parse(callOpts.body);
+    expect(body.limit).toBe(25);
+    expect(body.postedWithin).toBe("3d");
+
+    expect(res.started).toBe(true);
+    expect(res.apifyRunId).toBe("run-xyz-123");
+    expect(res.apifyDatasetId).toBe("dataset-abc-789");
+    expect(res.status).toBe("RUNNING");
+  });
+
+  it("checks Apify actor run status (pending, succeeded, failed)", async () => {
+    process.env.APIFY_API_TOKEN = "test_token_123";
+
+    // 1. Pending run
+    const mockRunningFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: { id: "run-1", status: "RUNNING" },
+      }),
+    });
+    const runRes = await checkApifyRunStatus("run-1", { fetchFn: mockRunningFetch });
+    expect(runRes.status).toBe("RUNNING");
+
+    // 2. Succeeded run
+    const mockSuccessFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: { id: "run-1", status: "SUCCEEDED", defaultDatasetId: "ds-1" },
+      }),
+    });
+    const successRes = await checkApifyRunStatus("run-1", { fetchFn: mockSuccessFetch });
+    expect(successRes.status).toBe("SUCCEEDED");
+    expect(successRes.defaultDatasetId).toBe("ds-1");
+
+    // 3. Failed run
+    const mockFailedFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: { id: "run-1", status: "TIMED-OUT" },
+      }),
+    });
+    const failedRes = await checkApifyRunStatus("run-1", { fetchFn: mockFailedFetch });
+    expect(failedRes.status).toBe("TIMED-OUT");
+  });
+
+  it("fetches dataset items from Apify dataset (limit 200)", async () => {
+    process.env.APIFY_API_TOKEN = "test_token_123";
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => [
         {
-          id: "2001",
-          title: "Python Developer",
-          company: "FastAPI Co",
-          url: "https://linkedin.com/jobs/view/2001",
-          description: "Python and backend role",
+          id: "li-1",
+          title: "Junior Backend Developer",
+          company: "Acme Corp",
+          url: "https://linkedin.com/jobs/view/1",
+          description: "Junior role",
         },
       ],
     });
 
-    const res = await fetchLinkedInApify({ fetchFn: mockFetch });
-
+    const res = await fetchApifyDatasetItems("ds-1", { limit: 200, fetchFn: mockFetch });
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const callUrl = mockFetch.mock.calls[0][0];
-    expect(callUrl).toContain("https://api.apify.com/v2/acts/custom-actor%2Flinkedin/run-sync-get-dataset-items");
-    expect(callUrl).toContain("token=test_token_123");
-
-    const callOpts = mockFetch.mock.calls[0][1];
-    expect(callOpts.method).toBe("POST");
-    const body = JSON.parse(callOpts.body);
-    expect(body.limit).toBe(25);
-    expect(body.postedWithin).toBe("3d");
-
+    expect(mockFetch.mock.calls[0][0]).toContain("/datasets/ds-1/items?limit=200");
     expect(res.jobs).toHaveLength(1);
-    expect(res.jobs[0].title).toBe("Python Developer");
-    expect(res.error).toBeUndefined();
+    expect(res.jobs[0].title).toBe("Junior Backend Developer");
   });
 
-  it("handles Apify API HTTP errors gracefully", async () => {
-    process.env.APIFY_API_TOKEN = "test_token_123";
+  it("enforces the 20-hour rate limit and cost guard (canStartNewApifyRun)", () => {
+    const now = 1700000000000;
+    const clock = () => now;
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 402,
-      statusText: "Payment Required",
-    });
+    // No past runs -> allowed
+    expect(canStartNewApifyRun([], clock).allowed).toBe(true);
 
-    const res = await fetchLinkedInApify({ fetchFn: mockFetch });
-    expect(res.jobs).toEqual([]);
-    expect(res.error).toBe("Apify returned HTTP 402");
+    // Run was 22 hours ago -> allowed
+    const twentyTwoHoursAgo = new Date(now - 22 * 60 * 60 * 1000).toISOString();
+    const oldRun = [{ stats: { apifyStartedAt: twentyTwoHoursAgo } }];
+    expect(canStartNewApifyRun(oldRun, clock).allowed).toBe(true);
+
+    // Run was 5 hours ago -> refused
+    const fiveHoursAgo = new Date(now - 5 * 60 * 60 * 1000).toISOString();
+    const recentRun = [{ stats: { apifyStartedAt: fiveHoursAgo } }];
+    const recentGuard = canStartNewApifyRun(recentRun, clock);
+    expect(recentGuard.allowed).toBe(false);
+    expect(recentGuard.reason).toContain("minimum interval is 20h");
+
+    // Multiple runs in 20 hours -> refused
+    const twoHoursAgo = new Date(now - 2 * 60 * 60 * 1000).toISOString();
+    const multiRuns = [
+      { stats: { apifyStartedAt: twoHoursAgo } },
+      { stats: { apifyStartedAt: fiveHoursAgo } },
+    ];
+    expect(canStartNewApifyRun(multiRuns, clock).allowed).toBe(false);
+  });
+
+  it("sanitizes error messages by stripping URLs with query tokens", () => {
+    const rawError = "Request failed to https://api.apify.com/v2/acts/foo/runs?token=secret_token_123456789";
+    const sanitized = sanitizeErrorMessage(rawError);
+    expect(sanitized).not.toContain("secret_token");
+    expect(sanitized).toBe("Request failed to https://api.apify.com/v2/acts/foo/runs");
   });
 });

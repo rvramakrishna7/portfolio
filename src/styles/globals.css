@@ -2189,6 +2189,11 @@ dialog.palette::backdrop {
   margin-bottom: 20px;
 }
 
+.admin-source-issues {
+  color: var(--amber, #f59e0b);
+  font-weight: 500;
+}
+
 .admin-filter-bar {
   display: flex;
   flex-wrap: wrap;

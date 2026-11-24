@@ -7,8 +7,14 @@ import { fetchGreenhouseBoard } from "./sources/greenhouse";
 import { fetchLeverBoard } from "./sources/lever";
 import { fetchAshbyBoard } from "./sources/ashby";
 import { fetchHackerNews } from "./sources/hn";
-import { fetchLinkedInApify } from "./sources/linkedin-apify";
-import { ingestGmailAlerts } from "../inbound/imap";
+import {
+  startApifyLinkedInRun,
+  checkApifyRunStatus,
+  fetchApifyDatasetItems,
+  canStartNewApifyRun,
+  sanitizeErrorMessage,
+} from "./sources/linkedin-apify";
+import { ingestGmailAlerts, ImapIngestionResult } from "../inbound/imap";
 import { VERIFIED_COMPANY_BOARDS } from "../../config/company-boards";
 import {
   classifyExperience,
@@ -21,7 +27,7 @@ import {
 import { LlmProvider } from "../llm/types";
 import { GroqProvider } from "../llm/groq";
 import { triageJobWithLlm, hashString, TriagedJobResult } from "../llm/triage";
-import { getJobsRepository, JobsRepository, SearchRunStats, CustomBoard } from "./repository";
+import { getJobsRepository, JobsRepository, SearchRunStats, CustomBoard, SearchRun, SourceStatusInfo } from "./repository";
 
 export interface BoardQueueItem {
   platform: "greenhouse" | "lever" | "ashby";
@@ -99,7 +105,10 @@ export async function startJobSearch(
     boardQueue?: BoardQueueItem[];
     fetchAggregatorsFn?: () => Promise<{ jobs: NormalizedJob[]; errors?: Record<string, string> }>;
     fetchLinkedInFn?: () => Promise<AdapterResult>;
-    ingestImapFn?: () => Promise<{ fetched: number; added: number; duplicates?: number; filtered?: number; error?: string }>;
+    startApifyRunFn?: typeof startApifyLinkedInRun;
+    checkApifyStatusFn?: typeof checkApifyRunStatus;
+    fetchApifyItemsFn?: typeof fetchApifyDatasetItems;
+    ingestImapFn?: () => Promise<ImapIngestionResult>;
   }
 ): Promise<{
   runId: string;
@@ -184,19 +193,105 @@ export async function startJobSearch(
     ];
   }
 
-  // 1b. Fetch LinkedIn and Gmail IMAP in parallel
-  const [linkedInRes, imapRes] = await Promise.all([
-    options?.fetchLinkedInFn ? options.fetchLinkedInFn() : fetchLinkedInApify(),
-    options?.ingestImapFn ? options.ingestImapFn() : ingestGmailAlerts({ repo }),
-  ]);
+  // 1b. Handle LinkedIn Apify asynchronously and Gmail IMAP in parallel
+  const recentRuns = typeof repo.getLastSearchRuns === "function" ? await repo.getLastSearchRuns(20) : [];
 
-  sourceCounts.linkedin = linkedInRes.jobs.length;
+  let pendingApifyRun: SearchRun | null = null;
+  for (const r of recentRuns) {
+    if (
+      r.stats?.apifyRunId &&
+      !r.stats.apifyCollected &&
+      (r.stats.apifyStatus === "RUNNING" || r.stats.apifyStatus === "READY")
+    ) {
+      pendingApifyRun = r;
+      break;
+    }
+  }
+
+  const checkStatusFn = options?.checkApifyStatusFn ?? checkApifyRunStatus;
+  const fetchItemsFn = options?.fetchApifyItemsFn ?? fetchApifyDatasetItems;
+  const startRunFn = options?.startApifyRunFn ?? startApifyLinkedInRun;
+
+  let apifyRunId: string | undefined;
+  let apifyDatasetId: string | undefined;
+  let apifyStartedAt: string | undefined;
+  let apifyStatus: string | undefined;
+  let apifyCollected: boolean | undefined;
+  let apifyCount: number | undefined;
+  let apifyNote: string | undefined;
+  let apifyError: string | undefined;
+
+  const apifyPromise = (async (): Promise<NormalizedJob[]> => {
+    if (pendingApifyRun && pendingApifyRun.stats?.apifyRunId) {
+      apifyRunId = pendingApifyRun.stats.apifyRunId;
+      apifyDatasetId = pendingApifyRun.stats.apifyDatasetId;
+      apifyStartedAt = pendingApifyRun.stats.apifyStartedAt;
+
+      const statusRes = await checkStatusFn(apifyRunId);
+      if (statusRes.status === "SUCCEEDED" && apifyDatasetId) {
+        const itemsRes = await fetchItemsFn(apifyDatasetId, { limit: 200 });
+        apifyStatus = "SUCCEEDED";
+        apifyCollected = true;
+        apifyCount = itemsRes.jobs.length;
+        sourceCounts.linkedin = itemsRes.jobs.length;
+        if (itemsRes.error) apifyError = sanitizeErrorMessage(itemsRes.error);
+        return itemsRes.jobs;
+      } else if (statusRes.status === "RUNNING" || statusRes.status === "READY") {
+        apifyStatus = "RUNNING";
+        apifyNote = "apify run pending";
+        sourceCounts.linkedin = 0;
+        return [];
+      } else {
+        apifyStatus = statusRes.status;
+        apifyError = `Apify run ${statusRes.status}`;
+        sourceCounts.linkedin = 0;
+        return [];
+      }
+    } else {
+      const guard = canStartNewApifyRun(recentRuns);
+      if (!guard.allowed) {
+        apifyStatus = "SKIPPED";
+        apifyNote = guard.reason;
+        sourceCounts.linkedin = 0;
+        return [];
+      } else {
+        if (options?.fetchLinkedInFn) {
+          const liRes = await options.fetchLinkedInFn();
+          sourceCounts.linkedin = liRes.jobs.length;
+          if (liRes.error) apifyError = sanitizeErrorMessage(liRes.error);
+          return liRes.jobs;
+        } else {
+          const startRes = await startRunFn();
+          if (startRes.started && startRes.apifyRunId && startRes.apifyDatasetId) {
+            apifyRunId = startRes.apifyRunId;
+            apifyDatasetId = startRes.apifyDatasetId;
+            apifyStartedAt = startRes.startedAt;
+            apifyStatus = "RUNNING";
+            apifyNote = "apify run pending";
+            sourceCounts.linkedin = 0;
+            return [];
+          } else {
+            apifyStatus = startRes.error === "apify not configured" ? "SKIPPED" : "FAILED";
+            apifyError = startRes.error ? sanitizeErrorMessage(startRes.error) : undefined;
+            sourceCounts.linkedin = 0;
+            return [];
+          }
+        }
+      }
+    }
+  })();
+
+  const imapPromise = options?.ingestImapFn
+    ? options.ingestImapFn()
+    : ingestGmailAlerts({ repo });
+
+  const [linkedInJobs, imapRes] = await Promise.all([apifyPromise, imapPromise]);
+
   sourceCounts.email = imapRes.added + (imapRes.duplicates || 0);
+  if (imapRes.error) sourceErrors.email = sanitizeErrorMessage(imapRes.error);
+  if (apifyError) sourceErrors.linkedin = apifyError;
 
-  if (linkedInRes.error) sourceErrors.linkedin = linkedInRes.error;
-  if (imapRes.error) sourceErrors.email = imapRes.error;
-
-  rawJobs.push(...linkedInRes.jobs);
+  rawJobs.push(...linkedInJobs);
 
   // 2. Dedupe by URL and normalized (company + title)
   const dedupedJobs: NormalizedJob[] = [];
@@ -252,6 +347,65 @@ export async function startJobSearch(
   const boardQueue = options?.boardQueue ? [...options.boardQueue] : getAllCompanyBoardsQueue(customBoards);
   const boardsTotal = boardQueue.length;
 
+  const emailNote = imapRes.error
+    ? sanitizeErrorMessage(imapRes.error)
+    : `${imapRes.seen ?? 0} seen, ${sourceCounts.email} job alerts`;
+
+  const sourcesStatus: Record<string, SourceStatusInfo> = {
+    remoteok: {
+      status: sourceErrors.remoteok ? "error" : "ok",
+      count: sourceCounts.remoteok,
+      error: sourceErrors.remoteok ? sanitizeErrorMessage(sourceErrors.remoteok) : undefined,
+    },
+    jobicy: {
+      status: sourceErrors.jobicy ? "error" : "ok",
+      count: sourceCounts.jobicy,
+      error: sourceErrors.jobicy ? sanitizeErrorMessage(sourceErrors.jobicy) : undefined,
+    },
+    arbeitnow: {
+      status: sourceErrors.arbeitnow ? "error" : "ok",
+      count: sourceCounts.arbeitnow,
+      error: sourceErrors.arbeitnow ? sanitizeErrorMessage(sourceErrors.arbeitnow) : undefined,
+    },
+    weworkremotely: {
+      status: sourceErrors.weworkremotely ? "error" : "ok",
+      count: sourceCounts.weworkremotely,
+      error: sourceErrors.weworkremotely ? sanitizeErrorMessage(sourceErrors.weworkremotely) : undefined,
+    },
+    hn: {
+      status: sourceErrors.hn ? "error" : "ok",
+      count: sourceCounts.hn,
+      error: sourceErrors.hn ? sanitizeErrorMessage(sourceErrors.hn) : undefined,
+    },
+    linkedin: {
+      status: apifyError
+        ? "error"
+        : apifyStatus === "RUNNING"
+        ? "pending"
+        : apifyStatus === "SKIPPED"
+        ? "skipped"
+        : "ok",
+      count: sourceCounts.linkedin,
+      error: apifyError,
+      note: apifyNote,
+      collected: apifyCollected,
+    },
+    email: {
+      status: imapRes.error
+        ? imapRes.error === "imap not configured"
+          ? "skipped"
+          : "error"
+        : "ok",
+      count: sourceCounts.email,
+      error: imapRes.error ? sanitizeErrorMessage(imapRes.error) : undefined,
+      note: emailNote,
+      seen: imapRes.seen ?? 0,
+      fromKnownSender: imapRes.fromKnownSender ?? 0,
+      fromFallbackSubject: imapRes.fromFallbackSubject ?? 0,
+      parsedJobs: imapRes.parsedJobs ?? 0,
+    },
+  };
+
   const stats: SearchRunStats = {
     llmCalls: 0,
     llmErrors: 0,
@@ -264,6 +418,15 @@ export async function startJobSearch(
     boardsTotal,
     boardsDone: 0,
     boardErrors: {},
+    apifyRunId,
+    apifyDatasetId,
+    apifyStartedAt,
+    apifyStatus,
+    apifyCollected,
+    apifyCount,
+    apifyNote,
+    apifyError,
+    sources: sourcesStatus,
   };
 
   activePipelines.set(runId, {
@@ -302,6 +465,8 @@ export async function stepJobSearch(
     maxDurationMs?: number;
     clock?: () => number;
     fetchBoardFn?: (board: BoardQueueItem) => Promise<AdapterResult>;
+    checkApifyStatusFn?: typeof checkApifyRunStatus;
+    fetchApifyItemsFn?: typeof fetchApifyDatasetItems;
   }
 ): Promise<{
   runId: string;
@@ -373,6 +538,80 @@ export async function stepJobSearch(
   const deadline = startTime + maxDurationMs;
 
   let processedCount = 0;
+
+  // PHASE 0: Check if an active Apify LinkedIn run has completed
+  if (state.stats.apifyRunId && state.stats.apifyStatus === "RUNNING" && !state.stats.apifyCollected) {
+    try {
+      const checkFn = options?.checkApifyStatusFn ?? checkApifyRunStatus;
+      const fetchItemsFn = options?.fetchApifyItemsFn ?? fetchApifyDatasetItems;
+      const statusRes = await checkFn(state.stats.apifyRunId);
+      if (statusRes.status === "SUCCEEDED" && state.stats.apifyDatasetId) {
+        const itemsRes = await fetchItemsFn(state.stats.apifyDatasetId, { limit: 200 });
+        for (const job of itemsRes.jobs) {
+          const ruleExp = classifyExperience(job.title, job.description);
+          const ruleGeo = classifyGeo(job.title, job.location, job.remoteScope, job.description, {
+            isRemote: job.isRemote,
+            workplaceType: job.workplaceType,
+          });
+          const ruleScore = scoreMatch({
+            title: job.title,
+            description: job.description,
+            tags: job.tags,
+            expClass: ruleExp.expClass,
+            geoEligibility: ruleGeo.geo,
+          });
+
+          if (ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear") {
+            state.pendingJobs.push({ job, ruleExp, ruleGeo, ruleScore });
+          } else {
+            const isFiltered = ruleExp.expClass === "senior" || ruleGeo.geo === "restricted" || ruleScore.score < 25;
+            const filterReason = isFiltered
+              ? (ruleExp.expClass === "senior" ? ruleExp.reason || "Senior experience required" : ruleGeo.geo === "restricted" ? ruleGeo.reason || "Geographically restricted" : "Low relevance score")
+              : undefined;
+            const triaged: TriagedJobResult = {
+              expClass: ruleExp.expClass,
+              expMinYears: ruleExp.minYears,
+              geoEligibility: ruleGeo.geo,
+              geoReason: ruleGeo.reason,
+              summaryLine: `${job.title} at ${job.company}`,
+              skills: [],
+              filterReason,
+              matchScore: ruleScore.score,
+            };
+            await repo.upsertJob(job, triaged);
+            if (isFiltered) {
+              state.filteredOutCount++;
+              state.stats.hiddenCount++;
+            } else {
+              state.newJobsCount++;
+              state.stats.shortlistCount++;
+            }
+          }
+        }
+        state.sourceCounts.linkedin = (state.sourceCounts.linkedin || 0) + itemsRes.jobs.length;
+        state.stats.apifyStatus = "SUCCEEDED";
+        state.stats.apifyCollected = true;
+        state.stats.apifyCount = itemsRes.jobs.length;
+        state.stats.sources = state.stats.sources || {};
+        state.stats.sources.linkedin = {
+          status: "ok",
+          count: itemsRes.jobs.length,
+          collected: true,
+        };
+      } else if (statusRes.status !== "RUNNING" && statusRes.status !== "READY") {
+        state.stats.apifyStatus = statusRes.status;
+        state.stats.apifyError = `Apify run ${statusRes.status}`;
+        state.stats.sources = state.stats.sources || {};
+        state.stats.sources.linkedin = {
+          status: "error",
+          count: 0,
+          error: `Apify run ${statusRes.status}`,
+        };
+      }
+    } catch {
+      // Leave pending on error
+    }
+  }
 
   // PHASE 1: Process next batch of company boards while budget permits
   // Keep max 3 concurrent boards, and respect Lever 1 req/s
@@ -568,6 +807,20 @@ export async function stepJobSearch(
   const remainingBoards = state.boardQueue.length;
   const pendingTriage = state.pendingJobs.length;
   const isDone = remainingBoards === 0 && pendingTriage === 0;
+
+  state.stats.sources = state.stats.sources || {};
+  state.stats.sources.greenhouse = {
+    status: "ok",
+    count: state.sourceCounts.greenhouse || 0,
+  };
+  state.stats.sources.lever = {
+    status: "ok",
+    count: state.sourceCounts.lever || 0,
+  };
+  state.stats.sources.ashby = {
+    status: "ok",
+    count: state.sourceCounts.ashby || 0,
+  };
 
   if (isDone) {
     await repo.updateSearchRun(runId, {

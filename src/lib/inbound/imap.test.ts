@@ -32,8 +32,51 @@ describe("IMAP Alert Ingestion (src/lib/inbound/imap.ts)", () => {
 
   it("identifies known alert senders from config/alert-senders.ts", () => {
     expect(isKnownAlertSender("jobalerts-noreply@linkedin.com", "Software Engineer Jobs")).toBe(true);
+    expect(isKnownAlertSender("jobs-listings@sub.linkedin.com", "New roles matching your alert")).toBe(true);
+    expect(isKnownAlertSender("recommendations@naukrimail.com", "Handpicked New Jobs for you")).toBe(true);
+    expect(isKnownAlertSender("alerts@naukri.com", "Job recommendations")).toBe(true);
+    expect(isKnownAlertSender("talent@wellfound.com", "Matches for Junior Developer")).toBe(true);
+    expect(isKnownAlertSender("matches@sub.angel.co", "Startup Jobs")).toBe(true);
     expect(isKnownAlertSender("alert@indeed.com", "New Python Jobs")).toBe(true);
     expect(isKnownAlertSender("spam@randomsite.com", "Hello friend")).toBe(false);
+  });
+
+  it("parses Naukri newsletter fixture, extracts multiple jobs, and resolves tracking redirects without network calls", async () => {
+    const fixturePath = join(process.cwd(), "test/fixtures/emails/naukri-newsletter.eml");
+    const rawContent = readFileSync(fixturePath, "utf-8");
+    const parsed = await simpleParser(rawContent);
+
+    const res = await parseEmailContent(parsed, repo);
+    expect(res.added).toBe(2);
+
+    const jobs = await repo.getJobs({ view: "all" });
+    expect(jobs.jobs).toHaveLength(2);
+
+    // Verify tracking redirect was resolved by reading href only (no tracking params or mailclick host)
+    const job1 = jobs.jobs.find((j) => j.title === "Software Engineer Intern");
+    expect(job1).toBeDefined();
+    expect(job1?.company).toBe("Tata Consultancy Services");
+    expect(job1?.url).toBe("https://www.naukri.com/job-listings-software-engineer-intern-1001");
+
+    const job2 = jobs.jobs.find((j) => j.title === "Junior Backend Developer");
+    expect(job2).toBeDefined();
+    expect(job2?.company).toBe("Infosys");
+    expect(job2?.url).toBe("https://www.naukri.com/job-listings-junior-backend-developer-1002");
+  });
+
+  it("parses Wellfound digest fixture and extracts startup jobs", async () => {
+    const fixturePath = join(process.cwd(), "test/fixtures/emails/wellfound-digest.eml");
+    const rawContent = readFileSync(fixturePath, "utf-8");
+    const parsed = await simpleParser(rawContent);
+
+    const res = await parseEmailContent(parsed, repo);
+    expect(res.added).toBe(2);
+
+    const jobs = await repo.getJobs({ view: "all" });
+    const wfJob = jobs.jobs.find((j) => j.title === "Junior Full Stack Engineer");
+    expect(wfJob).toBeDefined();
+    expect(wfJob?.company).toBe("SuperSeed AI");
+    expect(wfJob?.url).toBe("https://wellfound.com/jobs/888777-junior-full-stack-engineer");
   });
 
   it("parses LinkedIn alert email fixture and ingests job candidate", async () => {
@@ -108,6 +151,10 @@ describe("IMAP Alert Ingestion (src/lib/inbound/imap.ts)", () => {
     expect(mockLogout).toHaveBeenCalledTimes(1);
 
     expect(res.fetched).toBe(2);
+    expect(res.seen).toBe(2);
+    expect(res.fromKnownSender).toBe(2);
+    expect(res.fromFallbackSubject).toBe(0);
+    expect(res.parsedJobs).toBe(2);
     expect(res.added).toBe(1); // 1 added, 1 duplicate because same fixture was downloaded twice
     expect(res.duplicates).toBe(1);
   });

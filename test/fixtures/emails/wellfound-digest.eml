@@ -1,0 +1,30 @@
+From: "Wellfound Matches" <matches@wellfound.com>
+To: <candidate@example.com>
+Subject: 2 New Startup Job Matches
+Date: Mon, 23 Nov 2026 10:00:00 +0000
+Content-Type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html>
+<body>
+  <h2>Your Top Startup Matches</h2>
+  <div class="job-listing">
+    <table>
+      <tr>
+        <td>
+          <a href="https://wellfound.com/jobs/888777-junior-full-stack-engineer">Junior Full Stack Engineer</a>
+          <p>SuperSeed AI</p>
+          <span>Remote (Worldwide)</span>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <a href="https://wellfound.com/jobs/888778-frontend-developer">Frontend Developer</a>
+          <p>CloudScale</p>
+          <span>India (Remote)</span>
+        </td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>

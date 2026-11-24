@@ -1,8 +1,24 @@
 # Status: Portfolio site
 
-Current step: Hotfix NULL inbound_source SQL predicate merged and pushed to `main` (HEAD `21e6c53`).
+Current step: Fix LinkedIn Apify (async) + email alerts + stored errors on branch `fix/apify-async-and-alerts` (HEAD `e99ff40`, NOT pushed).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- LinkedIn Apify Async Runner & Rate Guard:
+  - Replaced synchronous `run-sync-get-dataset-items` with asynchronous `POST /v2/acts/{actor}/runs?maxTotalChargeUsd=0.25` using `Authorization: Bearer <token>` header.
+  - Stored run metadata (`apifyRunId`, `apifyDatasetId`, `apifyStartedAt`, `apifyStatus`, `apifyCollected`, `apifyCount`, `apifyNote`) in `search_runs.stats`.
+  - Added pending run check via `GET /v2/actor-runs/{id}` during `startJobSearch` and subsequent step calls; ingests dataset items when SUCCEEDED.
+  - Added 20-hour rate guard preventing new runs if a run started < 20 hours ago.
+  - Added query param stripping and credential masking for error messages (`sanitizeErrorMessage`).
+- Email Alert Multi-Job Parsing & Sender Updates:
+  - Added Naukri (`naukri.com`, `naukrimail`, `Alert`, `Job`, `Opening`, `Opportunities`) to `src/config/alert-senders.ts`.
+  - Expanded Wellfound (`wellfound.com`, `angel.co`) and LinkedIn (`*.linkedin.com`, `jobs-listings@linkedin.com`, `jobalerts-noreply@linkedin.com`) alert patterns.
+  - Implemented `extractNewsletterHtmlCandidates` for multi-job table/card digests and `resolveTrackingUrl` for redirect links without network requests.
+  - Added email result metrics: `seen`, `fromKnownSender`, `fromFallbackSubject`, `parsedJobs`.
+  - Added fixture tests using `naukri-newsletter.eml` and `wellfound-digest.eml`.
+- Per-source Issue Tracking:
+  - Saved source status breakdown into `search_runs.stats.sources` across all sources.
+  - Admin dashboard displays "Source issues: ..." banner when any source has an error or pending state.
+- Created standalone read-only diagnostic script `scripts/imap-senders.mjs` (not run).
 - Hotfix NULL `inbound_source` in Neon SQL queries:
   - In `src/lib/jobs/repository.ts`, wrapped `inbound_source` with `COALESCE(inbound_source, '')` across all shortlist, maybe, hidden, inbox, and reclassify SQL queries to prevent three-valued NULL logic from excluding non-inbound rows where `inbound_source` is NULL.
   - Added unit test in `src/lib/jobs/classify.test.ts` verifying `shortlist`, `maybe`, `hidden`, and `inbox` counts are > 0 when `inbound_source` is undefined/null.
