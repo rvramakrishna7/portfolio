@@ -407,21 +407,27 @@ export class InMemoryJobsRepository implements JobsRepository {
       });
     }
 
-    if (opts.source) {
-      list = list.filter((j) => j.source.toLowerCase() === opts.source?.toLowerCase());
+    if (opts.source && opts.source.trim()) {
+      const srcLower = opts.source.trim().toLowerCase();
+      list = list.filter(
+        (j) =>
+          j.source.toLowerCase() === srcLower ||
+          Boolean(j.inbound_source && j.inbound_source.toLowerCase() === srcLower)
+      );
     }
 
-    if (opts.status) {
-      list = list.filter((j) => j.status === opts.status);
+    if (opts.status && opts.status.trim()) {
+      const st = opts.status.trim();
+      list = list.filter((j) => j.status === st);
     }
 
-    if (opts.q) {
-      const qLower = opts.q.toLowerCase();
+    if (opts.q && opts.q.trim()) {
+      const qLower = opts.q.trim().toLowerCase();
       list = list.filter(
         (j) =>
           j.title.toLowerCase().includes(qLower) ||
           j.company.toLowerCase().includes(qLower) ||
-          j.skills.some((s) => s.toLowerCase().includes(qLower))
+          (Array.isArray(j.skills) && j.skills.some((s) => s.toLowerCase().includes(qLower)))
       );
     }
 
@@ -901,11 +907,21 @@ export class InMemoryJobsRepository implements JobsRepository {
 
 // Neon PostgreSQL Implementation with Parameterized Tagged Templates ONLY
 export class NeonJobsRepository implements JobsRepository {
+  private readonly sqlOverride?: ReturnType<typeof getSql>;
+
+  constructor(sqlOverride?: ReturnType<typeof getSql>) {
+    this.sqlOverride = sqlOverride;
+  }
+
+  private resolveSql(): ReturnType<typeof getSql> {
+    return this.sqlOverride ?? getSql();
+  }
+
   async upsertJob(
     job: NormalizedJob,
     triaged: TriagedJobResult
   ): Promise<"new" | "existing"> {
-    const sql = getSql();
+    const sql = this.resolveSql();
 
     const rawPayload = {
       ...job,
@@ -1102,13 +1118,17 @@ export class NeonJobsRepository implements JobsRepository {
   }
 
   async getJobs(opts: JobsQueryOptions): Promise<{ jobs: StoredJob[]; total: number }> {
-    const sql = getSql();
+    const sql = this.resolveSql();
     const limit = opts.limit || 50;
     const offset = opts.offset || 0;
     const view = opts.view || "shortlist";
     const maxAgeDays = opts.maxAgeDays ?? MAX_AGE_DAYS_DEFAULT;
+    const sourceFilter = opts.source ? opts.source.trim().toLowerCase() : "";
+    const statusFilter = opts.status ? opts.status.trim() : "";
+    const qFilter = opts.q ? opts.q.trim().toLowerCase() : "";
 
     let rows: StoredJob[] = [];
+    let countRows: Array<{ count?: number }> = [];
 
     if (view === "shortlist") {
       rows = (await sql`
@@ -1130,9 +1150,52 @@ export class NeonJobsRepository implements JobsRepository {
           AND status != 'skipped'
           AND filter_reason IS NULL
           AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
         ORDER BY match_score DESC, posted_at DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
+
+      countRows = (await sql`
+        SELECT COUNT(*)::int AS count FROM jobs
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND (
+            exp_class IN ('fresher', 'junior')
+            OR (
+              exp_class = 'unclear'
+              AND LENGTH(TRIM(COALESCE(description, ''))) >= 80
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(company, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+            )
+          )
+          AND geo_eligibility IN ('worldwide', 'india_ok')
+          AND status != 'skipped'
+          AND filter_reason IS NULL
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
+      `) as Array<{ count?: number }>;
     } else if (view === "maybe") {
       rows = (await sql`
         SELECT * FROM jobs
@@ -1155,9 +1218,54 @@ export class NeonJobsRepository implements JobsRepository {
               )
             )
           )
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
         ORDER BY match_score DESC, posted_at DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
+
+      countRows = (await sql`
+        SELECT COUNT(*)::int AS count FROM jobs
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND status != 'skipped'
+          AND filter_reason IS NULL
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (
+            (exp_class IN ('fresher', 'junior', 'unclear') AND geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') LIKE 'remote-unconfirmed:%')
+            OR (
+              exp_class = 'unclear'
+              AND geo_eligibility IN ('worldwide', 'india_ok')
+              AND (
+                LENGTH(TRIM(COALESCE(description, ''))) < 80
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+              )
+            )
+          )
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
+      `) as Array<{ count?: number }>;
     } else if (view === "inbox") {
       rows = (await sql`
         SELECT * FROM jobs
@@ -1165,9 +1273,39 @@ export class NeonJobsRepository implements JobsRepository {
           AND status != 'skipped'
           AND filter_reason IS NULL
           AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
         ORDER BY posted_at DESC NULLS LAST, last_seen_at DESC
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
+
+      countRows = (await sql`
+        SELECT COUNT(*)::int AS count FROM jobs
+        WHERE (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND status != 'skipped'
+          AND filter_reason IS NULL
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
+      `) as Array<{ count?: number }>;
     } else if (view === "hidden") {
       rows = (await sql`
         SELECT * FROM jobs
@@ -1180,20 +1318,81 @@ export class NeonJobsRepository implements JobsRepository {
             OR filter_reason IS NOT NULL
             OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
           )
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
         ORDER BY last_seen_at DESC
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
+
+      countRows = (await sql`
+        SELECT COUNT(*)::int AS count FROM jobs
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND (
+            exp_class = 'senior'
+            OR geo_eligibility = 'restricted'
+            OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
+            OR status = 'skipped'
+            OR filter_reason IS NOT NULL
+            OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
+          )
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
+      `) as Array<{ count?: number }>;
     } else {
       rows = (await sql`
         SELECT * FROM jobs
         WHERE COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
         ORDER BY last_seen_at DESC
         LIMIT ${limit} OFFSET ${offset}
       `) as StoredJob[];
+
+      countRows = (await sql`
+        SELECT COUNT(*)::int AS count FROM jobs
+        WHERE COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (${sourceFilter} = '' OR LOWER(COALESCE(source, '')) = ${sourceFilter} OR LOWER(COALESCE(inbound_source, '')) = ${sourceFilter})
+          AND (${statusFilter} = '' OR COALESCE(status, '') = ${statusFilter})
+          AND (
+            ${qFilter} = ''
+            OR POSITION(${qFilter} IN LOWER(COALESCE(title, ''))) > 0
+            OR POSITION(${qFilter} IN LOWER(COALESCE(company, ''))) > 0
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(COALESCE(skills, '{}'::text[])) AS s
+              WHERE POSITION(${qFilter} IN LOWER(COALESCE(s, ''))) > 0
+            )
+          )
+      `) as Array<{ count?: number }>;
     }
 
-    const countRows = await sql`SELECT COUNT(*)::int as count FROM jobs`;
-    const total = countRows[0]?.count || 0;
+    const total = Number(countRows[0]?.count || 0);
 
     return { jobs: rows, total };
   }
@@ -1201,7 +1400,7 @@ export class NeonJobsRepository implements JobsRepository {
   async getViewCounts(
     maxAgeDays: number = MAX_AGE_DAYS_DEFAULT
   ): Promise<{ shortlist: number; maybe: number; inbox: number; hidden: number; all: number }> {
-    const sql = getSql();
+    const sql = this.resolveSql();
     try {
       const rows = await sql`
         SELECT

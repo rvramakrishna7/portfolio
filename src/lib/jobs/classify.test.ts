@@ -1964,4 +1964,376 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
       expect(res4.attempted).toBe(0);
     });
   });
+
+  describe("InMemoryJobsRepository and NeonJobsRepository source & q filter parity", () => {
+    it("runs identical filter cases (source, q, view, total) against both InMemoryJobsRepository and NeonJobsRepository", async () => {
+      const { InMemoryJobsRepository, NeonJobsRepository } = await import("./repository");
+      const { calculateJobAgeDays } = await import("./freshness");
+
+      const inMemRepo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      const seedData = [
+        // 1. Shortlist: greenhouse, Python/FastAPI
+        {
+          job: {
+            source: "greenhouse",
+            sourceId: "gh-1",
+            url: "https://boards.greenhouse.io/alpha/jobs/1",
+            title: "Junior Backend Engineer",
+            company: "Alpha Systems",
+            location: "Remote - India",
+            remoteScope: "India",
+            description: "Build scalable APIs using Python, FastAPI, and PostgreSQL for our distributed platform team.",
+            postedAt: nowIso,
+            tags: ["python", "fastapi"],
+          },
+          triaged: {
+            expClass: "junior" as const,
+            expMinYears: 1,
+            geoEligibility: "india_ok" as const,
+            geoReason: "India allowed",
+            summaryLine: "Junior Backend Engineer at Alpha Systems",
+            skills: ["Python", "FastAPI", "PostgreSQL"],
+            matchScore: 88,
+          },
+        },
+        // 2. Shortlist: remoteok, TypeScript/Next.js
+        {
+          job: {
+            source: "remoteok",
+            sourceId: "rok-1",
+            url: "https://remoteok.com/remote-jobs/1",
+            title: "Full Stack Developer (Fresher)",
+            company: "Beta Cloud",
+            location: "Worldwide",
+            remoteScope: "Worldwide",
+            description: "Fresh graduates welcome to build web applications with TypeScript, React, and Next.js.",
+            postedAt: nowIso,
+            tags: ["typescript", "nextjs"],
+          },
+          triaged: {
+            expClass: "fresher" as const,
+            expMinYears: 0,
+            geoEligibility: "worldwide" as const,
+            geoReason: "Worldwide",
+            summaryLine: "Full Stack Developer at Beta Cloud",
+            skills: ["TypeScript", "React", "Next.js"],
+            matchScore: 92,
+          },
+        },
+        // 3. Maybe: email, missing description
+        {
+          job: {
+            source: "email",
+            sourceId: "em-maybe-1",
+            url: "https://wellfound.com/jobs/101",
+            title: "Software Engineer",
+            company: "Gamma Startup",
+            location: "India (Remote)",
+            remoteScope: "India",
+            description: "Software Engineer at Gamma Startup",
+            postedAt: nowIso,
+            tags: ["golang"],
+          },
+          triaged: {
+            expClass: "unclear" as const,
+            expMinYears: null,
+            geoEligibility: "india_ok" as const,
+            geoReason: "India allowed",
+            summaryLine: "description missing, check experience",
+            skills: ["Go", "Docker"],
+            matchScore: 70,
+          },
+        },
+        // 4. Hidden: email, senior
+        {
+          job: {
+            source: "email",
+            sourceId: "em-hidden-1",
+            url: "https://www.naukri.com/job-listings-senior-1",
+            title: "Senior Java Architect",
+            company: "Delta Enterprise",
+            location: "Bengaluru",
+            remoteScope: "India",
+            description: "Requires 6+ years of Java, Spring Boot, and Kubernetes architecture experience.",
+            postedAt: nowIso,
+            tags: ["java", "kubernetes"],
+          },
+          triaged: {
+            expClass: "senior" as const,
+            expMinYears: 6,
+            geoEligibility: "india_ok" as const,
+            geoReason: "India allowed",
+            filterReason: "title level: senior",
+            summaryLine: "Senior Java Architect at Delta Enterprise",
+            skills: ["Java", "Spring Boot", "Kubernetes"],
+            matchScore: 25,
+          },
+        },
+        // 5. Hidden: linkedin, senior
+        {
+          job: {
+            source: "linkedin",
+            sourceId: "li-hidden-1",
+            url: "https://www.linkedin.com/jobs/view/555",
+            title: "Software Engineer III",
+            company: "Epsilon Bank",
+            location: "Mumbai",
+            remoteScope: "India",
+            description: "Requires 4+ years of backend engineering experience in financial services.",
+            postedAt: nowIso,
+            tags: ["java"],
+          },
+          triaged: {
+            expClass: "senior" as const,
+            expMinYears: 4,
+            geoEligibility: "india_ok" as const,
+            geoReason: "India allowed",
+            filterReason: "title level: III",
+            summaryLine: "Software Engineer III at Epsilon Bank",
+            skills: ["Java", "AWS"],
+            matchScore: 30,
+          },
+        },
+        // 6. Inbox: inbound_source = telegram (stored with source = "inbound", inbound_source = "telegram")
+        {
+          job: {
+            source: "telegram",
+            sourceId: "tg-inbox-1",
+            url: "https://careers.zeta.tech/jobs/1",
+            title: "Associate Software Engineer",
+            company: "Zeta FinTech",
+            location: "Remote",
+            remoteScope: "India",
+            description: "Zeta FinTech is hiring Associate Software Engineers (0-1 yrs) for Rust and Python services.",
+            postedAt: nowIso,
+            tags: ["rust", "python"],
+            inbound_source: "telegram",
+          },
+          triaged: {
+            expClass: "junior" as const,
+            expMinYears: 1,
+            geoEligibility: "india_ok" as const,
+            geoReason: "India allowed",
+            summaryLine: "Associate Software Engineer at Zeta FinTech",
+            skills: ["Rust", "Python"],
+            matchScore: 84,
+          },
+        },
+      ];
+
+      for (const item of seedData) {
+        await inMemRepo.upsertJob(item.job, item.triaged);
+      }
+
+      // Extract the stored rows from inMemRepo to back the tagged-template Neon SQL evaluator
+      const allStored = (await inMemRepo.getJobs({ view: "all", limit: 100 })).jobs;
+
+      // Tagged-template SQL mock for NeonJobsRepository that verifies the SQL template structure
+      // and evaluates the parameterized predicates against allStored
+      const executedQueries: Array<{ sqlText: string; values: unknown[] }> = [];
+      const mockSql = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sqlText = strings.join("$param");
+        executedQueries.push({ sqlText, values });
+
+        // Verify tagged-template SQL contains required source, status, and q clauses
+        expect(sqlText).toContain("LOWER(COALESCE(source, ''))");
+        expect(sqlText).toContain("LOWER(COALESCE(inbound_source, ''))");
+        expect(sqlText).toContain("POSITION(");
+        expect(sqlText).toContain("UNNEST(COALESCE(skills, '{}'::text[]))");
+
+        // Extract parameter values by their position in the query:
+        // In every view branch of NeonJobsRepository.getJobs:
+        // values[0] = maxAgeDays
+        // values[1] = sourceFilter, values[2] = sourceFilter, values[3] = sourceFilter
+        // values[4] = statusFilter, values[5] = statusFilter
+        // values[6] = qFilter, values[7] = qFilter (title), values[8] = qFilter (company), values[9] = qFilter (skills)
+        const maxAgeDays = Number(values[0]);
+        const sourceFilter = String(values[1] ?? "");
+        const statusFilter = String(values[4] ?? "");
+        const qFilter = String(values[6] ?? "");
+
+        const isCountQuery = /SELECT\s+COUNT\(\*\)::int\s+AS\s+count/i.test(sqlText);
+        const isShortlistQuery =
+          sqlText.includes("WHERE NOT (COALESCE(inbound_source, '')") &&
+          sqlText.includes("AND geo_eligibility IN ('worldwide', 'india_ok')") &&
+          sqlText.includes("exp_class IN ('fresher', 'junior')");
+        const isMaybeQuery =
+          sqlText.includes("remote-unconfirmed:%") &&
+          sqlText.includes("LENGTH(TRIM(COALESCE(description, ''))) < 80");
+        const isInboxQuery =
+          sqlText.includes("WHERE (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste')");
+        const isHiddenQuery =
+          sqlText.includes("exp_class = 'senior'") &&
+          sqlText.includes("OR filter_reason IS NOT NULL");
+
+        const isInboxRow = (j: (typeof allStored)[number]) =>
+          ["telegram", "whatsapp", "pasted", "paste"].includes(j.inbound_source || "") ||
+          ["telegram", "whatsapp", "pasted", "paste"].includes(j.source);
+
+        const filtered = allStored.filter((j) => {
+          const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+          if (isShortlistQuery) {
+            if (isInboxRow(j)) return false;
+            const validExp =
+              ["fresher", "junior"].includes(j.exp_class) ||
+              (j.exp_class === "unclear" && hasRealDescription(j.description, j.title, j.company));
+            if (!validExp) return false;
+            if (!["worldwide", "india_ok"].includes(j.geo_eligibility)) return false;
+            if (j.status === "skipped" || j.filter_reason || age > maxAgeDays) return false;
+          } else if (isMaybeQuery) {
+            if (isInboxRow(j)) return false;
+            if (j.status === "skipped" || j.filter_reason || age > maxAgeDays) return false;
+            const remoteUnc =
+              ["fresher", "junior", "unclear"].includes(j.exp_class) &&
+              j.geo_eligibility === "unclear" &&
+              (j.geo_reason || "").startsWith("remote-unconfirmed:");
+            const missingDesc =
+              j.exp_class === "unclear" &&
+              ["worldwide", "india_ok"].includes(j.geo_eligibility) &&
+              !hasRealDescription(j.description, j.title, j.company);
+            if (!remoteUnc && !missingDesc) return false;
+          } else if (isInboxQuery) {
+            if (!isInboxRow(j)) return false;
+            if (j.status === "skipped" || j.filter_reason || age > maxAgeDays) return false;
+          } else if (isHiddenQuery) {
+            if (isInboxRow(j)) return false;
+            const isHidden =
+              j.exp_class === "senior" ||
+              j.geo_eligibility === "restricted" ||
+              (j.geo_eligibility === "unclear" && !(j.geo_reason || "").startsWith("remote-unconfirmed:")) ||
+              j.status === "skipped" ||
+              Boolean(j.filter_reason) ||
+              age > maxAgeDays;
+            if (!isHidden) return false;
+          } else {
+            if (age > maxAgeDays) return false;
+          }
+
+          if (sourceFilter !== "") {
+            const matchSrc =
+              (j.source || "").toLowerCase() === sourceFilter ||
+              (j.inbound_source || "").toLowerCase() === sourceFilter;
+            if (!matchSrc) return false;
+          }
+
+          if (statusFilter !== "") {
+            if ((j.status || "") !== statusFilter) return false;
+          }
+
+          if (qFilter !== "") {
+            const matchQ =
+              (j.title || "").toLowerCase().includes(qFilter) ||
+              (j.company || "").toLowerCase().includes(qFilter) ||
+              (j.skills || []).some((s) => (s || "").toLowerCase().includes(qFilter));
+            if (!matchQ) return false;
+          }
+
+          return true;
+        });
+
+        if (isCountQuery) {
+          return [{ count: filtered.length }];
+        }
+
+        const limit = Number(values[10] ?? 50);
+        const offset = Number(values[11] ?? 0);
+        return filtered.slice(offset, offset + limit);
+      }) as unknown as ConstructorParameters<typeof NeonJobsRepository>[0];
+
+      const neonRepo = new NeonJobsRepository(mockSql);
+
+      const PARITY_CASES: Array<{
+        label: string;
+        opts: Parameters<typeof inMemRepo.getJobs>[0];
+        expectedIds: string[];
+      }> = [
+        {
+          label: "source=email in hidden view",
+          opts: { view: "hidden", source: "email" },
+          expectedIds: ["em-hidden-1"],
+        },
+        {
+          label: "source=linkedin in hidden view",
+          opts: { view: "hidden", source: "linkedin" },
+          expectedIds: ["li-hidden-1"],
+        },
+        {
+          label: "source=email in maybe view",
+          opts: { view: "maybe", source: "email" },
+          expectedIds: ["em-maybe-1"],
+        },
+        {
+          label: "source=greenhouse in shortlist view",
+          opts: { view: "shortlist", source: "greenhouse" },
+          expectedIds: ["gh-1"],
+        },
+        {
+          label: "source=telegram in inbox view (matches inbound_source)",
+          opts: { view: "inbox", source: "telegram" },
+          expectedIds: ["tg-inbox-1"],
+        },
+        {
+          label: "q matching title ('Architect') in hidden view",
+          opts: { view: "hidden", q: "Architect" },
+          expectedIds: ["em-hidden-1"],
+        },
+        {
+          label: "q matching company ('Beta Cloud') in shortlist view",
+          opts: { view: "shortlist", q: "beta cloud" },
+          expectedIds: ["rok-1"],
+        },
+        {
+          label: "q matching skill ('FastAPI') in shortlist view",
+          opts: { view: "shortlist", q: "fastapi" },
+          expectedIds: ["gh-1"],
+        },
+        {
+          label: "q matching skill ('Rust') in inbox view",
+          opts: { view: "inbox", q: "rust" },
+          expectedIds: ["tg-inbox-1"],
+        },
+        {
+          label: "combined source=email + q='Java' in all view",
+          opts: { view: "all", source: "email", q: "Java" },
+          expectedIds: ["em-hidden-1"],
+        },
+        {
+          label: "query that matches nothing in shortlist",
+          opts: { view: "shortlist", q: "nonexistent-cobol-mainframe-xyz" },
+          expectedIds: [],
+        },
+        {
+          label: "source+q that matches nothing in hidden",
+          opts: { view: "hidden", source: "email", q: "Next.js" },
+          expectedIds: [],
+        },
+      ];
+
+      for (const tc of PARITY_CASES) {
+        const memRes = await inMemRepo.getJobs(tc.opts);
+        const neonRes = await neonRepo.getJobs(tc.opts);
+
+        expect(memRes.jobs.map((j) => j.source_id), `InMemory jobs mismatch on: ${tc.label}`).toEqual(
+          tc.expectedIds
+        );
+        expect(neonRes.jobs.map((j) => j.source_id), `Neon jobs mismatch on: ${tc.label}`).toEqual(
+          tc.expectedIds
+        );
+        expect(memRes.total, `InMemory total mismatch on: ${tc.label}`).toBe(tc.expectedIds.length);
+        expect(neonRes.total, `Neon total mismatch on: ${tc.label}`).toBe(tc.expectedIds.length);
+      }
+
+      // Tab counts (getViewCounts) remain unfiltered by source or q
+      const counts = await inMemRepo.getViewCounts();
+      expect(counts).toEqual({
+        shortlist: 2,
+        maybe: 1,
+        inbox: 1,
+        hidden: 2,
+        all: 6,
+      });
+    });
+  });
 });
