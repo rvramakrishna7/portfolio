@@ -1,8 +1,14 @@
 # Status: Portfolio site
 
-Current step: Merged async Apify LinkedIn runner, email alerts (Naukri, Wellfound), and proof strip row alignment into `main`.
+Current step: Fix Apify LinkedIn input schema and real output mapping (`fix/apify-input`).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Apify LinkedIn Actor Schema & Output Mapping Fixes (`fix/apify-input`):
+  - Updated actor default to `automly~linkedin-jobs-scraper`.
+  - Implemented `buildApifyLinkedInInput` adhering strictly to actor's verified input schema (`keywords`, `location`, `workplaceType`, `experienceLevel`, `timePosted`, `sortBy`, `maxResults`, `fetchDetails`, `scrapeCompany`, `proxyConfiguration`).
+  - Added HTTP error body extraction and sanitization (first 200 characters) so issues like input validation errors surface cleanly on the dashboard.
+  - Ensured failed starts do not block retries (only runs with a valid `apifyRunId` count towards 20-hour rate guard).
+  - Executed throwaway probe verifying live run ($0.00005 credit used) and mapped actual dataset fields (`jobId`, `jobUrl`, `title`, `company`, `location`, `postedDate`).
 - Proof strip row alignment (`fix/proof-strip-align`):
   - In `src/styles/globals.css`, aligned value (.big), label (.what), and details summary ("How was this measured?") across all cards using subgrid (`grid-template-rows: subgrid; grid-row: span 3;`) at `>= 600px`.
   - Added plain 2-line min-height fallback on `.big` and `.what` for browsers without subgrid support.

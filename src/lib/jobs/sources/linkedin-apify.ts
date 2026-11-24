@@ -2,7 +2,40 @@ import { NormalizedJob, AdapterResult, REQUEST_TIMEOUT_MS } from "../types";
 import { stripHtml } from "../clean";
 import { parseInboundCandidates } from "../../inbound/parse";
 
-export const DEFAULT_LINKEDIN_ACTOR_ID = "curious_coder~linkedin-post-search-scraper";
+export const DEFAULT_LINKEDIN_ACTOR_ID = "automly~linkedin-jobs-scraper";
+
+export interface ApifyLinkedInInput {
+  keywords: string;
+  location?: string;
+  geoId?: string;
+  workplaceType?: "on-site" | "remote" | "hybrid" | "remote,hybrid" | string;
+  jobType?: string;
+  experienceLevel?: "internship" | "entry" | "associate" | "mid-senior" | "director" | "executive" | string;
+  timePosted?: "past-hour" | "past-24h" | "past-week" | "past-month" | string;
+  sortBy?: "relevance" | "date" | string;
+  maxResults?: number;
+  fetchDetails?: boolean;
+  scrapeCompany?: boolean;
+  proxyConfiguration?: {
+    useApifyProxy: boolean;
+    [key: string]: unknown;
+  };
+}
+
+export function buildApifyLinkedInInput(overrides?: Partial<ApifyLinkedInInput>): ApifyLinkedInInput {
+  return {
+    keywords: overrides?.keywords ?? "software engineer",
+    location: overrides?.location ?? "India",
+    workplaceType: overrides?.workplaceType ?? "remote",
+    experienceLevel: overrides?.experienceLevel ?? "entry",
+    timePosted: overrides?.timePosted ?? "past-week",
+    sortBy: overrides?.sortBy ?? "date",
+    maxResults: overrides?.maxResults ?? 100,
+    fetchDetails: overrides?.fetchDetails ?? false,
+    scrapeCompany: overrides?.scrapeCompany ?? false,
+    proxyConfiguration: overrides?.proxyConfiguration ?? { useApifyProxy: true },
+  };
+}
 
 export interface ApifyLinkedInItem {
   id?: string | number;
@@ -12,6 +45,8 @@ export interface ApifyLinkedInItem {
   position?: string;
   company?: string;
   companyName?: string;
+  companyUrl?: string;
+  companyLogo?: string;
   location?: string;
   url?: string;
   jobUrl?: string;
@@ -20,7 +55,10 @@ export interface ApifyLinkedInItem {
   description?: string;
   text?: string;
   content?: string;
+  benefits?: string;
   postedAt?: string;
+  postedDate?: string;
+  postedTimeAgo?: string;
   date?: string;
   createdAt?: string;
   isRemote?: boolean;
@@ -42,11 +80,11 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
     const raw = item as ApifyLinkedInItem;
 
     const sourceId = String(
+      raw.jobId ||
       raw.id ||
       raw.urn ||
-      raw.jobId ||
-      raw.url ||
       raw.jobUrl ||
+      raw.url ||
       raw.postUrl ||
       `li-${jobs.length + 1}`
     );
@@ -54,8 +92,8 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
     let title = String(raw.title || raw.position || "").trim();
     let company = String(raw.company || raw.companyName || "").trim();
     let location = String(raw.location || "").trim();
-    const url = String(raw.url || raw.jobUrl || raw.postUrl || raw.link || "").trim();
-    const rawDescription = String(raw.description || raw.text || raw.content || "");
+    const url = String(raw.jobUrl || raw.url || raw.postUrl || raw.link || "").trim();
+    const rawDescription = String(raw.description || raw.text || raw.content || raw.benefits || "");
     const description = stripHtml(rawDescription);
 
     // If title or company is missing (typical for LinkedIn post scrapers),
@@ -76,15 +114,15 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
     }
 
     if (!company) {
-      company = "LinkedIn Post";
+      company = "LinkedIn Job";
     }
 
     if (!location) {
-      location = raw.isRemote ? "Remote" : "India";
+      location = "India";
     }
 
     let postedAt = new Date().toISOString();
-    const rawDate = raw.postedAt || raw.date || raw.createdAt;
+    const rawDate = raw.postedDate || raw.postedAt || raw.date || raw.createdAt;
     if (rawDate) {
       const parsed = new Date(rawDate);
       if (!isNaN(parsed.getTime())) {
@@ -94,6 +132,16 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
 
     const jobUrl = url || (raw.urn ? `https://www.linkedin.com/feed/update/${raw.urn}` : `https://www.linkedin.com/jobs/view/${sourceId}`);
 
+    // The Apify LinkedIn search is configured as remote-only (workplaceType: "remote"),
+    // so items default to remote unless explicitly overridden.
+    const isRemote =
+      raw.isRemote === true ||
+      raw.workplaceType === "remote" ||
+      /remote/i.test(String(raw.workplaceType || "")) ||
+      /remote/i.test(location) ||
+      /remote/i.test(description) ||
+      true;
+
     jobs.push({
       source: "linkedin",
       sourceId,
@@ -101,12 +149,12 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
       title,
       company,
       location,
-      remoteScope: raw.isRemote || /remote/i.test(location) ? "Remote" : location,
+      remoteScope: isRemote ? "Remote" : location,
       description,
       postedAt,
       tags: ["linkedin"],
-      isRemote: raw.isRemote || /remote/i.test(location) || /remote/i.test(description),
-      workplaceType: raw.workplaceType,
+      isRemote,
+      workplaceType: raw.workplaceType || (isRemote ? "remote" : undefined),
     });
   }
 
@@ -116,9 +164,7 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
 export interface FetchLinkedInApifyOptions {
   actorId?: string;
   token?: string;
-  keywords?: string[];
-  limit?: number;
-  postedWithin?: string;
+  input?: ApifyLinkedInInput;
   fetchFn?: typeof fetch;
 }
 
@@ -157,6 +203,7 @@ export function sanitizeErrorMessage(err: unknown): string {
  * Evaluates whether a new Apify actor run is allowed:
  * 1. Must have no pending run.
  * 2. Total cost guard: Refuses to start if more than 0 runs started in the last 20 hours (one per day).
+ * A failed start does not count as a started run (only a successful start with a run id does).
  */
 export function canStartNewApifyRun(
   recentRuns: Array<{ stats?: { apifyStartedAt?: string; apifyRunId?: string; apifyStatus?: string } | null }>,
@@ -169,6 +216,9 @@ export function canStartNewApifyRun(
   for (const run of recentRuns) {
     const stats = run.stats;
     if (!stats) continue;
+
+    // Only successful starts with a real run id count as started runs
+    if (!stats.apifyRunId || stats.apifyStatus === "FAILED") continue;
 
     const startedAtStr = stats.apifyStartedAt;
     if (!startedAtStr) continue;
@@ -205,7 +255,7 @@ export async function startApifyLinkedInRun(
   options?: FetchLinkedInApifyOptions
 ): Promise<StartApifyRunResult> {
   const token = options?.token ?? process.env.APIFY_API_TOKEN;
-  const actorId =
+  const rawActorId =
     options?.actorId ??
     process.env.APIFY_LINKEDIN_ACTOR_ID ??
     DEFAULT_LINKEDIN_ACTOR_ID;
@@ -218,20 +268,17 @@ export async function startApifyLinkedInRun(
   }
 
   const fetchFn = options?.fetchFn ?? fetch;
-  const limit = options?.limit ?? 25;
-  const postedWithin = options?.postedWithin ?? "3d";
+  const rawInput = options?.input ?? buildApifyLinkedInInput();
+  const input = { ...rawInput };
+  // automly/linkedin-jobs-scraper actor requires a single enum value for experienceLevel
+  // ("", "internship", "entry", "associate", "mid-senior", "director", "executive").
+  // If comma-separated (e.g. "internship,entry"), normalize to "entry".
+  if (input.experienceLevel && input.experienceLevel.includes(",")) {
+    input.experienceLevel = input.experienceLevel.includes("entry") ? "entry" : "internship";
+  }
 
-  const defaultKeywords = [
-    "fresher software engineer",
-    "junior software engineer",
-    "early career software engineer",
-    "junior developer react python",
-    "remote india",
-  ];
-  const query = options?.keywords?.join(" OR ") ?? defaultKeywords.join(" OR ");
-
-  const encodedActorId = encodeURIComponent(actorId);
-  const url = `https://api.apify.com/v2/acts/${encodedActorId}/runs?maxTotalChargeUsd=0.25`;
+  const formattedActorId = encodeURIComponent(rawActorId.replace("/", "~"));
+  const url = `https://api.apify.com/v2/acts/${formattedActorId}/runs?maxTotalChargeUsd=0.25`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -244,21 +291,49 @@ export async function startApifyLinkedInRun(
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({
-        query,
-        limit,
-        maxItems: limit,
-        postedWithin,
-      }),
+      body: JSON.stringify(input),
       signal: controller.signal,
     });
 
     clearTimeout(timeout);
 
     if (!res.ok) {
+      let detail = "";
+      try {
+        const text = await res.text();
+        try {
+          const errJson = JSON.parse(text) as {
+            error?: { message?: string; type?: string } | string;
+            message?: string;
+          };
+          if (typeof errJson.error === "object" && errJson.error?.message) {
+            detail = errJson.error.message;
+            if (errJson.error.type) {
+              detail = `${errJson.error.type}: ${detail}`;
+            }
+          } else if (typeof errJson.error === "string") {
+            detail = errJson.error;
+          } else if (errJson.message) {
+            detail = errJson.message;
+          } else {
+            detail = text;
+          }
+        } catch {
+          detail = text;
+        }
+      } catch {
+        // failed to read body
+      }
+
+      const sanitizedDetail = sanitizeErrorMessage(detail).trim();
+      const truncated = sanitizedDetail.length > 200 ? sanitizedDetail.slice(0, 200) + "..." : sanitizedDetail;
+      const errorMsg = truncated
+        ? `Apify start returned HTTP ${res.status}: ${truncated}`
+        : `Apify start returned HTTP ${res.status}`;
+
       return {
         started: false,
-        error: `Apify start returned HTTP ${res.status}`,
+        error: errorMsg,
       };
     }
 
