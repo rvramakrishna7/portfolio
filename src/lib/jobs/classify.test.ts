@@ -1392,4 +1392,298 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
       }
     });
   });
+
+  describe("STEP 1: Title Seniority and Level Markers (at least 30 labelled tests)", () => {
+    const TITLE_TEST_CASES: Array<{
+      label: string;
+      title: string;
+      expectedSenior: boolean;
+      expectedReasonPrefix?: string;
+    }> = [
+      // Required exact title cases from prompt
+      { label: "1. Software Engineer III", title: "Software Engineer III", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "2. Software Engineer III with suffix", title: "Software Engineer III - Python Full Stack Developer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "3. Fullstack Java With React-Software Engineer III", title: "Fullstack Java With React-Software Engineer III", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "4. Software Engineer II", title: "Software Engineer II", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "5. Senior Full Stack Developer", title: "Senior Full Stack Developer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "6. SDE 3", title: "SDE 3", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "7. SDE 2", title: "SDE 2", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "8. SDE 4", title: "SDE 4", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "9. SDE-II", title: "SDE-II", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "10. SWE 2", title: "SWE 2", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "11. SWE 3", title: "SWE 3", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "12. Software Engineer IV", title: "Software Engineer IV", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "13. Software Engineer V", title: "Software Engineer V", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "14. Engineer II", title: "Engineer II", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "15. Backend Engineer III", title: "Backend Engineer III", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "16. Level 2 Software Engineer", title: "Level 2 Software Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "17. Level 3 Developer", title: "Level 3 Developer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "18. Level 4 Platform Engineer", title: "Level 4 Platform Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "19. Level 5 Systems Architect", title: "Level 5 Systems Architect", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "20. L3 Software Engineer", title: "L3 Software Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "21. L4 Software Engineer", title: "L4 Software Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "22. L5 Platform Engineer", title: "L5 Platform Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "23. L6 Staff Engineer", title: "L6 Staff Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "24. L7 Principal Engineer", title: "L7 Principal Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "25. Grade 3+ Software Engineer", title: "Grade 3+ Software Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "26. Grade 4 Developer", title: "Grade 4 Developer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "27. Staff Platform Engineer", title: "Staff Platform Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "28. Principal Cloud Architect", title: "Principal Cloud Architect", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "29. Lead Backend Engineer", title: "Lead Backend Engineer", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "30. Solutions Architect", title: "Solutions Architect", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "31. Engineering Manager", title: "Engineering Manager", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      { label: "32. Head of Technology", title: "Head of Technology", expectedSenior: true, expectedReasonPrefix: "title level:" },
+      // Negative cases (must NOT be marked as senior)
+      { label: "33. Software Engineer I (must NOT be senior)", title: "Software Engineer I", expectedSenior: false },
+      { label: "34. SDE 1 (must NOT be senior)", title: "SDE 1", expectedSenior: false },
+      { label: "35. Level 1 Developer (must NOT be senior)", title: "Level 1 Developer", expectedSenior: false },
+      { label: "36. L1 Software Engineer (must NOT be senior)", title: "L1 Software Engineer", expectedSenior: false },
+      { label: "37. L2 Software Engineer (must NOT be senior)", title: "L2 Software Engineer", expectedSenior: false },
+      { label: "38. Associate Full Stack Engineer (must NOT be senior)", title: "Associate Full Stack Engineer", expectedSenior: false },
+      { label: "39. Graduate Software Engineer (must NOT be senior)", title: "Graduate Software Engineer", expectedSenior: false },
+      { label: "40. Python Developer (must NOT be senior)", title: "Python Developer", expectedSenior: false },
+      { label: "41. VN3010 - Software Engineer (must NOT be senior)", title: "VN3010 - Software Engineer", expectedSenior: false },
+      { label: "42. Civil Engineer (must NOT be senior)", title: "Civil Engineer", expectedSenior: false },
+      { label: "43. Vivid Graphics Developer (must NOT be senior)", title: "Vivid Graphics Developer", expectedSenior: false },
+      { label: "44. Software Engineering Trainee (must NOT be senior)", title: "Software Engineering Trainee", expectedSenior: false },
+      { label: "45. AI Automation Intern (must NOT be senior)", title: "AI Automation Intern", expectedSenior: false },
+      { label: "46. Entry Level Developer (must NOT be senior)", title: "Entry Level Developer", expectedSenior: false },
+      { label: "47. New Grad SWE (must NOT be senior)", title: "New Grad SWE", expectedSenior: false },
+      { label: "48. Software Engineering Apprentice (must NOT be senior)", title: "Software Engineering Apprentice", expectedSenior: false },
+    ];
+
+    it(`evaluates all ${TITLE_TEST_CASES.length} labelled title test cases`, () => {
+      for (const tc of TITLE_TEST_CASES) {
+        const res = classifyExperience(tc.title, "");
+        if (tc.expectedSenior) {
+          expect(res.expClass, `Failed on: ${tc.label} (${tc.title})`).toBe("senior");
+          expect(res.minYears, `Expected minYears >= 2 on: ${tc.label}`).toBeGreaterThanOrEqual(2);
+          if (tc.expectedReasonPrefix) {
+            expect(res.reason.startsWith(tc.expectedReasonPrefix), `Reason prefix failed on: ${tc.label} (got: ${res.reason})`).toBe(true);
+          }
+        } else {
+          expect(res.expClass, `Expected not senior on: ${tc.label} (${tc.title})`).not.toBe("senior");
+        }
+      }
+    });
+  });
+
+  describe("STEP 2: Description Experience Phrases (Labelled Tests)", () => {
+    const PHRASE_TEST_CASES: Array<{
+      label: string;
+      desc: string;
+      expectedClass: ExpClass;
+      expectedMinYears: number | null;
+    }> = [
+      {
+        label: "Typically 3+ years of professional software engineering experience",
+        desc: "Typically 3+ years of professional software engineering experience required.",
+        expectedClass: "senior",
+        expectedMinYears: 3,
+      },
+      {
+        label: "minimum 3 years",
+        desc: "Must have minimum 3 years working with cloud infrastructure.",
+        expectedClass: "senior",
+        expectedMinYears: 3,
+      },
+      {
+        label: "at least 2 years of experience",
+        desc: "Requires at least 2 years of experience in backend development.",
+        expectedClass: "senior",
+        expectedMinYears: 2,
+      },
+      {
+        label: "3-5 years",
+        desc: "Looking for an engineer with 3-5 years of industry experience.",
+        expectedClass: "senior",
+        expectedMinYears: 3,
+      },
+      {
+        label: "5+ yrs",
+        desc: "Ideal candidate has 5+ yrs in distributed systems.",
+        expectedClass: "senior",
+        expectedMinYears: 5,
+      },
+      {
+        label: "2 to 4 years",
+        desc: "We require 2 to 4 years of hands-on experience with Node.js.",
+        expectedClass: "senior",
+        expectedMinYears: 2,
+      },
+      {
+        label: "3 years' experience",
+        desc: "Applicant must possess 3 years' experience in React Native.",
+        expectedClass: "senior",
+        expectedMinYears: 3,
+      },
+      {
+        label: "experience: 3+ years",
+        desc: "Qualifications: experience: 3+ years with relational databases.",
+        expectedClass: "senior",
+        expectedMinYears: 3,
+      },
+      {
+        label: "0-1 years (stays fresher)",
+        desc: "Welcoming developers with 0-1 years of experience in software development.",
+        expectedClass: "fresher",
+        expectedMinYears: 0,
+      },
+      {
+        label: "0-2 years (stays fresher)",
+        desc: "Seeking junior talent with 0-2 years of experience.",
+        expectedClass: "fresher",
+        expectedMinYears: 0,
+      },
+      {
+        label: "0 to 2 years of experience (stays fresher)",
+        desc: "Open to 0 to 2 years of experience in modern web stacks.",
+        expectedClass: "fresher",
+        expectedMinYears: 0,
+      },
+      {
+        label: "freshers welcome (stays fresher)",
+        desc: "Freshers welcome! We provide full mentorship and onboarding.",
+        expectedClass: "fresher",
+        expectedMinYears: 0,
+      },
+      {
+        label: "no experience required (stays fresher)",
+        desc: "No experience required, comprehensive curriculum provided.",
+        expectedClass: "fresher",
+        expectedMinYears: 0,
+      },
+      {
+        label: "1 year of experience (junior)",
+        desc: "Requires 1 year of experience building APIs.",
+        expectedClass: "junior",
+        expectedMinYears: 1,
+      },
+    ];
+
+    it(`evaluates all ${PHRASE_TEST_CASES.length} labelled experience phrase test cases`, () => {
+      for (const tc of PHRASE_TEST_CASES) {
+        const res = classifyExperience("Software Engineer", tc.desc);
+        expect(res.expClass, `Failed class on: ${tc.label}`).toBe(tc.expectedClass);
+        expect(res.minYears, `Failed minYears on: ${tc.label}`).toBe(tc.expectedMinYears);
+      }
+    });
+  });
+
+  describe("STEP 3: reclassifyLinkedInJobs & Shortlist/Maybe Routing", () => {
+    it("reclassifies stored LinkedIn 'Software Engineer III' rows to senior and moves them out of shortlist", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+
+      // Seed 1: Stored LinkedIn job with senior title that was previously stored as unclear
+      await repo.upsertJob(
+        {
+          source: "linkedin",
+          sourceId: "li-se-3",
+          title: "Software Engineer III",
+          company: "JPMorganChase",
+          location: "India",
+          remoteScope: "India",
+          description: "",
+          url: "https://www.linkedin.com/jobs/view/1001",
+          postedAt: new Date().toISOString(),
+          isRemote: true,
+          tags: ["java"],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: "Software Engineer III at JPMorganChase",
+          skills: ["Java"],
+          matchScore: 80,
+        }
+      );
+
+      // Seed 2: Stored LinkedIn job with NO description and unclear exp
+      await repo.upsertJob(
+        {
+          source: "linkedin",
+          sourceId: "li-no-desc",
+          title: "Software Engineer",
+          company: "Google",
+          location: "India",
+          remoteScope: "India",
+          description: "",
+          url: "https://www.linkedin.com/jobs/view/1002",
+          postedAt: new Date().toISOString(),
+          isRemote: true,
+          tags: ["python"],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: "Software Engineer at Google",
+          skills: ["Python"],
+          matchScore: 75,
+        }
+      );
+
+      // Seed 3: Stored LinkedIn job WITH description and fresher exp
+      await repo.upsertJob(
+        {
+          source: "linkedin",
+          sourceId: "li-fresher",
+          title: "Software Engineer",
+          company: "Microsoft",
+          location: "India",
+          remoteScope: "India",
+          description: "Freshers welcome! 0-1 years experience.",
+          url: "https://www.linkedin.com/jobs/view/1003",
+          postedAt: new Date().toISOString(),
+          isRemote: true,
+          tags: ["c#"],
+        },
+        {
+          expClass: "fresher",
+          expMinYears: 0,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: "Software Engineer at Microsoft",
+          skills: ["C#"],
+          matchScore: 85,
+        }
+      );
+
+      // Run reclassifyLinkedInJobs
+      const res1 = await repo.reclassifyLinkedInJobs();
+      expect(res1.updated).toBeGreaterThanOrEqual(1);
+
+      // Verify second run is idempotent (0 updates)
+      const res2 = await repo.reclassifyLinkedInJobs();
+      expect(res2.updated).toBe(0);
+
+      // Verify views:
+      // 1. li-se-3 is now senior -> in hidden, NOT in shortlist
+      const jobSe3 = await repo.getJob("linkedin", "li-se-3");
+      expect(jobSe3?.exp_class).toBe("senior");
+      expect(jobSe3?.filter_reason).toMatch(/^title level:/);
+
+      const shortlist = await repo.getJobs({ view: "shortlist" });
+      const shortlistIds = shortlist.jobs.map((j) => j.source_id);
+      expect(shortlistIds).not.toContain("li-se-3");
+      expect(shortlistIds).not.toContain("li-no-desc"); // Missing description with unclear exp routed out of shortlist
+      expect(shortlistIds).toContain("li-fresher");
+
+      // 2. li-no-desc is in Maybe with note
+      const maybe = await repo.getJobs({ view: "maybe" });
+      const maybeIds = maybe.jobs.map((j) => j.source_id);
+      expect(maybeIds).toContain("li-no-desc");
+      const jobNoDesc = await repo.getJob("linkedin", "li-no-desc");
+      expect(jobNoDesc?.summary_line).toBe("LinkedIn description missing, check experience");
+
+      // 3. li-se-3 is in Hidden
+      const hidden = await repo.getJobs({ view: "hidden" });
+      const hiddenIds = hidden.jobs.map((j) => j.source_id);
+      expect(hiddenIds).toContain("li-se-3");
+    });
+  });
 });

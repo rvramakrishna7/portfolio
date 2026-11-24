@@ -23,15 +23,19 @@ export interface ApifyLinkedInInput {
 }
 
 export function buildApifyLinkedInInput(overrides?: Partial<ApifyLinkedInInput>): ApifyLinkedInInput {
+  // automly/linkedin-jobs-scraper strictly requires experienceLevel to be one enum value.
+  const rawExp = overrides?.experienceLevel ?? "entry";
+  const experienceLevel = rawExp.includes(",") ? rawExp.split(",")[0].trim() : rawExp;
+
   return {
     keywords: overrides?.keywords ?? "software engineer",
     location: overrides?.location ?? "India",
     workplaceType: overrides?.workplaceType ?? "remote",
-    experienceLevel: overrides?.experienceLevel ?? "entry",
+    experienceLevel,
     timePosted: overrides?.timePosted ?? "past-week",
     sortBy: overrides?.sortBy ?? "date",
     maxResults: overrides?.maxResults ?? 100,
-    fetchDetails: overrides?.fetchDetails ?? false,
+    fetchDetails: overrides?.fetchDetails ?? true,
     scrapeCompany: overrides?.scrapeCompany ?? false,
     proxyConfiguration: overrides?.proxyConfiguration ?? { useApifyProxy: true },
   };
@@ -53,6 +57,9 @@ export interface ApifyLinkedInItem {
   postUrl?: string;
   link?: string;
   description?: string;
+  jobDescription?: string;
+  descriptionText?: string;
+  descriptionHtml?: string;
   text?: string;
   content?: string;
   benefits?: string;
@@ -93,7 +100,16 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
     let company = String(raw.company || raw.companyName || "").trim();
     let location = String(raw.location || "").trim();
     const url = String(raw.jobUrl || raw.url || raw.postUrl || raw.link || "").trim();
-    const rawDescription = String(raw.description || raw.text || raw.content || raw.benefits || "");
+    const rawDescription = String(
+      raw.description ||
+      raw.jobDescription ||
+      raw.descriptionText ||
+      raw.descriptionHtml ||
+      raw.text ||
+      raw.content ||
+      raw.benefits ||
+      ""
+    );
     const description = stripHtml(rawDescription);
 
     // If title or company is missing (typical for LinkedIn post scrapers),

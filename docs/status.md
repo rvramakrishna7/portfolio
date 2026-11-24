@@ -1,8 +1,16 @@
 # Status: Portfolio site
 
-Current step: Footer line removal and clearer IMAP error handling (`fix/footer-and-imap-error`).
+Current step: Filter senior LinkedIn jobs (SE III, 3+ yrs) (`fix/linkedin-seniority`).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Seniority filtering for LinkedIn titles and description phrases (`fix/linkedin-seniority`):
+  - Updated `classifyExperience` in `src/lib/jobs/classify.ts` to detect title level markers at or above mid band (Roman numerals II, III, IV, V, SDE 2/3/4, SDE-II, SWE 2, Level 2-5, L3-L7, Grade 3+, Staff, Principal, Lead, Architect, Manager, Head of) with word boundaries and "title level: ..." reasons.
+  - Ensured entry-level and non-senior titles (I, 1, Associate, Junior, Graduate, Trainee, Intern, Entry, New Grad, Fresher, Apprentice, VN3010, Civil, Vivid) are not marked as senior.
+  - Added range preprocessing and multi-word modifier support in description experience detection, reliably classifying phrases like "Typically 3+ years...", "minimum 3 years", "3-5 years", "5+ yrs", "2 to 4 years", and "3 years' experience" as senior, while preserving "0-1 years", "0-2 years", "freshers welcome", and "no experience required" as fresher.
+  - Set `fetchDetails: true` by default in Apify LinkedIn actor input, and mapped descriptions tolerantly across `description`, `jobDescription`, `descriptionText`, `descriptionHtml`, `text`, `content`, `benefits`.
+  - Added routing for LinkedIn jobs with missing descriptions and unclear experience to the Maybe tab (instead of Shortlist) with note "LinkedIn description missing, check experience".
+  - Implemented batched, idempotent, budget-controlled `reclassifyLinkedInJobs` on both `InMemoryJobsRepository` and `NeonJobsRepository` with NULL-safe SQL to migrate existing stored rows.
+  - Added 48 labelled title tests, 14 labelled description phrase tests, and LinkedIn repository reclassification test cases in `src/lib/jobs/classify.test.ts`.
 - Footer line removal & IMAP error formatting (`fix/footer-and-imap-error`):
   - Removed "Built with Next.js and plain CSS." from public footer (`src/components/Footer.tsx`). Footer now displays `© {year} Ramakrishna.`.
   - Updated `e2e/shell.spec.ts` to assert `Ramakrishna.` and verify absence of the removed stack sentence, including screenshot capture at 375 and 1440.

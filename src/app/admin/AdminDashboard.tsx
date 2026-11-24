@@ -841,9 +841,11 @@ export function AdminDashboard() {
                             <p className="admin-job-summary">{job.summary_line}</p>
                           )}
 
-                          {(viewFilter === "maybe" || (viewFilter === "all" && job.geo_eligibility === "unclear" && job.geo_reason?.startsWith("remote-unconfirmed:"))) && (
+                          {(viewFilter === "maybe" || (viewFilter === "all" && ((job.geo_eligibility === "unclear" && job.geo_reason?.startsWith("remote-unconfirmed:")) || (job.source === "linkedin" && (!job.description || !job.description.trim()) && job.exp_class === "unclear")))) && (
                             <p className="admin-job-maybe-note">
-                              Remote, but India eligibility not stated - check before applying
+                              {job.source === "linkedin" && (!job.description || !job.description.trim()) && job.exp_class === "unclear"
+                                ? "LinkedIn description missing, check experience"
+                                : "Remote, but India eligibility not stated - check before applying"}
                             </p>
                           )}
 

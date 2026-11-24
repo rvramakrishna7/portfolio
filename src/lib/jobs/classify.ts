@@ -47,13 +47,124 @@ function parseNumber(str: string): number | null {
   return null;
 }
 
+// Senior title and level regex patterns (checked in order):
+// Title contains level marker at or above mid band for a 0-1 year target:
+// 1. Role seniority words
+const SENIOR_ROLE_REGEX =
+  /\b(senior|sr\.?|staff|principal|lead|architect|manager|head\s+of|director|vp|vice\s+president)\b/i;
+
+// 2. SDE / SWE / Engineer / Developer with numeric level >= 2 or Roman numerals II-V
+const SDE_LEVEL_REGEX =
+  /\b(?:software\s+engineer|engineer|developer|dev|swe|sde)[\s-]*([2-9]|ii|iii|iv|v)\b/i;
+
+// 3. Level 2-9 / II-V, L3-L7, Grade 3+
+const CORPORATE_LEVEL_REGEX =
+  /\b(?:level|lvl)[\s-]*([2-9]|ii|iii|iv|v)\b/i;
+
+const L_LEVEL_REGEX = /\bL[\s-]*([3-7])\b/i;
+
+const GRADE_LEVEL_REGEX = /\bGrade[\s-]*([3-9]|\d{2,})\+?\b/i;
+
+// 4. Standalone Roman Numerals II, III, IV, V with word boundaries
+// Word boundary matching ensures words like "Civil" (iv) or "Vivid" (vi) or "VN3010" do not match.
+const STANDALONE_ROMAN_REGEX = /\b(II|III|IV|V)\b(?![.&])/i;
+
+function checkTitleSeniority(
+  title: string
+): { isSenior: boolean; reason: string; minYears: number } | null {
+  // 1. Role seniority words
+  const roleMatch = SENIOR_ROLE_REGEX.exec(title);
+  if (roleMatch) {
+    const word = roleMatch[1].toLowerCase();
+    return {
+      isSenior: true,
+      reason: `title level: ${word}`,
+      minYears: 5,
+    };
+  }
+
+  // 2. SDE / SWE / Engineer / Developer with numeric level >= 2 or Roman numeral
+  const sdeMatch = SDE_LEVEL_REGEX.exec(title);
+  if (sdeMatch) {
+    const lvl = sdeMatch[1].toUpperCase();
+    const years = /^[2-9]$/.test(lvl)
+      ? parseInt(lvl, 10)
+      : lvl === "II"
+      ? 2
+      : lvl === "III"
+      ? 3
+      : lvl === "IV"
+      ? 4
+      : 5;
+    return {
+      isSenior: true,
+      reason: `title level: ${lvl}`,
+      minYears: years,
+    };
+  }
+
+  // 3. Corporate Level 2+, L3-L7, Grade 3+
+  const corpMatch = CORPORATE_LEVEL_REGEX.exec(title);
+  if (corpMatch) {
+    const lvl = corpMatch[1].toUpperCase();
+    const years = /^[2-9]$/.test(lvl)
+      ? parseInt(lvl, 10)
+      : lvl === "II"
+      ? 2
+      : lvl === "III"
+      ? 3
+      : lvl === "IV"
+      ? 4
+      : 5;
+    return {
+      isSenior: true,
+      reason: `title level: ${corpMatch[0].trim()}`,
+      minYears: years,
+    };
+  }
+
+  const lMatch = L_LEVEL_REGEX.exec(title);
+  if (lMatch) {
+    const lNum = parseInt(lMatch[1], 10);
+    return {
+      isSenior: true,
+      reason: `title level: ${lMatch[0].trim()}`,
+      minYears: Math.max(2, lNum - 1),
+    };
+  }
+
+  const gradeMatch = GRADE_LEVEL_REGEX.exec(title);
+  if (gradeMatch) {
+    return {
+      isSenior: true,
+      reason: `title level: ${gradeMatch[0].trim()}`,
+      minYears: 3,
+    };
+  }
+
+  // 4. Standalone Roman Numerals II, III, IV, V with word boundaries
+  const romanMatch = STANDALONE_ROMAN_REGEX.exec(title);
+  if (romanMatch) {
+    const numeral = romanMatch[1].toUpperCase();
+    const years =
+      numeral === "II" ? 2 : numeral === "III" ? 3 : numeral === "IV" ? 4 : 5;
+    return {
+      isSenior: true,
+      reason: `title level: ${numeral}`,
+      minYears: years,
+    };
+  }
+
+  return null;
+}
+
 /**
  * Classifies experience from title and description.
  * Rules:
- * 1. Seniority words in title => senior
+ * 1. Seniority words and level markers in title (II, III, IV, V, SDE 2+, Level 2+, etc.) => senior
  * 2. Year patterns in description near experience keywords:
  *    minYears >= 2 => senior ("asks N+ years")
- * 3. Fresher words (fresher, graduate, new grad, entry level, 0-1, intern, etc.) => fresher
+ * 3. Fresher words (fresher, graduate, new grad, entry level, 0-1, 0-2, intern, etc.) => fresher
  * 4. "junior" or "associate" in title with no years >= 2 => junior
  * 5. minYears 1 => junior
  * 6. Nothing found => unclear
@@ -66,50 +177,66 @@ export function classifyExperience(
   const titleLower = title.toLowerCase();
   const descLower = description.toLowerCase();
 
-  // 1. Exclude titles: Seniority words in title => senior
-  const seniorTitleWords = [
-    "senior",
-    "sr.",
-    "sr ",
-    "staff",
-    "principal",
-    "lead",
-    "head of",
-    "director",
-    "manager",
-    "vp",
-    "architect",
-  ];
-  for (const word of seniorTitleWords) {
-    const regex = new RegExp(`\\b${word.replace(".", "\\.")}\\b`, "i");
-    if (regex.test(titleLower)) {
-      return {
-        expClass: "senior",
-        minYears: 5,
-        reason: `Title contains senior role indicator '${word}'`,
-      };
-    }
+  // 1. Exclude titles: Seniority words or level markers in title => senior
+  const titleSeniority = checkTitleSeniority(title);
+  if (titleSeniority) {
+    return {
+      expClass: "senior",
+      minYears: titleSeniority.minYears,
+      reason: titleSeniority.reason,
+    };
   }
 
   // 2. Year patterns in description that are specifically tied to experience
   // Prevent false positives like: "20+ years of company history", "401k", "2 years of funding"
-  // Look for patterns like:
-  // (N+ | N-M | N to M | at least N | minimum N | N) years (of)? (experience|exp|professional|industry|relevant|working)
-  // or (experience|exp) of N years
   let detectedMinYears: number | null = null;
   let yearPatternReason = "";
 
+  let workingDesc = descLower;
+
+  // Check ranges first: e.g. "3-5 years", "2 to 4 years", "0-1 years", "0-2 years"
+  // The lower bound represents the minimum required experience.
+  const rangeRegex =
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:-|to)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:years?|yrs?)['\u2019]?(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering|hands-on|prior|practical|direct|related|commercial))*\s*(?:experience|exp)?/gi;
+
+  let rangeMatch: RegExpExecArray | null;
+  while ((rangeMatch = rangeRegex.exec(descLower)) !== null) {
+    const matchedString = rangeMatch[0];
+    if (!/years?\s+of\s+(?:company\s+)?history|funding|success/i.test(matchedString)) {
+      const matchIndex = rangeMatch.index;
+      const snippet = descLower.slice(
+        Math.max(0, matchIndex - 20),
+        Math.min(descLower.length, matchIndex + rangeMatch[0].length + 20)
+      );
+      if (!/company\s+history|years\s+of\s+funding|series\s+[a-z]/i.test(snippet)) {
+        const lowerVal = parseNumber(rangeMatch[1]);
+        if (lowerVal !== null) {
+          if (detectedMinYears === null || lowerVal > detectedMinYears) {
+            detectedMinYears = lowerVal;
+            yearPatternReason = `Requires ${lowerVal}+ years of experience`;
+          }
+        }
+      }
+    }
+  }
+
+  // Mask matched ranges in workingDesc so upper bounds (e.g. "5" in "3-5 years") are not re-matched as standalone minimums
+  workingDesc = workingDesc.replace(rangeRegex, " [exp-range] ");
+
   const expYearRegexes = [
-    /\b(?:at\s+least|minimum|min\.?)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:-\s*\d+)?\s*years?\b(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering))?\s*(?:experience|exp)?/gi,
-    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+\s*years?\b(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering))?\s*(?:experience|exp)?/gi,
-    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:-|to)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*years?\b(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering))?\s*(?:experience|exp)?/gi,
-    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*years?\b(?:\s+of)?\s+(?:relevant|professional|industry|working|software|engineering|hands-on)?\s*(?:experience|exp)\b/gi,
-    /\b(?:experience|exp)(?:\s+of)?\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*years?\b/gi,
+    // Typically / at least / minimum N+ years of [qualifiers] (experience|exp)
+    /\b(?:at\s+least|minimum|min\.?|typically|around|about|approximately)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:-\s*\d+)?\s*(?:years?|yrs?)['\u2019]?(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering|hands-on|prior|practical|direct|related|commercial))*\s*(?:experience|exp)?/gi,
+    // N+ years/yrs (of) (qualifiers) (experience|exp)
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+\s*(?:years?|yrs?)['\u2019]?(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering|hands-on|prior|practical|direct|related|commercial))*\s*(?:experience|exp)?/gi,
+    // N years/yrs['] (of) (qualifiers) experience/exp
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:years?|yrs?)['\u2019]?(?:\s+of)?\s+(?:relevant|professional|industry|working|software|engineering|hands-on|prior|practical|direct|related|commercial)?\s*(?:experience|exp)\b/gi,
+    // experience/exp: N+ years/yrs
+    /\b(?:experience|exp)\s*[:=-]?(?:\s+of)?\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:years?|yrs?)['\u2019]?/gi,
   ];
 
   for (const regex of expYearRegexes) {
     let match: RegExpExecArray | null;
-    while ((match = regex.exec(descLower)) !== null) {
+    while ((match = regex.exec(workingDesc)) !== null) {
       // Avoid matches like "company has 20 years of history" if "history" follows years
       const matchedString = match[0];
       if (/years?\s+of\s+(?:company\s+)?history|funding|success/i.test(matchedString)) {
@@ -118,7 +245,7 @@ export function classifyExperience(
 
       // Check context surrounding the match for "history" or "funding"
       const matchIndex = match.index;
-      const snippet = descLower.slice(Math.max(0, matchIndex - 20), Math.min(descLower.length, matchIndex + match[0].length + 20));
+      const snippet = workingDesc.slice(Math.max(0, matchIndex - 20), Math.min(workingDesc.length, matchIndex + match[0].length + 20));
       if (/company\s+history|years\s+of\s+funding|series\s+[a-z]/i.test(snippet)) {
         continue;
       }
@@ -137,11 +264,11 @@ export function classifyExperience(
   }
 
   // Check for explicit "no experience required"
-  const noExpRegex = /\b(?:no\s+experience\s+required|0\s*years?\s+(?:of\s+)?experience|zero\s+years?\s+(?:of\s+)?experience)\b/i;
+  const noExpRegex = /\b(?:no\s+experience\s+required|0\s*(?:years?|yrs?)\s+(?:of\s+)?experience|zero\s*(?:years?|yrs?)\s+(?:of\s+)?experience)\b/i;
   const hasNoExp = noExpRegex.test(descLower);
 
-  // Check fresher words
-  const fresherWordsRegex = /\b(?:fresher|freshers|fresh\s+graduate|new\s+grad|new\s+grads|entry\s*level|entry-level|0\s*-\s*1\s*(?:years?|yrs?)|0\s+to\s+1\s*(?:years?|yrs?)|intern|internship|trainee|apprentice)\b/i;
+  // Check fresher words (includes 0-1, 0-2 yrs, freshers welcome)
+  const fresherWordsRegex = /\b(?:fresher|freshers|fresh\s+graduate|fresh\s+graduates|freshers?\s+welcome|new\s+grad|new\s+grads|entry\s*level|entry-level|0\s*-\s*[12]\s*(?:years?|yrs?)|0\s+to\s+[12]\s*(?:years?|yrs?)|intern|internship|trainee|apprentice)\b/i;
   const hasFresherInTitle = fresherWordsRegex.test(titleLower);
   const hasFresherInDesc = fresherWordsRegex.test(descLower);
   const hasFresher = hasFresherInTitle || hasFresherInDesc || hasNoExp;
