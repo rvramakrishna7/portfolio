@@ -1,8 +1,15 @@
 # Status: Portfolio site
 
-Current step: Fix Neon source/search filters and diagnose Apify collection (`fix/neon-filters`).
+Current step: Hidden reasons breakdown & count consistency merged into `main` (`8ace979`). Awaiting owner approval to push.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Hidden reasons breakdown & count consistency (`feat/hidden-reasons`):
+  - Documented count consistency invariant in `src/lib/jobs/repository.ts`: `All` = every non-inbox job within the selected "Posted within" window (`age <= maxAgeDays`); within that window, `Shortlist + Maybe + Hidden = All` (Inbox separate). Identified why `All` (2022) was smaller than `Hidden` (2109) in production: `Hidden` includes historical stale jobs (`age > maxAgeDays`) by design (from commit `4206fd2`), while `All` was bounded by the freshness window. Made the Hidden badge match what the tab lists across both repositories.
+  - Added Hidden reason breakdown chips above the list when in Hidden view (`Senior (title)`, `Senior (desc)`, `Onsite`, `Restricted`, `Geo unclear`, `Stale`, `Language`, `Skipped`, `Low relevance`, `Missing desc`) with counts computed server-side in `getViewCounts`.
+  - Added `reason` query filter in `InMemoryJobsRepository` and `NeonJobsRepository` respecting existing `source` and `q` search box.
+  - Added responsive, accessible styles in `src/styles/globals.css` with 44px mobile touch targets, solid tokens (no gradients, no italics, no em dashes).
+  - Added table-driven parity tests for `reason` filtering and count consistency across both repositories in `src/lib/jobs/classify.test.ts`.
+  - Added Playwright test in `e2e/admin-jobs.spec.ts` testing reason chip toggling, responsive layout (no horizontal scroll at 375px), and axe accessibility scans in light and dark modes.
 - Neon source and search (`q`) filters & parity tests (`fix/neon-filters`):
   - Updated `NeonJobsRepository.getJobs` in `src/lib/jobs/repository.ts` to apply `opts.source` (exact match on `LOWER(COALESCE(source, ''))` or `LOWER(COALESCE(inbound_source, ''))`), `opts.status`, and `opts.q` (case-insensitive substring match on `title`, `company`, and `UNNEST(COALESCE(skills, '{}'::text[]))`) across all 5 views (`shortlist`, `maybe`, `inbox`, `hidden`, `all`), and updated `total` to count the filtered query results while keeping `getViewCounts` unfiltered by `source` or `q`.
   - Updated `InMemoryJobsRepository.getJobs` to also match `opts.source` against `inbound_source` for parity with Neon.
