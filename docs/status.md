@@ -1,8 +1,12 @@
 # Status: Portfolio site
 
-Current step: Add job alert senders (`feat/more-alert-senders`).
+Current step: Fix Neon source/search filters and diagnose Apify collection (`fix/neon-filters`).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Neon source and search (`q`) filters & parity tests (`fix/neon-filters`):
+  - Updated `NeonJobsRepository.getJobs` in `src/lib/jobs/repository.ts` to apply `opts.source` (exact match on `LOWER(COALESCE(source, ''))` or `LOWER(COALESCE(inbound_source, ''))`), `opts.status`, and `opts.q` (case-insensitive substring match on `title`, `company`, and `UNNEST(COALESCE(skills, '{}'::text[]))`) across all 5 views (`shortlist`, `maybe`, `inbox`, `hidden`, `all`), and updated `total` to count the filtered query results while keeping `getViewCounts` unfiltered by `source` or `q`.
+  - Updated `InMemoryJobsRepository.getJobs` to also match `opts.source` against `inbound_source` for parity with Neon.
+  - Added parity unit tests in `src/lib/jobs/classify.test.ts` running identical filter cases against both `InMemoryJobsRepository` and `NeonJobsRepository`.
 - Additional job alert senders (`feat/more-alert-senders`):
   - Added strict end-anchored sender domain patterns in `src/config/alert-senders.ts` for `unstop` (`unstop.com`, `emails.unstop.com`), `flexjobs` (`flexjobs.com`, `mg.flexjobs.com`), `workindia` (`workindia.info`, `workindia.in`), `jobhai` (`jobhai.com`), `micro1` (`micro1.io`, `micro1.ai`), `internshala` (`internshala.com`), `shine` (`shine.com`), and `cuvette` (`cuvette.tech`), and updated `indeed` to match any local-part on `indeed.com` and its subdomains.
   - Anchored all sender patterns with `^...$` and trimmed `<...>` brackets in `isKnownAlertSender` so look-alike domains (e.g. `unstop.com.evil.io`) never match.
