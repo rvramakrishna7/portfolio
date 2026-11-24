@@ -11,12 +11,14 @@ import { StoredJob, InMemoryJobsRepository } from "../jobs/repository";
 import { LlmProvider, LlmCompletionOpts } from "../llm/types";
 
 class MockLlmProvider implements LlmProvider {
+  public lastError: string | null = null;
   public responses: OutreachLlmOutput[] = [];
   public callCount = 0;
   public capturedOptions: LlmCompletionOpts[] = [];
 
-  constructor(responses: OutreachLlmOutput[] = []) {
+  constructor(responses: OutreachLlmOutput[] = [], lastError: string | null = null) {
     this.responses = responses;
+    this.lastError = lastError;
   }
 
   async completeJson<T>(
@@ -227,5 +229,54 @@ describe("Outreach Generator (generate.ts)", () => {
 
     // Ensure zero LLM calls were attempted
     expect(mockProvider.callCount).toBe(0);
+  });
+
+  it("captures messages and asserts prompt contains 'JSON' and each required schema key with maxTokens 1400", async () => {
+    const repo = new InMemoryJobsRepository();
+    const job = createSampleJob();
+    const validOutput = createValidLlmOutput();
+    const mockProvider = new MockLlmProvider([validOutput]);
+
+    await generateOutreachDrafts(job, repo, { provider: mockProvider });
+
+    expect(mockProvider.capturedOptions).toHaveLength(1);
+    const opts = mockProvider.capturedOptions[0];
+
+    // Assert maxTokens is raised to 1400
+    expect(opts.maxTokens).toBe(1400);
+
+    const combinedText = opts.messages.map((m) => m.content).join("\n");
+
+    // Must contain the word JSON (case-insensitive)
+    expect(combinedText).toMatch(/json/i);
+
+    // Must contain each of the required keys
+    expect(combinedText).toContain("email");
+    expect(combinedText).toContain("subject");
+    expect(combinedText).toContain("body");
+    expect(combinedText).toContain("linkedin_note");
+    expect(combinedText).toContain("linkedin_dm");
+  });
+
+  it("throws descriptive error and warns when provider fails with lastError", async () => {
+    const repo = new InMemoryJobsRepository();
+    const job = createSampleJob();
+    const mockProvider = new MockLlmProvider([], "http 400: must contain json");
+
+    let warnedMsg = "";
+    const originalWarn = console.warn;
+    console.warn = (msg: string) => {
+      warnedMsg = msg;
+    };
+
+    try {
+      await expect(
+        generateOutreachDrafts(job, repo, { provider: mockProvider })
+      ).rejects.toThrow("LLM call failed (http 400: must contain json)");
+
+      expect(warnedMsg).toBe("LLM call failed (http 400: must contain json)");
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 });

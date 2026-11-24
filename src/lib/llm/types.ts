@@ -19,6 +19,7 @@ export interface LlmCompletionOpts {
 }
 
 export interface LlmProvider {
+  lastError?: string | null;
   completeJson<T>(opts: LlmCompletionOpts, schema: z.ZodType<T>): Promise<T | null>;
 }
 

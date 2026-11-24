@@ -1,8 +1,14 @@
 # Status: Portfolio site
 
-Current step: B1 Outreach drafts + review queue merged into `main` (`c646c6a`). Awaiting owner approval to run migration and push.
+Current step: Outreach prompt fix and error visibility merged into `main`. Awaiting owner check before push.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Outreach generation JSON prompt and error visibility (`fix/outreach-json`):
+  - In `src/lib/outreach/generate.ts`, explicitly instructed system prompt: "Respond with a single JSON object and nothing else, exactly in this shape:" followed by literal shape `{"email":{"subject":"...","body":"..."},"linkedin_note":{"body":"..."},"linkedin_dm":{"body":"..."}}` to satisfy Groq `response_format: { type: "json_object" }` requirements.
+  - Raised `maxTokens` to 1400 for both initial and retry generation calls.
+  - Added sanitized `lastError` tracking on `GroqProvider` in `src/lib/llm/groq.ts` capturing sanitized failure reasons (`no api key`, `http <status>`, `timeout`, `invalid json`, `schema: <path>`, `empty response`) with API keys, bearer tokens, and credentials strictly redacted.
+  - Surfaced sanitized failure reasons through `generateOutreachDrafts` errors and displayed them directly in `AdminDashboard.tsx` error boxes across both Jobs and Messages tabs.
+  - Added comprehensive unit tests in `src/lib/llm/groq.test.ts` (covering all `lastError` variants with fake fetch) and updated `src/lib/outreach/generate.test.ts` verifying prompt schema keys, maxTokens, and error propagation.
 - B1 Outreach drafts and review queue (`feat/b1-drafts`):
   - Added migration `db/migrations/006_outreach_drafts.sql` for table `outreach_drafts` (uuid pk, `job_id` references jobs, `kind` email/linkedin_note/linkedin_dm, `subject`, `body`, `status` draft/approved/discarded, `model`, `edited` boolean, created_at, updated_at) with indices on `(job_id)` and `(status, created_at desc)`. Plain SQL, zero `$$` tokens.
   - Implemented data layer in `src/lib/jobs/repository.ts` across `InMemoryJobsRepository` and `NeonJobsRepository` with `getJobById`, `createDrafts` (replaces non-approved drafts on re-generation, preserves approved drafts), `listDrafts` (attaching `job_title`, `job_company`, and `job_url`), `updateDraft` (sets `edited=true` on body/subject changes), `countDrafts`, and `countGenerationsToday`.
