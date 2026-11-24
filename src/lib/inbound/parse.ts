@@ -173,6 +173,46 @@ function containsJobSignal(text: string): boolean {
 }
 
 /**
+ * Strips trailing company-size suffixes (e.g. " / 51-200 Employees", " · 11-50 employees", " (201-500 Employees)")
+ * and similar newsletter metadata noise (ratings, funding stage, hiring status) from company names.
+ */
+export function cleanCompanyName(raw: string): string {
+  if (!raw) return "";
+  let out = raw.trim();
+
+  let prev = "";
+  while (out !== prev) {
+    prev = out;
+    // 1. Trailing size suffix after slash, pipe, middot, bullet, dash, or in parentheses/brackets
+    out = out
+      .replace(
+        /(?:\s*[\/|·•\-\u2013\u2014]\s*|\s*[\(\[]\s*)\d[\d,]*(?:\s*(?:-\s*|\u2013\s*|to\s*)\d[\d,]*|\+)?\s*(?:employees?|people|staff|team\s+members?|headcount)[\)\]]?\s*$/i,
+        ""
+      )
+      .trim();
+
+    // 2. Trailing funding / stage / hiring status suffix after separator
+    out = out
+      .replace(
+        /\s*[\/|·•]\s*(?:pre-seed|seed|series\s+[a-z0-9+]+|bootstrapped|public|ipo|actively\s+hiring|growing\s+fast|early\s+stage|growth\s+stage|late\s+stage)\s*$/i,
+        ""
+      )
+      .trim();
+
+    // 3. Trailing ratings / reviews noise
+    out = out
+      .replace(
+        /(?:\s*[\/|·•\-\u2013\u2014])?\s*[\(\[]?\d\.\d\s*(?:★|⭐|stars?|\/5)(?:\s*[\(\[]?\d[\d,]*\+?\s*reviews?[\)\]]?)?[\)\]]?\s*$/i,
+        ""
+      )
+      .trim();
+  }
+
+  out = out.replace(/[\s\/|·•\-\u2013\u2014,;:]+$/g, "").trim();
+  return out;
+}
+
+/**
  * Extracts company slug from known ATS URLs (Greenhouse, Lever, Ashby).
  */
 function extractCompanyFromUrl(urlStr: string): string | null {
@@ -252,19 +292,23 @@ export function extractNewsletterHtmlCandidates(
         if (isInvalidTitleLine(line)) continue;
         if (/remote|onsite|hybrid|india|bengaluru|mumbai|delhi|hyderabad|pune|gurgaon|noida|chennai/i.test(line)) {
           if (!location) location = line;
-        } else if (!company && line.length < 50) {
-          company = line;
+        } else if (!company && line.length < 80) {
+          const cleaned = cleanCompanyName(line);
+          if (cleaned && cleaned.length < 50) {
+            company = cleaned;
+          }
         }
       }
 
       if (!company) {
-        const atMatch = title.match(/^(.+?)\s+at\s+([A-Za-z0-9&.\-_ ]+)$/i);
+        const atMatch = title.match(/^(.+?)\s+at\s+([A-Za-z0-9&.\-_ /|·•()]+)$/i);
         if (atMatch) {
           title = cleanTitle(atMatch[1]);
-          company = atMatch[2].trim();
+          company = cleanCompanyName(atMatch[2]);
         }
       }
 
+      company = cleanCompanyName(company);
       if (!company) {
         company = extractCompanyFromUrl(resolvedUrl) || "Job Alert";
       }
@@ -745,6 +789,7 @@ function extractSingleCandidate(
     return null;
   }
 
+  company = cleanCompanyName(company);
   if (!company) {
     company = "Unknown Company";
   }

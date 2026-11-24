@@ -159,6 +159,55 @@ function checkTitleSeniority(
 }
 
 /**
+ * Shared helper to determine whether a job has a "real description".
+ * Treats a description as missing (returns false) when, after trimming:
+ * 1. It is empty
+ * 2. It is shorter than 80 characters
+ * 3. It is equal (case-insensitively) to the title, company, or a title/company combination line
+ */
+export function hasRealDescription(
+  description: string | null | undefined,
+  title?: string | null,
+  company?: string | null
+): boolean {
+  if (!description) return false;
+  const trimmed = description.trim();
+  if (trimmed.length < 80) return false;
+
+  const normDesc = trimmed.replace(/\s+/g, " ").toLowerCase();
+  const normTitle = (title || "").trim().replace(/\s+/g, " ").toLowerCase();
+  const normCompany = (company || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+  if (normTitle && normDesc === normTitle) return false;
+  if (normCompany && normDesc === normCompany) return false;
+  if (normTitle && normCompany) {
+    const combos = [
+      `${normTitle} ${normCompany}`,
+      `${normCompany} ${normTitle}`,
+      `${normTitle} at ${normCompany}`,
+      `${normTitle} - ${normCompany}`,
+      `${normCompany} - ${normTitle}`,
+      `${normTitle} | ${normCompany}`,
+      `${normCompany} | ${normTitle}`,
+      `${normTitle}, ${normCompany}`,
+      `${normCompany}, ${normTitle}`,
+    ];
+    if (combos.includes(normDesc)) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Returns the Maybe-tab note for a job whose description is missing and experience is unclear.
+ */
+export function getMissingDescriptionNote(source?: string | null): string {
+  return source === "linkedin"
+    ? "LinkedIn description missing, check experience"
+    : "description missing, check experience";
+}
+
+/**
  * Classifies experience from title and description.
  * Rules:
  * 1. Seniority words and level markers in title (II, III, IV, V, SDE 2+, Level 2+, etc.) => senior
@@ -172,7 +221,8 @@ function checkTitleSeniority(
  */
 export function classifyExperience(
   title: string,
-  description: string
+  description: string,
+  company?: string | null
 ): ClassifyExperienceResult {
   const titleLower = title.toLowerCase();
   const descLower = description.toLowerCase();
@@ -316,6 +366,14 @@ export function classifyExperience(
       expClass: "junior",
       minYears: 1,
       reason: "Requires 1 year of experience",
+    };
+  }
+
+  if (!hasRealDescription(description, title, company)) {
+    return {
+      expClass: "unclear",
+      minYears: null,
+      reason: "description missing, check experience",
     };
   }
 

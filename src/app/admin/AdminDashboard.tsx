@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { StoredJob, CustomBoard } from "@/lib/jobs/repository";
 import { formatJobAge } from "@/lib/jobs/freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
+import { hasRealDescription, getMissingDescriptionNote } from "@/lib/jobs/classify";
 
 interface StatItem {
   id: string;
@@ -841,10 +842,10 @@ export function AdminDashboard() {
                             <p className="admin-job-summary">{job.summary_line}</p>
                           )}
 
-                          {(viewFilter === "maybe" || (viewFilter === "all" && ((job.geo_eligibility === "unclear" && job.geo_reason?.startsWith("remote-unconfirmed:")) || (job.source === "linkedin" && (!job.description || !job.description.trim()) && job.exp_class === "unclear")))) && (
+                          {(viewFilter === "maybe" || (viewFilter === "all" && ((job.geo_eligibility === "unclear" && job.geo_reason?.startsWith("remote-unconfirmed:")) || (!hasRealDescription(job.description, job.title, job.company) && job.exp_class === "unclear" && ["worldwide", "india_ok"].includes(job.geo_eligibility))))) && (
                             <p className="admin-job-maybe-note">
-                              {job.source === "linkedin" && (!job.description || !job.description.trim()) && job.exp_class === "unclear"
-                                ? "LinkedIn description missing, check experience"
+                              {!hasRealDescription(job.description, job.title, job.company) && job.exp_class === "unclear"
+                                ? getMissingDescriptionNote(job.source)
                                 : "Remote, but India eligibility not stated - check before applying"}
                             </p>
                           )}

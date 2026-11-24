@@ -5,6 +5,8 @@ import {
   scoreMatch,
   ExpClass,
   GeoEligibility,
+  hasRealDescription,
+  getMissingDescriptionNote,
 } from "./classify";
 
 interface TestCaseExperience {
@@ -1684,6 +1686,282 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
       const hidden = await repo.getJobs({ view: "hidden" });
       const hiddenIds = hidden.jobs.map((j) => j.source_id);
       expect(hiddenIds).toContain("li-se-3");
+    });
+  });
+
+  describe("hasRealDescription & Non-LinkedIn Maybe Routing + Enrichment", () => {
+    it("evaluates labelled hasRealDescription test cases (empty, <80 chars, equals title/company)", () => {
+      const REAL_DESC_CASES: Array<{
+        label: string;
+        description: string | null | undefined;
+        title?: string;
+        company?: string;
+        expected: boolean;
+      }> = [
+        { label: "null description", description: null, title: "Software Engineer", company: "Acme", expected: false },
+        { label: "empty string", description: "", title: "Software Engineer", company: "Acme", expected: false },
+        { label: "whitespace only", description: "   \n\t  ", title: "Software Engineer", company: "Acme", expected: false },
+        { label: "short description (<80 chars)", description: "Building cloud backend APIs with Node.js and PostgreSQL.", title: "Software Engineer", company: "Acme", expected: false },
+        { label: "79-char description", description: "A".repeat(79), title: "Software Engineer", company: "Acme", expected: false },
+        { label: "exact 80-char real description", description: "We are looking for a full-stack software engineer to build web products in React", title: "Software Engineer", company: "Acme", expected: true },
+        { label: "description equal to title (even when >= 80 chars)", description: "Full Stack Software Engineer - Distributed Cloud Systems and AI Automation Platform Team", title: "Full Stack Software Engineer - Distributed Cloud Systems and AI Automation Platform Team", company: "Acme", expected: false },
+        { label: "description equal to company", description: "Acme Global Software Engineering & Cloud Infrastructure Solutions Private Limited India", title: "Software Engineer", company: "Acme Global Software Engineering & Cloud Infrastructure Solutions Private Limited India", expected: false },
+        { label: "description equal to 'title at company'", description: "Full Stack Software Engineer for Cloud Infrastructure at Acme Global Technologies Private Limited", title: "Full Stack Software Engineer for Cloud Infrastructure", company: "Acme Global Technologies Private Limited", expected: false },
+        { label: "description equal to 'title - company'", description: "Full Stack Software Engineer for Cloud Infrastructure - Acme Global Technologies Private Limited", title: "Full Stack Software Engineer for Cloud Infrastructure", company: "Acme Global Technologies Private Limited", expected: false },
+        { label: "valid detailed job description (>80 chars)", description: "Join our engineering team to design and build scalable web applications using TypeScript, Next.js, and PostgreSQL.", title: "Software Engineer", company: "Acme", expected: true },
+      ];
+
+      for (const tc of REAL_DESC_CASES) {
+        expect(
+          hasRealDescription(tc.description, tc.title, tc.company),
+          `Failed on: ${tc.label}`
+        ).toBe(tc.expected);
+      }
+
+      expect(getMissingDescriptionNote("linkedin")).toBe("LinkedIn description missing, check experience");
+      expect(getMissingDescriptionNote("email")).toBe("description missing, check experience");
+      expect(getMissingDescriptionNote("greenhouse")).toBe("description missing, check experience");
+    });
+
+    it("routes non-LinkedIn jobs with unclear exp and missing description to Maybe (NOT Hidden or Shortlist)", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      // 1. Non-LinkedIn job (source: email) with unclear exp and short/missing description + india_ok geo -> Maybe
+      await repo.upsertJob(
+        {
+          source: "email",
+          sourceId: "email-missing-desc",
+          title: "Software Engineer",
+          company: "CloudScale",
+          location: "India (Remote)",
+          remoteScope: "India",
+          description: "Software Engineer at CloudScale",
+          url: "https://wellfound.com/jobs/888778-software-engineer",
+          postedAt: nowIso,
+          isRemote: true,
+          tags: [],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: getMissingDescriptionNote("email"),
+          skills: [],
+          matchScore: 65,
+        }
+      );
+
+      // 2. Non-LinkedIn job (source: greenhouse) with unclear exp and real description (>= 80 chars) + worldwide geo -> Shortlist
+      await repo.upsertJob(
+        {
+          source: "greenhouse",
+          sourceId: "gh-real-desc",
+          title: "Software Engineer",
+          company: "GlobalTech",
+          location: "Remote - Worldwide",
+          remoteScope: "Worldwide",
+          description: "We are hiring a Software Engineer to build distributed microservices using TypeScript, Node.js, and PostgreSQL across our global engineering team.",
+          url: "https://boards.greenhouse.io/globaltech/jobs/101",
+          postedAt: nowIso,
+          isRemote: true,
+          tags: ["typescript", "node"],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "worldwide",
+          geoReason: "Worldwide",
+          summaryLine: "Software Engineer at GlobalTech",
+          skills: ["TypeScript", "Node.js"],
+          matchScore: 80,
+        }
+      );
+
+      const shortlist = await repo.getJobs({ view: "shortlist" });
+      const maybe = await repo.getJobs({ view: "maybe" });
+      const hidden = await repo.getJobs({ view: "hidden" });
+      const counts = await repo.getViewCounts();
+
+      expect(shortlist.jobs.map((j) => j.source_id)).toEqual(["gh-real-desc"]);
+      expect(maybe.jobs.map((j) => j.source_id)).toEqual(["email-missing-desc"]);
+      expect(hidden.jobs.map((j) => j.source_id)).not.toContain("email-missing-desc");
+      expect(counts.shortlist).toBe(1);
+      expect(counts.maybe).toBe(1);
+      expect(counts.hidden).toBe(0);
+    });
+
+    it("enriches missing descriptions via mocked fetcher: '3+ years' -> senior (hidden), 'freshers welcome' -> fresher (shortlist), failure -> stays Maybe", async () => {
+      const { InMemoryJobsRepository } = await import("./repository");
+      const { enrichMissingDescriptions } = await import("./pipeline");
+      const repo = new InMemoryJobsRepository();
+      const nowIso = new Date().toISOString();
+
+      // Candidate 1: Will fetch "3+ years" -> senior -> moves to Hidden
+      await repo.upsertJob(
+        {
+          source: "email",
+          sourceId: "enrich-senior",
+          title: "Backend Engineer",
+          company: "AlphaCorp",
+          location: "Remote - India",
+          remoteScope: "India",
+          description: "",
+          url: "https://careers.alphacorp.com/jobs/backend-1",
+          postedAt: nowIso,
+          isRemote: true,
+          tags: [],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: "description missing, check experience",
+          skills: [],
+          matchScore: 70,
+        }
+      );
+
+      // Candidate 2: Will fetch "freshers welcome" -> fresher -> moves to Shortlist
+      await repo.upsertJob(
+        {
+          source: "email",
+          sourceId: "enrich-fresher",
+          title: "Full Stack Developer",
+          company: "BetaStart",
+          location: "Worldwide",
+          remoteScope: "Worldwide",
+          description: "Full Stack Developer at BetaStart",
+          url: "https://jobs.betastart.io/openings/fullstack-2",
+          postedAt: nowIso,
+          isRemote: true,
+          tags: [],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "worldwide",
+          geoReason: "Open worldwide",
+          summaryLine: "description missing, check experience",
+          skills: [],
+          matchScore: 78,
+        }
+      );
+
+      // Candidate 3: Fetch fails -> stays in Maybe, stops retrying after 3 attempts
+      await repo.upsertJob(
+        {
+          source: "email",
+          sourceId: "enrich-fail",
+          title: "Software Engineer",
+          company: "GammaLabs",
+          location: "Remote - India",
+          remoteScope: "India",
+          description: "",
+          url: "https://careers.gammalabs.dev/jobs/swe-3",
+          postedAt: nowIso,
+          isRemote: true,
+          tags: [],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: "description missing, check experience",
+          skills: [],
+          matchScore: 72,
+        }
+      );
+
+      // Candidate 4: LinkedIn URL -> must be skipped (login wall)
+      await repo.upsertJob(
+        {
+          source: "linkedin",
+          sourceId: "enrich-skip-li",
+          title: "Software Engineer",
+          company: "DeltaInc",
+          location: "India",
+          remoteScope: "India",
+          description: "",
+          url: "https://www.linkedin.com/jobs/view/999888",
+          postedAt: nowIso,
+          isRemote: true,
+          tags: [],
+        },
+        {
+          expClass: "unclear",
+          expMinYears: null,
+          geoEligibility: "india_ok",
+          geoReason: "India allowed",
+          summaryLine: "LinkedIn description missing, check experience",
+          skills: [],
+          matchScore: 74,
+        }
+      );
+
+      const fetchedUrls: string[] = [];
+      const mockFetcher = async (url: string) => {
+        fetchedUrls.push(url);
+        if (url.includes("alphacorp.com")) {
+          return {
+            ok: true,
+            status: 200,
+            finalUrl: url,
+            body: `<html><head><script>console.log("ignore")</script></head><body><h1>Backend Engineer</h1><p>We are seeking a Backend Engineer with 3+ years of professional software engineering experience building scalable APIs in Node.js and PostgreSQL.</p></body></html>`,
+          };
+        }
+        if (url.includes("betastart.io")) {
+          return {
+            ok: true,
+            status: 200,
+            finalUrl: url,
+            body: `<html><body><h1>Full Stack Developer</h1><p>Join our product engineering squad! Freshers welcome. You will build end-to-end features with TypeScript, React, Next.js, and FastAPI in a collaborative remote team.</p></body></html>`,
+          };
+        }
+        return {
+          ok: false,
+          status: 503,
+          finalUrl: url,
+          body: "",
+          error: "HTTP 503",
+        };
+      };
+
+      const res = await enrichMissingDescriptions(repo, { fetcherFn: mockFetcher });
+      expect(res.attempted).toBe(3); // LinkedIn URL skipped
+      expect(res.enriched).toBe(2);
+      expect(res.movedToSenior).toBe(1);
+      expect(res.movedToShortlist).toBe(1);
+      expect(res.failed).toBe(1);
+      expect(fetchedUrls).not.toContain("https://www.linkedin.com/jobs/view/999888");
+
+      // Check routing after enrichment:
+      const shortlist = await repo.getJobs({ view: "shortlist" });
+      const maybe = await repo.getJobs({ view: "maybe" });
+      const hidden = await repo.getJobs({ view: "hidden" });
+
+      expect(shortlist.jobs.map((j) => j.source_id)).toEqual(["enrich-fresher"]);
+      expect(hidden.jobs.map((j) => j.source_id)).toContain("enrich-senior");
+      expect(maybe.jobs.map((j) => j.source_id).sort()).toEqual(["enrich-fail", "enrich-skip-li"]);
+
+      const seniorJob = await repo.getJob("email", "enrich-senior");
+      expect(seniorJob?.exp_class).toBe("senior");
+      expect(seniorJob?.exp_min_years).toBe(3);
+      expect((seniorJob?.raw as Record<string, unknown>)?.expReason).toContain("3+ years");
+
+      const fresherJob = await repo.getJob("email", "enrich-fresher");
+      expect(fresherJob?.exp_class).toBe("fresher");
+      expect(fresherJob?.exp_min_years).toBe(0);
+
+      // Verify retry limit (max 3 attempts for enrich-fail):
+      await enrichMissingDescriptions(repo, { fetcherFn: mockFetcher }); // attempt 2
+      await enrichMissingDescriptions(repo, { fetcherFn: mockFetcher }); // attempt 3
+      const res4 = await enrichMissingDescriptions(repo, { fetcherFn: mockFetcher }); // should not retry on 4th call
+      expect(res4.attempted).toBe(0);
     });
   });
 });
