@@ -6,6 +6,7 @@ import {
   fetchApifyDatasetItems,
   canStartNewApifyRun,
   sanitizeErrorMessage,
+  buildApifyLinkedInInput,
 } from "./linkedin-apify";
 
 describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () => {
@@ -20,6 +21,65 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
   afterEach(() => {
     process.env = originalEnv;
     vi.restoreAllMocks();
+  });
+
+  it("buildApifyLinkedInInput matches the required automly schema exactly with no extra keys", () => {
+    const input = buildApifyLinkedInInput();
+    const keys = Object.keys(input).sort();
+    const expectedKeys = [
+      "experienceLevel",
+      "fetchDetails",
+      "keywords",
+      "location",
+      "maxResults",
+      "proxyConfiguration",
+      "scrapeCompany",
+      "sortBy",
+      "timePosted",
+      "workplaceType",
+    ].sort();
+    expect(keys).toEqual(expectedKeys);
+    expect(input).toEqual({
+      keywords: "software engineer",
+      location: "India",
+      workplaceType: "remote",
+      experienceLevel: "entry",
+      timePosted: "past-week",
+      sortBy: "date",
+      maxResults: 100,
+      fetchDetails: false,
+      scrapeCompany: false,
+      proxyConfiguration: { useApifyProxy: true },
+    });
+  });
+
+  it("parses real item from automly/linkedin-jobs-scraper actor output correctly", () => {
+    const realFixture = [
+      {
+        jobId: "4493288054",
+        jobUrl: "https://in.linkedin.com/jobs/view/software-engineer-iii-java-springboot-aws-at-jpmorganchase-4493288054",
+        title: "Software Engineer III Java Springboot AWS",
+        company: "JPMorganChase",
+        companyUrl: "https://www.linkedin.com/company/jpmorganchase",
+        location: "Bengaluru, Karnataka, India",
+        postedDate: "2026-11-21",
+        postedTimeAgo: "2 days ago",
+        benefits: "Actively Hiring",
+      },
+    ];
+
+    const jobs = parseApifyLinkedInItems(realFixture);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].source).toBe("linkedin");
+    expect(jobs[0].sourceId).toBe("4493288054");
+    expect(jobs[0].title).toBe("Software Engineer III Java Springboot AWS");
+    expect(jobs[0].company).toBe("JPMorganChase");
+    expect(jobs[0].location).toBe("Bengaluru, Karnataka, India");
+    expect(jobs[0].url).toBe(
+      "https://in.linkedin.com/jobs/view/software-engineer-iii-java-springboot-aws-at-jpmorganchase-4493288054"
+    );
+    expect(jobs[0].postedAt).toBe(new Date("2026-11-21").toISOString());
+    expect(jobs[0].isRemote).toBe(true);
   });
 
   it("fails open when APIFY_API_TOKEN is missing", async () => {
@@ -72,7 +132,7 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
     expect(jobs[0].source).toBe("linkedin");
   });
 
-  it("starts asynchronous Apify run with Authorization Bearer and maxTotalChargeUsd guard", async () => {
+  it("starts asynchronous Apify run with Authorization Bearer, input schema and maxTotalChargeUsd guard", async () => {
     process.env.APIFY_API_TOKEN = "test_token_123";
     process.env.APIFY_LINKEDIN_ACTOR_ID = "custom-actor/linkedin";
 
@@ -92,7 +152,7 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const callUrl = mockFetch.mock.calls[0][0];
-    expect(callUrl).toContain("https://api.apify.com/v2/acts/custom-actor%2Flinkedin/runs");
+    expect(callUrl).toContain("https://api.apify.com/v2/acts/custom-actor~linkedin/runs");
     expect(callUrl).toContain("maxTotalChargeUsd=0.25");
     expect(callUrl).not.toContain("token=");
 
@@ -101,13 +161,68 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
     expect(callOpts.headers.Authorization).toBe("Bearer test_token_123");
 
     const body = JSON.parse(callOpts.body);
-    expect(body.limit).toBe(25);
-    expect(body.postedWithin).toBe("3d");
+    expect(body.keywords).toBe("software engineer");
+    expect(body.location).toBe("India");
+    expect(body.workplaceType).toBe("remote");
+    expect(body.experienceLevel).toBe("entry");
+    expect(body.maxResults).toBe(100);
 
     expect(res.started).toBe(true);
     expect(res.apifyRunId).toBe("run-xyz-123");
     expect(res.apifyDatasetId).toBe("dataset-abc-789");
     expect(res.status).toBe("RUNNING");
+  });
+
+  it("surfaces and sanitizes HTTP 400 error with body message", async () => {
+    process.env.APIFY_API_TOKEN = "test_token_123";
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () =>
+        JSON.stringify({
+          error: {
+            type: "INVALID_INPUT",
+            message: "Input is not valid: field 'keywords' must be string with token=secret_xyz12345678",
+          },
+        }),
+    });
+
+    const res = await startApifyLinkedInRun({ fetchFn: mockFetch });
+    expect(res.started).toBe(false);
+    expect(res.error).toContain("Apify start returned HTTP 400");
+    expect(res.error).toContain("INVALID_INPUT: Input is not valid");
+    expect(res.error).not.toContain("secret_xyz");
+  });
+
+  it("failed start does not count towards the 20-hour guard (does not block a retry)", () => {
+    const now = 1700000000000;
+    const clock = () => now;
+
+    // Past run had a failed start (no apifyRunId, apifyStatus 'FAILED')
+    const oneHourAgo = new Date(now - 1 * 60 * 60 * 1000).toISOString();
+    const failedRun = [
+      {
+        stats: {
+          apifyStartedAt: oneHourAgo,
+          apifyStatus: "FAILED",
+          apifyError: "Apify start returned HTTP 400",
+        },
+      },
+    ];
+    // Guard allows starting because it didn't succeed with a run ID
+    expect(canStartNewApifyRun(failedRun, clock).allowed).toBe(true);
+
+    // If it has an apifyRunId, it counts as started
+    const successfulRun = [
+      {
+        stats: {
+          apifyRunId: "run-success-123",
+          apifyStartedAt: oneHourAgo,
+          apifyStatus: "RUNNING",
+        },
+      },
+    ];
+    expect(canStartNewApifyRun(successfulRun, clock).allowed).toBe(false);
   });
 
   it("checks Apify actor run status (pending, succeeded, failed)", async () => {
@@ -181,12 +296,12 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
 
     // Run was 22 hours ago -> allowed
     const twentyTwoHoursAgo = new Date(now - 22 * 60 * 60 * 1000).toISOString();
-    const oldRun = [{ stats: { apifyStartedAt: twentyTwoHoursAgo } }];
+    const oldRun = [{ stats: { apifyRunId: "run-old", apifyStartedAt: twentyTwoHoursAgo } }];
     expect(canStartNewApifyRun(oldRun, clock).allowed).toBe(true);
 
     // Run was 5 hours ago -> refused
     const fiveHoursAgo = new Date(now - 5 * 60 * 60 * 1000).toISOString();
-    const recentRun = [{ stats: { apifyStartedAt: fiveHoursAgo } }];
+    const recentRun = [{ stats: { apifyRunId: "run-recent", apifyStartedAt: fiveHoursAgo } }];
     const recentGuard = canStartNewApifyRun(recentRun, clock);
     expect(recentGuard.allowed).toBe(false);
     expect(recentGuard.reason).toContain("minimum interval is 20h");
@@ -194,8 +309,8 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
     // Multiple runs in 20 hours -> refused
     const twoHoursAgo = new Date(now - 2 * 60 * 60 * 1000).toISOString();
     const multiRuns = [
-      { stats: { apifyStartedAt: twoHoursAgo } },
-      { stats: { apifyStartedAt: fiveHoursAgo } },
+      { stats: { apifyRunId: "run-1", apifyStartedAt: twoHoursAgo } },
+      { stats: { apifyRunId: "run-2", apifyStartedAt: fiveHoursAgo } },
     ];
     expect(canStartNewApifyRun(multiRuns, clock).allowed).toBe(false);
   });
