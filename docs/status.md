@@ -1,8 +1,14 @@
 # Status: Portfolio site
 
-Current step: Filter senior LinkedIn jobs (SE III, 3+ yrs) (`fix/linkedin-seniority`).
+Current step: Description enrichment and Maybe routing (`fix/description-enrichment`).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Description enrichment, "real description" helper, non-LinkedIn Maybe routing, and email company-name cleanup (`fix/description-enrichment`):
+  - Reverted non-LinkedIn missing-description jobs with `exp_class = 'unclear'` and valid geo (`worldwide`, `india_ok`) from Hidden; routed them to the Maybe tab with note `"description missing, check experience"`.
+  - Added shared `hasRealDescription` helper in `src/lib/jobs/classify.ts` (treating empty, `< 80` trimmed chars, or equal to title/company lines as missing) and applied consistently across `classifyExperience`, `InMemoryJobsRepository`, `NeonJobsRepository` (NULL-safe `COALESCE` SQL predicates), `triageJobWithLlm`, `reclassifyLinkedInJobs`, and `AdminDashboard.tsx`.
+  - Added pipeline description enrichment (`enrichMissingDescriptions` in `src/lib/jobs/repository.ts` and `src/lib/jobs/pipeline.ts`) using SSRF-safe `safeFetch` (max 25 jobs/step, 6s/fetch, 10s total budget, max 3 attempts tracked in `raw.enrichAttempts`, skipping `linkedin.com` and `indeed.com`, stripping HTML to 6000 chars, re-running `classifyExperience`).
+  - Added `cleanCompanyName` in `src/lib/inbound/parse.ts` to strip trailing `" / 51-200 Employees"` size suffixes and newsletter metadata noise.
+  - Added unit tests for `hasRealDescription`, non-LinkedIn Maybe routing, mocked description enrichment, and company-name cleanup.
 - Seniority filtering for LinkedIn titles and description phrases (`fix/linkedin-seniority`):
   - Updated `classifyExperience` in `src/lib/jobs/classify.ts` to detect title level markers at or above mid band (Roman numerals II, III, IV, V, SDE 2/3/4, SDE-II, SWE 2, Level 2-5, L3-L7, Grade 3+, Staff, Principal, Lead, Architect, Manager, Head of) with word boundaries and "title level: ..." reasons.
   - Ensured entry-level and non-senior titles (I, 1, Associate, Junior, Graduate, Trainee, Intern, Entry, New Grad, Fresher, Apprentice, VN3010, Civil, Vivid) are not marked as senior.

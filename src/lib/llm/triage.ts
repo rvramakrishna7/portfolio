@@ -7,6 +7,8 @@ import {
   ClassifyGeoResult,
   scoreMatch,
   ScoreMatchResult,
+  hasRealDescription,
+  getMissingDescriptionNote,
 } from "../jobs/classify";
 import {
   LlmProvider,
@@ -197,8 +199,8 @@ ${job.description.slice(0, 1500)}`;
     filterReason = "Low relevance score";
   }
 
-  if (job.source === "linkedin" && (!job.description || !job.description.trim()) && expClass === "unclear") {
-    summaryLine = "LinkedIn description missing, check experience";
+  if (expClass === "unclear" && !hasRealDescription(job.description, job.title, job.company)) {
+    summaryLine = getMissingDescriptionNote(job.source);
   }
 
   return {

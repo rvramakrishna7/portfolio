@@ -3,6 +3,8 @@ import {
   parseInboundCandidates,
   processAndIngestInboundCandidates,
   normalizeUrl,
+  cleanCompanyName,
+  extractNewsletterHtmlCandidates,
 } from "./parse";
 import { InMemoryJobsRepository } from "../jobs/repository";
 
@@ -416,6 +418,33 @@ https://forms.cloud.microsoft/r/bmw-form`;
       const inboxJobs = await repo.getJobs({ view: "inbox" });
       expect(inboxJobs.jobs).toHaveLength(1);
       expect(inboxJobs.jobs[0].title).toBe("Associate Software Engineer (0-2 Yrs)");
+    });
+
+    it("strips trailing company-size suffixes (' / 51-200 Employees', etc.) and newsletter noise from company names", () => {
+      expect(cleanCompanyName("SuperSeed AI / 51-200 Employees")).toBe("SuperSeed AI");
+      expect(cleanCompanyName("CloudScale · 11-50 employees")).toBe("CloudScale");
+      expect(cleanCompanyName("Acme Labs | 201-500 Employees")).toBe("Acme Labs");
+      expect(cleanCompanyName("NovaTech (1-10 employees)")).toBe("NovaTech");
+      expect(cleanCompanyName("Delta Systems - 1,000+ Employees")).toBe("Delta Systems");
+      expect(cleanCompanyName("Orbit AI / 11-50 Employees / Seed")).toBe("Orbit AI");
+      expect(cleanCompanyName("Infosys | 4.1 ★ (1200 Reviews)")).toBe("Infosys");
+      expect(cleanCompanyName("Tata Consultancy Services")).toBe("Tata Consultancy Services");
+
+      const newsletterHtml = `
+        <table>
+          <tr>
+            <td>
+              <a href="https://wellfound.com/jobs/999111-full-stack-engineer">Full Stack Engineer</a>
+              <p>SuperSeed AI / 51-200 Employees</p>
+              <span>India (Remote)</span>
+            </td>
+          </tr>
+        </table>
+      `;
+      const extracted = extractNewsletterHtmlCandidates(newsletterHtml);
+      expect(extracted).toHaveLength(1);
+      expect(extracted[0].company).toBe("SuperSeed AI");
+      expect(extracted[0].title).toBe("Full Stack Engineer");
     });
   });
 });

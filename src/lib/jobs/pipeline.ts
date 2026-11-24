@@ -23,11 +23,50 @@ import {
   ClassifyExperienceResult,
   ClassifyGeoResult,
   ScoreMatchResult,
+  hasRealDescription,
+  getMissingDescriptionNote,
 } from "./classify";
 import { LlmProvider } from "../llm/types";
 import { GroqProvider } from "../llm/groq";
 import { triageJobWithLlm, hashString, TriagedJobResult } from "../llm/triage";
-import { getJobsRepository, JobsRepository, SearchRunStats, CustomBoard, SearchRun, SourceStatusInfo } from "./repository";
+import {
+  getJobsRepository,
+  JobsRepository,
+  SearchRunStats,
+  CustomBoard,
+  SearchRun,
+  SourceStatusInfo,
+  EnrichDescriptionsOptions,
+  EnrichDescriptionsResult,
+} from "./repository";
+import { SafeFetchOptions, SafeFetchResult } from "../inbound/safe-fetch";
+
+/**
+ * Pipeline helper that enriches missing descriptions on candidate jobs in the repository.
+ * Enforces max 25 jobs per step, 6s per fetch, total 10s budget, max 3 attempts, skipping linkedin.com/indeed.com.
+ */
+export async function enrichMissingDescriptions(
+  repo: JobsRepository = getJobsRepository(),
+  opts?: EnrichDescriptionsOptions
+): Promise<EnrichDescriptionsResult> {
+  if (typeof repo.enrichMissingDescriptions === "function") {
+    return repo.enrichMissingDescriptions({
+      maxJobs: opts?.maxJobs ?? 25,
+      fetchTimeoutMs: opts?.fetchTimeoutMs ?? 6000,
+      timeBudgetMs: opts?.timeBudgetMs ?? 10000,
+      maxAttempts: opts?.maxAttempts ?? 3,
+      ...opts,
+    });
+  }
+  return {
+    attempted: 0,
+    enriched: 0,
+    movedToSenior: 0,
+    movedToShortlist: 0,
+    failed: 0,
+    remaining: 0,
+  };
+}
 
 export interface BoardQueueItem {
   platform: "greenhouse" | "lever" | "ashby";
@@ -473,6 +512,7 @@ export async function stepJobSearch(
     fetchBoardFn?: (board: BoardQueueItem) => Promise<AdapterResult>;
     checkApifyStatusFn?: typeof checkApifyRunStatus;
     fetchApifyItemsFn?: typeof fetchApifyDatasetItems;
+    enrichFetchFn?: (url: string, opts?: SafeFetchOptions) => Promise<SafeFetchResult>;
   }
 ): Promise<{
   runId: string;
@@ -767,7 +807,11 @@ export async function stepJobSearch(
         expMinYears: item.ruleExp.minYears,
         geoEligibility: item.ruleGeo.geo,
         geoReason: item.ruleGeo.reason,
-        summaryLine: item.job.title,
+        summaryLine:
+          item.ruleExp.expClass === "unclear" &&
+          !hasRealDescription(item.job.description, item.job.title, item.job.company)
+            ? getMissingDescriptionNote(item.job.source)
+            : item.job.title,
         skills: item.ruleScore.matchedSkills,
         filterReason:
           item.ruleExp.expClass === "senior"
@@ -807,6 +851,24 @@ export async function stepJobSearch(
       }
     } else {
       state.stats.shortlistCount++;
+    }
+  }
+
+  // PHASE 3: Enrich jobs with missing descriptions (max 25 jobs per step, 6s per fetch, total 10s budget)
+  if (typeof repo.enrichMissingDescriptions === "function") {
+    const shouldRunEnrich = Boolean(options?.enrichFetchFn) || !process.env.VITEST;
+    if (shouldRunEnrich) {
+      try {
+        await enrichMissingDescriptions(repo, {
+          maxJobs: 25,
+          fetchTimeoutMs: 6000,
+          timeBudgetMs: 10000,
+          clock: now,
+          fetcherFn: options?.enrichFetchFn,
+        });
+      } catch (err) {
+        console.warn("[stepJobSearch] enrichMissingDescriptions error:", err);
+      }
     }
   }
 

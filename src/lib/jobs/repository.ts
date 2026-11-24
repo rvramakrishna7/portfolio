@@ -3,7 +3,13 @@ import { NormalizedJob } from "./types";
 import { TriagedJobResult } from "../llm/triage";
 import { calculateJobAgeDays } from "./freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "../../config/job-profile";
-import { classifyGeo, classifyExperience } from "./classify";
+import {
+  classifyGeo,
+  classifyExperience,
+  hasRealDescription,
+  getMissingDescriptionNote,
+} from "./classify";
+import { safeFetch, SafeFetchOptions, SafeFetchResult } from "../inbound/safe-fetch";
 
 export interface StoredJob {
   id: string;
@@ -116,6 +122,70 @@ export interface ReclassifyResult {
   error?: boolean;
 }
 
+export interface EnrichDescriptionsOptions {
+  maxJobs?: number;
+  fetchTimeoutMs?: number;
+  timeBudgetMs?: number;
+  maxAttempts?: number;
+  maxAgeDays?: number;
+  clock?: () => number;
+  fetcherFn?: (url: string, opts?: SafeFetchOptions) => Promise<SafeFetchResult>;
+}
+
+export interface EnrichDescriptionsResult {
+  attempted: number;
+  enriched: number;
+  movedToSenior: number;
+  movedToShortlist: number;
+  failed: number;
+  remaining: number;
+}
+
+/**
+ * Returns true if the URL is a public https:// URL eligible for description enrichment.
+ * Skips linkedin.com and indeed.com (login walls).
+ */
+export function isEnrichablePublicHttpsUrl(urlStr: string | null | undefined): boolean {
+  if (!urlStr) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  if (!host) return false;
+  if (host === "linkedin.com" || host.endsWith(".linkedin.com")) return false;
+  if (host === "indeed.com" || host.endsWith(".indeed.com")) return false;
+  return true;
+}
+
+/**
+ * Strips HTML tags, scripts, styles, comments, and entities down to plain text, keeping up to maxChars.
+ */
+export function stripHtmlToPlainText(html: string, maxChars = 6000): string {
+  if (!html) return "";
+  let text = html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length > maxChars) {
+    text = text.slice(0, maxChars);
+  }
+  return text;
+}
+
 export interface JobsRepository {
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
   hasJobWithUrl?(url: string): Promise<boolean>;
@@ -127,6 +197,7 @@ export interface JobsRepository {
   reclassifyUnclearJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
   reclassifyInboxJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
   reclassifyLinkedInJobs?(opts?: ReclassifyOptions): Promise<ReclassifyResult>;
+  enrichMissingDescriptions?(opts?: EnrichDescriptionsOptions): Promise<EnrichDescriptionsResult>;
   getStats(): Promise<{
     jobsFound: number;
     newToday: number;
@@ -260,7 +331,7 @@ export class InMemoryJobsRepository implements JobsRepository {
         const isNotSkipped = j.status !== "skipped";
         const hasValidExp =
           ["fresher", "junior"].includes(j.exp_class) ||
-          (j.exp_class === "unclear" && Boolean(j.description && j.description.trim().length > 0));
+          (j.exp_class === "unclear" && hasRealDescription(j.description, j.title, j.company));
         const hasValidGeo = ["worldwide", "india_ok"].includes(j.geo_eligibility);
         const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
         const isFresh = age <= maxAgeDays;
@@ -278,10 +349,9 @@ export class InMemoryJobsRepository implements JobsRepository {
       list = list.filter((j) => {
         if (isInboxJob(j)) return false;
         const isNotSkipped = j.status !== "skipped";
-        const isLinkedInMissingDesc =
-          j.source === "linkedin" &&
+        const isMissingDescMaybe =
           j.exp_class === "unclear" &&
-          (!j.description || !j.description.trim()) &&
+          !hasRealDescription(j.description, j.title, j.company) &&
           ["worldwide", "india_ok"].includes(j.geo_eligibility);
         const isUnclearGeoRemote =
           ["fresher", "junior", "unclear"].includes(j.exp_class) &&
@@ -290,7 +360,7 @@ export class InMemoryJobsRepository implements JobsRepository {
         const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
         const isFresh = age <= maxAgeDays;
         const noFilter = !j.filter_reason;
-        return isNotSkipped && (isUnclearGeoRemote || isLinkedInMissingDesc) && isFresh && noFilter;
+        return isNotSkipped && (isUnclearGeoRemote || isMissingDescMaybe) && isFresh && noFilter;
       });
       list.sort((a, b) => {
         const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
@@ -318,27 +388,12 @@ export class InMemoryJobsRepository implements JobsRepository {
         if (isInboxJob(j)) return false;
         const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
         const isOlder = age > maxAgeDays;
-        const isLinkedInMissingDesc =
-          j.source === "linkedin" &&
-          j.exp_class === "unclear" &&
-          (!j.description || !j.description.trim()) &&
-          ["worldwide", "india_ok"].includes(j.geo_eligibility) &&
-          !j.filter_reason &&
-          j.status !== "skipped" &&
-          !isOlder;
-        if (isLinkedInMissingDesc) return false;
-
         const isUnclearNonRemote =
           j.geo_eligibility === "unclear" && (!j.geo_reason || !j.geo_reason.startsWith("remote-unconfirmed:"));
-        const isMissingDescNonLinkedInUnclear =
-          j.source !== "linkedin" &&
-          j.exp_class === "unclear" &&
-          (!j.description || !j.description.trim());
         return (
           j.exp_class === "senior" ||
           j.geo_eligibility === "restricted" ||
           isUnclearNonRemote ||
-          isMissingDescNonLinkedInUnclear ||
           j.status === "skipped" ||
           Boolean(j.filter_reason) ||
           isOlder
@@ -401,7 +456,7 @@ export class InMemoryJobsRepository implements JobsRepository {
       } else {
         const hasValidExp =
           ["fresher", "junior"].includes(j.exp_class) ||
-          (j.exp_class === "unclear" && Boolean(j.description && j.description.trim().length > 0));
+          (j.exp_class === "unclear" && hasRealDescription(j.description, j.title, j.company));
 
         const isShortlistCandidate =
           hasValidExp &&
@@ -409,10 +464,9 @@ export class InMemoryJobsRepository implements JobsRepository {
           j.status !== "skipped" &&
           !j.filter_reason;
 
-        const isLinkedInMissingDesc =
-          j.source === "linkedin" &&
+        const isMissingDescMaybe =
           j.exp_class === "unclear" &&
-          (!j.description || !j.description.trim()) &&
+          !hasRealDescription(j.description, j.title, j.company) &&
           ["worldwide", "india_ok"].includes(j.geo_eligibility);
 
         const isUnclearGeoRemote =
@@ -421,21 +475,17 @@ export class InMemoryJobsRepository implements JobsRepository {
           Boolean(j.geo_reason && j.geo_reason.startsWith("remote-unconfirmed:"));
 
         const isMaybeCandidate =
-          (isUnclearGeoRemote || isLinkedInMissingDesc) &&
+          (isUnclearGeoRemote || isMissingDescMaybe) &&
           j.status !== "skipped" &&
           !j.filter_reason;
 
         const isHiddenCandidate =
-          !isLinkedInMissingDesc &&
-          (
-            j.exp_class === "senior" ||
-            j.geo_eligibility === "restricted" ||
-            (j.geo_eligibility === "unclear" && (!j.geo_reason || !j.geo_reason.startsWith("remote-unconfirmed:"))) ||
-            (j.source !== "linkedin" && j.exp_class === "unclear" && (!j.description || !j.description.trim())) ||
-            j.status === "skipped" ||
-            Boolean(j.filter_reason) ||
-            age > maxAgeDays
-          );
+          j.exp_class === "senior" ||
+          j.geo_eligibility === "restricted" ||
+          (j.geo_eligibility === "unclear" && (!j.geo_reason || !j.geo_reason.startsWith("remote-unconfirmed:"))) ||
+          j.status === "skipped" ||
+          Boolean(j.filter_reason) ||
+          age > maxAgeDays;
 
         if (isShortlistCandidate && age <= maxAgeDays) {
           shortlist++;
@@ -589,8 +639,8 @@ export class InMemoryJobsRepository implements JobsRepository {
         break;
       }
 
-      const reclassified = classifyExpFn(j.title || "", j.description || "");
-      const hasNoDesc = !j.description || !j.description.trim();
+      const reclassified = classifyExpFn(j.title || "", j.description || "", j.company);
+      const hasNoDesc = !hasRealDescription(j.description, j.title, j.company);
 
       let newFilterReason = j.filter_reason;
       let newSummaryLine = j.summary_line;
@@ -598,7 +648,7 @@ export class InMemoryJobsRepository implements JobsRepository {
       if (reclassified.expClass === "senior") {
         newFilterReason = reclassified.reason || "Senior experience required";
       } else if (reclassified.expClass === "unclear" && hasNoDesc) {
-        newSummaryLine = "LinkedIn description missing, check experience";
+        newSummaryLine = getMissingDescriptionNote(j.source);
       }
 
       const changed =
@@ -620,6 +670,129 @@ export class InMemoryJobsRepository implements JobsRepository {
 
     const remaining = linkedinJobs.length - processedCount;
     return { updated, remaining };
+  }
+
+  async enrichMissingDescriptions(opts?: EnrichDescriptionsOptions): Promise<EnrichDescriptionsResult> {
+    const maxJobs = opts?.maxJobs ?? 25;
+    const fetchTimeoutMs = opts?.fetchTimeoutMs ?? 6000;
+    const timeBudgetMs = opts?.timeBudgetMs ?? 10000;
+    const maxAttempts = opts?.maxAttempts ?? 3;
+    const maxAgeDays = opts?.maxAgeDays ?? MAX_AGE_DAYS_DEFAULT;
+    const clock = opts?.clock ?? Date.now;
+    const fetcher = opts?.fetcherFn ?? safeFetch;
+    const startTime = clock();
+
+    const isInboxJob = (j: StoredJob) =>
+      Boolean(
+        (j.inbound_source && ["telegram", "whatsapp", "pasted", "paste"].includes(j.inbound_source)) ||
+        ["telegram", "whatsapp", "pasted", "paste"].includes(j.source)
+      );
+
+    const candidates = Array.from(this.jobs.values()).filter((j) => {
+      if (isInboxJob(j)) return false;
+      if (j.status === "skipped") return false;
+      if (j.filter_reason) return false;
+      if (j.exp_class === "senior") return false;
+      const age = calculateJobAgeDays(j.posted_at, j.fetched_at);
+      if (age > maxAgeDays) return false;
+
+      const geoOk =
+        ["worldwide", "india_ok"].includes(j.geo_eligibility) ||
+        (j.geo_eligibility === "unclear" && Boolean(j.geo_reason && j.geo_reason.startsWith("remote-unconfirmed:")));
+      if (!geoOk) return false;
+
+      if (hasRealDescription(j.description, j.title, j.company)) return false;
+
+      const rawObj = (typeof j.raw === "object" && j.raw !== null ? j.raw : {}) as Record<string, unknown>;
+      const attempts = typeof rawObj.enrichAttempts === "number" ? rawObj.enrichAttempts : 0;
+      if (attempts >= maxAttempts) return false;
+
+      const targetUrl = isEnrichablePublicHttpsUrl(j.apply_url)
+        ? j.apply_url
+        : isEnrichablePublicHttpsUrl(j.url)
+        ? j.url
+        : null;
+      return Boolean(targetUrl);
+    });
+
+    let attempted = 0;
+    let enriched = 0;
+    let movedToSenior = 0;
+    let movedToShortlist = 0;
+    let failed = 0;
+
+    for (const j of candidates) {
+      if (attempted >= maxJobs) break;
+      if (clock() - startTime >= timeBudgetMs) break;
+
+      const targetUrl = isEnrichablePublicHttpsUrl(j.apply_url) ? j.apply_url! : j.url;
+      const rawObj = (typeof j.raw === "object" && j.raw !== null ? j.raw : {}) as Record<string, unknown>;
+      const prevAttempts = typeof rawObj.enrichAttempts === "number" ? rawObj.enrichAttempts : 0;
+      const nextAttempts = prevAttempts + 1;
+
+      attempted++;
+      const res = await fetcher(targetUrl, { timeoutMs: fetchTimeoutMs });
+
+      if (res.ok && res.body) {
+        const plainText = stripHtmlToPlainText(res.body, 6000);
+        if (hasRealDescription(plainText, j.title, j.company)) {
+          const expRes = classifyExperience(j.title, plainText, j.company);
+          j.description = plainText;
+          j.exp_class = expRes.expClass;
+          j.exp_min_years = expRes.minYears;
+          j.raw = {
+            ...rawObj,
+            enrichAttempts: nextAttempts,
+            enrichedAt: new Date().toISOString(),
+            expReason: expRes.reason,
+          };
+
+          if (expRes.expClass === "senior") {
+            j.filter_reason = expRes.reason || "Senior experience required";
+            movedToSenior++;
+          } else {
+            j.filter_reason = null;
+            if (!j.summary_line || j.summary_line === getMissingDescriptionNote(j.source)) {
+              j.summary_line = `${j.title} at ${j.company}`;
+            }
+            if (["worldwide", "india_ok"].includes(j.geo_eligibility)) {
+              movedToShortlist++;
+            }
+          }
+          enriched++;
+        } else {
+          j.raw = {
+            ...rawObj,
+            enrichAttempts: nextAttempts,
+            lastEnrichError: "extracted text too short",
+          };
+          if (j.exp_class === "unclear") {
+            j.summary_line = getMissingDescriptionNote(j.source);
+          }
+          failed++;
+        }
+      } else {
+        j.raw = {
+          ...rawObj,
+          enrichAttempts: nextAttempts,
+          lastEnrichError: res.error || `HTTP ${res.status}`,
+        };
+        if (j.exp_class === "unclear") {
+          j.summary_line = getMissingDescriptionNote(j.source);
+        }
+        failed++;
+      }
+    }
+
+    const remaining = Math.max(0, candidates.length - attempted);
+    return {
+      attempted,
+      enriched,
+      movedToSenior,
+      movedToShortlist,
+      failed,
+      remaining,
+    };
   }
 
   async getStats() {
@@ -943,7 +1116,15 @@ export class NeonJobsRepository implements JobsRepository {
         WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
           AND (
             exp_class IN ('fresher', 'junior')
-            OR (exp_class = 'unclear' AND description IS NOT NULL AND length(trim(description)) > 0)
+            OR (
+              exp_class = 'unclear'
+              AND LENGTH(TRIM(COALESCE(description, ''))) >= 80
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(company, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+              AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+            )
           )
           AND geo_eligibility IN ('worldwide', 'india_ok')
           AND status != 'skipped'
@@ -960,8 +1141,19 @@ export class NeonJobsRepository implements JobsRepository {
           AND filter_reason IS NULL
           AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
           AND (
-            (exp_class IN ('fresher', 'junior', 'unclear') AND geo_eligibility = 'unclear' AND geo_reason LIKE 'remote-unconfirmed:%')
-            OR (source = 'linkedin' AND exp_class = 'unclear' AND (description IS NULL OR length(trim(description)) = 0) AND geo_eligibility IN ('worldwide', 'india_ok'))
+            (exp_class IN ('fresher', 'junior', 'unclear') AND geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') LIKE 'remote-unconfirmed:%')
+            OR (
+              exp_class = 'unclear'
+              AND geo_eligibility IN ('worldwide', 'india_ok')
+              AND (
+                LENGTH(TRIM(COALESCE(description, ''))) < 80
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+                OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+              )
+            )
           )
         ORDER BY match_score DESC, posted_at DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
@@ -983,8 +1175,7 @@ export class NeonJobsRepository implements JobsRepository {
           AND (
             exp_class = 'senior'
             OR geo_eligibility = 'restricted'
-            OR (geo_eligibility = 'unclear' AND (geo_reason NOT LIKE 'remote-unconfirmed:%' OR geo_reason IS NULL))
-            OR (source != 'linkedin' AND exp_class = 'unclear' AND (description IS NULL OR length(trim(description)) = 0))
+            OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
             OR status = 'skipped'
             OR filter_reason IS NOT NULL
             OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
@@ -1018,7 +1209,15 @@ export class NeonJobsRepository implements JobsRepository {
             WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
               AND (
                 exp_class IN ('fresher', 'junior')
-                OR (exp_class = 'unclear' AND description IS NOT NULL AND length(trim(description)) > 0)
+                OR (
+                  exp_class = 'unclear'
+                  AND LENGTH(TRIM(COALESCE(description, ''))) >= 80
+                  AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '')))
+                  AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(company, '')))
+                  AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+                  AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+                  AND LOWER(TRIM(COALESCE(description, ''))) != LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+                )
               )
               AND geo_eligibility IN ('worldwide', 'india_ok')
               AND status != 'skipped'
@@ -1031,8 +1230,19 @@ export class NeonJobsRepository implements JobsRepository {
               AND filter_reason IS NULL
               AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
               AND (
-                (exp_class IN ('fresher', 'junior', 'unclear') AND geo_eligibility = 'unclear' AND geo_reason LIKE 'remote-unconfirmed:%')
-                OR (source = 'linkedin' AND exp_class = 'unclear' AND (description IS NULL OR length(trim(description)) = 0) AND geo_eligibility IN ('worldwide', 'india_ok'))
+                (exp_class IN ('fresher', 'junior', 'unclear') AND geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') LIKE 'remote-unconfirmed:%')
+                OR (
+                  exp_class = 'unclear'
+                  AND geo_eligibility IN ('worldwide', 'india_ok')
+                  AND (
+                    LENGTH(TRIM(COALESCE(description, ''))) < 80
+                    OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '')))
+                    OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '')))
+                    OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+                    OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+                    OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+                  )
+                )
               )
           )::int AS maybe,
           COUNT(*) FILTER (
@@ -1046,8 +1256,7 @@ export class NeonJobsRepository implements JobsRepository {
               AND (
                 exp_class = 'senior'
                 OR geo_eligibility = 'restricted'
-                OR (geo_eligibility = 'unclear' AND (geo_reason NOT LIKE 'remote-unconfirmed:%' OR geo_reason IS NULL))
-                OR (source != 'linkedin' AND exp_class = 'unclear' AND (description IS NULL OR length(trim(description)) = 0))
+                OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') NOT LIKE 'remote-unconfirmed:%')
                 OR status = 'skipped'
                 OR filter_reason IS NOT NULL
                 OR COALESCE(posted_at, fetched_at) < NOW() - (${maxAgeDays} || ' days')::interval
@@ -1289,12 +1498,14 @@ export class NeonJobsRepository implements JobsRepository {
     const sql = getSql();
     try {
       const rows = (await sql`
-        SELECT id, title, description, exp_class, exp_min_years, filter_reason, summary_line
+        SELECT id, source, title, company, description, exp_class, exp_min_years, filter_reason, summary_line
         FROM jobs
         WHERE source = 'linkedin'
       `) as Array<{
         id: string;
+        source: string;
         title: string;
+        company: string;
         description: string | null;
         exp_class: "fresher" | "junior" | "unclear" | "senior";
         exp_min_years: number | null;
@@ -1320,8 +1531,8 @@ export class NeonJobsRepository implements JobsRepository {
         }
 
         const row = rows[i];
-        const reclassified = classifyExpFn(row.title || "", row.description || "");
-        const hasNoDesc = !row.description || !row.description.trim();
+        const reclassified = classifyExpFn(row.title || "", row.description || "", row.company);
+        const hasNoDesc = !hasRealDescription(row.description, row.title, row.company);
 
         let newFilterReason = row.filter_reason;
         let newSummaryLine = row.summary_line;
@@ -1329,7 +1540,7 @@ export class NeonJobsRepository implements JobsRepository {
         if (reclassified.expClass === "senior") {
           newFilterReason = reclassified.reason || "Senior experience required";
         } else if (reclassified.expClass === "unclear" && hasNoDesc) {
-          newSummaryLine = "LinkedIn description missing, check experience";
+          newSummaryLine = getMissingDescriptionNote(row.source);
         }
 
         const changed =
@@ -1388,6 +1599,195 @@ export class NeonJobsRepository implements JobsRepository {
     } catch (err: unknown) {
       console.error("[reclassifyLinkedInJobs] Error reclassifying LinkedIn jobs:", err);
       return { updated: 0, remaining: 0, error: true };
+    }
+  }
+
+  async enrichMissingDescriptions(opts?: EnrichDescriptionsOptions): Promise<EnrichDescriptionsResult> {
+    const maxJobs = opts?.maxJobs ?? 25;
+    const fetchTimeoutMs = opts?.fetchTimeoutMs ?? 6000;
+    const timeBudgetMs = opts?.timeBudgetMs ?? 10000;
+    const maxAttempts = opts?.maxAttempts ?? 3;
+    const maxAgeDays = opts?.maxAgeDays ?? MAX_AGE_DAYS_DEFAULT;
+    const clock = opts?.clock ?? Date.now;
+    const fetcher = opts?.fetcherFn ?? safeFetch;
+    const startTime = clock();
+
+    const sql = getSql();
+    try {
+      const rows = (await sql`
+        SELECT id, source, title, company, url, apply_url, description, exp_class, exp_min_years, geo_eligibility, geo_reason, filter_reason, summary_line, raw
+        FROM jobs
+        WHERE NOT (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND status != 'skipped'
+          AND filter_reason IS NULL
+          AND exp_class != 'senior'
+          AND COALESCE(posted_at, fetched_at) >= NOW() - (${maxAgeDays} || ' days')::interval
+          AND (
+            geo_eligibility IN ('worldwide', 'india_ok')
+            OR (geo_eligibility = 'unclear' AND COALESCE(geo_reason, '') LIKE 'remote-unconfirmed:%')
+          )
+          AND (
+            LENGTH(TRIM(COALESCE(description, ''))) < 80
+            OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '')))
+            OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '')))
+            OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' at ' || COALESCE(company, '')))
+            OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(title, '') || ' - ' || COALESCE(company, '')))
+            OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(COALESCE(company, '') || ' - ' || COALESCE(title, '')))
+          )
+        ORDER BY match_score DESC NULLS LAST, last_seen_at DESC
+        LIMIT 100
+      `) as Array<{
+        id: string;
+        source: string;
+        title: string;
+        company: string;
+        url: string;
+        apply_url: string | null;
+        description: string | null;
+        exp_class: "fresher" | "junior" | "unclear" | "senior";
+        exp_min_years: number | null;
+        geo_eligibility: "worldwide" | "india_ok" | "restricted" | "unclear";
+        geo_reason: string | null;
+        filter_reason: string | null;
+        summary_line: string | null;
+        raw: unknown;
+      }>;
+
+      const parseRaw = (raw: unknown): Record<string, unknown> => {
+        if (typeof raw === "string") {
+          try {
+            const parsed = JSON.parse(raw);
+            return typeof parsed === "object" && parsed !== null ? parsed : {};
+          } catch {
+            return {};
+          }
+        }
+        return typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+      };
+
+      const eligibleRows = rows.filter((r) => {
+        if (hasRealDescription(r.description, r.title, r.company)) return false;
+        const rawObj = parseRaw(r.raw);
+        const attempts = typeof rawObj.enrichAttempts === "number" ? rawObj.enrichAttempts : 0;
+        if (attempts >= maxAttempts) return false;
+        const targetUrl = isEnrichablePublicHttpsUrl(r.apply_url)
+          ? r.apply_url
+          : isEnrichablePublicHttpsUrl(r.url)
+          ? r.url
+          : null;
+        return Boolean(targetUrl);
+      });
+
+      let attempted = 0;
+      let enriched = 0;
+      let movedToSenior = 0;
+      let movedToShortlist = 0;
+      let failed = 0;
+
+      for (const row of eligibleRows) {
+        if (attempted >= maxJobs) break;
+        if (clock() - startTime >= timeBudgetMs) break;
+
+        const targetUrl = isEnrichablePublicHttpsUrl(row.apply_url) ? row.apply_url! : row.url;
+        const rawObj = parseRaw(row.raw);
+        const prevAttempts = typeof rawObj.enrichAttempts === "number" ? rawObj.enrichAttempts : 0;
+        const nextAttempts = prevAttempts + 1;
+
+        attempted++;
+        const res = await fetcher(targetUrl, { timeoutMs: fetchTimeoutMs });
+
+        if (res.ok && res.body) {
+          const plainText = stripHtmlToPlainText(res.body, 6000);
+          if (hasRealDescription(plainText, row.title, row.company)) {
+            const expRes = classifyExperience(row.title, plainText, row.company);
+            const newFilterReason =
+              expRes.expClass === "senior" ? expRes.reason || "Senior experience required" : null;
+            const newSummaryLine =
+              expRes.expClass === "senior"
+                ? row.summary_line
+                : !row.summary_line || row.summary_line === getMissingDescriptionNote(row.source)
+                ? `${row.title} at ${row.company}`
+                : row.summary_line;
+            const newRaw = {
+              ...rawObj,
+              enrichAttempts: nextAttempts,
+              enrichedAt: new Date().toISOString(),
+              expReason: expRes.reason,
+            };
+
+            await sql`
+              UPDATE jobs
+              SET
+                description = ${plainText},
+                exp_class = ${expRes.expClass},
+                exp_min_years = ${expRes.minYears},
+                filter_reason = ${newFilterReason},
+                summary_line = ${newSummaryLine},
+                raw = ${JSON.stringify(newRaw)}::jsonb
+              WHERE id = ${row.id}::uuid
+            `;
+
+            if (expRes.expClass === "senior") {
+              movedToSenior++;
+            } else if (["worldwide", "india_ok"].includes(row.geo_eligibility)) {
+              movedToShortlist++;
+            }
+            enriched++;
+          } else {
+            const newRaw = {
+              ...rawObj,
+              enrichAttempts: nextAttempts,
+              lastEnrichError: "extracted text too short",
+            };
+            const newSummaryLine =
+              row.exp_class === "unclear" ? getMissingDescriptionNote(row.source) : row.summary_line;
+            await sql`
+              UPDATE jobs
+              SET
+                summary_line = ${newSummaryLine},
+                raw = ${JSON.stringify(newRaw)}::jsonb
+              WHERE id = ${row.id}::uuid
+            `;
+            failed++;
+          }
+        } else {
+          const newRaw = {
+            ...rawObj,
+            enrichAttempts: nextAttempts,
+            lastEnrichError: res.error || `HTTP ${res.status}`,
+          };
+          const newSummaryLine =
+            row.exp_class === "unclear" ? getMissingDescriptionNote(row.source) : row.summary_line;
+          await sql`
+            UPDATE jobs
+            SET
+              summary_line = ${newSummaryLine},
+              raw = ${JSON.stringify(newRaw)}::jsonb
+            WHERE id = ${row.id}::uuid
+          `;
+          failed++;
+        }
+      }
+
+      const remaining = Math.max(0, eligibleRows.length - attempted);
+      return {
+        attempted,
+        enriched,
+        movedToSenior,
+        movedToShortlist,
+        failed,
+        remaining,
+      };
+    } catch (err: unknown) {
+      console.error("[enrichMissingDescriptions] Error enriching descriptions:", err);
+      return {
+        attempted: 0,
+        enriched: 0,
+        movedToSenior: 0,
+        movedToShortlist: 0,
+        failed: 0,
+        remaining: 0,
+      };
     }
   }
 
