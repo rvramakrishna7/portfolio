@@ -315,6 +315,32 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
     expect(canStartNewApifyRun(multiRuns, clock).allowed).toBe(false);
   });
 
+  it("counts runs where apifyStartedAt is set even if apifyRunId is missing, and runs with status RUNNING/SUCCEEDED", () => {
+    const now = 1700000000000;
+    const clock = () => now;
+    const twoHoursAgo = new Date(now - 2 * 60 * 60 * 1000).toISOString();
+
+    // 1. apifyStartedAt set but apifyRunId is missing -> counts -> refused
+    const missingRunId = [{ stats: { apifyStartedAt: twoHoursAgo } }];
+    expect(canStartNewApifyRun(missingRunId, clock).allowed).toBe(false);
+
+    // 2. apifyStatus is RUNNING even if apifyRunId is missing -> counts -> refused
+    const runningStatus = [{ started_at: twoHoursAgo, stats: { apifyStatus: "RUNNING" } }];
+    expect(canStartNewApifyRun(runningStatus, clock).allowed).toBe(false);
+
+    // 3. apifyStatus is SUCCEEDED even if apifyRunId is missing -> counts -> refused
+    const succeededStatus = [{ stats: { apifyStartedAt: twoHoursAgo, apifyStatus: "SUCCEEDED" } }];
+    expect(canStartNewApifyRun(succeededStatus, clock).allowed).toBe(false);
+
+    // 4. apifyStatus is FAILED -> should not count
+    const failedStatus = [{ stats: { apifyStartedAt: twoHoursAgo, apifyStatus: "FAILED" } }];
+    expect(canStartNewApifyRun(failedStatus, clock).allowed).toBe(true);
+
+    // 5. apifyStatus is SKIPPED -> should not count
+    const skippedStatus = [{ stats: { apifyStartedAt: twoHoursAgo, apifyStatus: "SKIPPED" } }];
+    expect(canStartNewApifyRun(skippedStatus, clock).allowed).toBe(true);
+  });
+
   it("sanitizes error messages by stripping URLs with query tokens", () => {
     const rawError = "Request failed to https://api.apify.com/v2/acts/foo/runs?token=secret_token_123456789";
     const sanitized = sanitizeErrorMessage(rawError);

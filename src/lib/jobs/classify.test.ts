@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { NormalizedJob } from "./types";
+import { TriagedJobResult } from "../llm/triage";
 import {
   classifyExperience,
   classifyGeo,
@@ -2334,6 +2336,44 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
         hidden: 2,
         all: 6,
       });
+    });
+
+    it("NeonJobsRepository.upsertJob includes non-downgrade ON CONFLICT clauses for exp_class and geo_eligibility", async () => {
+      const { NeonJobsRepository } = await import("./repository");
+      let executedSql = "";
+      const mockSql = (async (strings: TemplateStringsArray) => {
+        executedSql = strings.join("$param");
+        return [{ is_new: true }];
+      }) as unknown as ConstructorParameters<typeof NeonJobsRepository>[0];
+
+      const neonRepo = new NeonJobsRepository(mockSql);
+      const sampleJob: NormalizedJob = {
+        source: "remoteok",
+        sourceId: "sql-test-1",
+        url: "https://remoteok.com/job/test-1",
+        title: "Junior Developer",
+        company: "TestCorp",
+        location: "Worldwide",
+        remoteScope: "Worldwide",
+        description: "Test description",
+        postedAt: new Date().toISOString(),
+        tags: ["typescript"],
+      };
+      const sampleTriaged: TriagedJobResult = {
+        expClass: "junior",
+        expMinYears: 1,
+        geoEligibility: "worldwide",
+        geoReason: "Open globally",
+        summaryLine: "Junior Developer",
+        skills: ["typescript"],
+        matchScore: 80,
+      };
+
+      await neonRepo.upsertJob(sampleJob, sampleTriaged);
+
+      expect(executedSql).toContain("ON CONFLICT (source, source_id) DO UPDATE SET");
+      expect(executedSql).toContain("WHEN jobs.exp_class != 'unclear' AND EXCLUDED.exp_class = 'unclear' THEN jobs.exp_class");
+      expect(executedSql).toContain("WHEN jobs.geo_eligibility != 'unclear' AND EXCLUDED.geo_eligibility = 'unclear' THEN jobs.geo_eligibility");
     });
   });
 });
