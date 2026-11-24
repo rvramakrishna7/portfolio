@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { simpleParser } from "mailparser";
 import { ImapFlow } from "imapflow";
-import { ingestGmailAlerts, parseEmailContent } from "./imap";
+import { ingestGmailAlerts, parseEmailContent, formatImapError } from "./imap";
 import { InMemoryJobsRepository } from "../jobs/repository";
 import { isKnownAlertSender } from "../../config/alert-senders";
 
@@ -157,5 +157,93 @@ describe("IMAP Alert Ingestion (src/lib/inbound/imap.ts)", () => {
     expect(res.parsedJobs).toBe(2);
     expect(res.added).toBe(1); // 1 added, 1 duplicate because same fixture was downloaded twice
     expect(res.duplicates).toBe(1);
+  });
+
+  describe("IMAP error formatting and sanitization", () => {
+    it("handles authenticationFailed errors and surfaces clean guidance", async () => {
+      // With responseText code
+      const authErrWithTag = Object.assign(new Error("Authentication failed"), {
+        authenticationFailed: true,
+        responseText: "[AUTHENTICATIONFAILED] Invalid credentials (Failure)",
+        responseStatus: "NO",
+      });
+      const formattedWithTag = formatImapError(authErrWithTag);
+      expect(formattedWithTag).toBe("imap error: login rejected by Gmail (AUTHENTICATIONFAILED)");
+
+      // Without responseText (pure boolean flag)
+      const authErrSimple = Object.assign(new Error("Auth failed"), {
+        authenticationFailed: true,
+      });
+      const formattedSimple = formatImapError(authErrSimple);
+      expect(formattedSimple).toBe("imap error: login rejected by Gmail (check app password / security alert)");
+
+      // In ingestGmailAlerts
+      const mockClient = {
+        connect: vi.fn().mockRejectedValue(authErrWithTag),
+        logout: vi.fn().mockResolvedValue(undefined),
+      };
+      const res = await ingestGmailAlerts({
+        user: "testuser@gmail.com",
+        password: "secret_app_password",
+        repo,
+        clientFactory: () => mockClient as unknown as ImapFlow,
+      });
+      expect(res.error).toBe("imap error: login rejected by Gmail (AUTHENTICATIONFAILED)");
+    });
+
+    it("handles ETIMEDOUT connection errors with timeout message", async () => {
+      const timeoutErr = Object.assign(new Error("connect ETIMEDOUT 142.250.185.109:993"), {
+        code: "ETIMEDOUT",
+      });
+      const formatted = formatImapError(timeoutErr);
+      expect(formatted).toBe("imap error: timeout");
+
+      // In ingestGmailAlerts
+      const mockClient = {
+        connect: vi.fn().mockRejectedValue(timeoutErr),
+        logout: vi.fn().mockResolvedValue(undefined),
+      };
+      const res = await ingestGmailAlerts({
+        user: "testuser@gmail.com",
+        password: "secret_app_password",
+        repo,
+        clientFactory: () => mockClient as unknown as ImapFlow,
+      });
+      expect(res.error).toBe("imap error: timeout");
+    });
+
+    it("handles generic Command failed with responseText and status", async () => {
+      const cmdErr = Object.assign(new Error("Command failed"), {
+        responseStatus: "NO",
+        responseText: "Mailbox does not exist",
+      });
+      const formatted = formatImapError(cmdErr);
+      expect(formatted).toBe("imap error: Command failed: Mailbox does not exist (NO)");
+
+      // In ingestGmailAlerts
+      const mockClient = {
+        connect: vi.fn().mockRejectedValue(cmdErr),
+        logout: vi.fn().mockResolvedValue(undefined),
+      };
+      const res = await ingestGmailAlerts({
+        user: "testuser@gmail.com",
+        password: "secret_app_password",
+        repo,
+        clientFactory: () => mockClient as unknown as ImapFlow,
+      });
+      expect(res.error).toBe("imap error: Command failed: Mailbox does not exist (NO)");
+    });
+
+    it("strictly sanitizes user email, password, and URLs with credentials", () => {
+      const leakErr = new Error("Failed connecting to https://user:super_secret@imap.gmail.com?token=xyz123 for ramakrishna@example.com (cc alerts@othercompany.com) with password my_secret_pass");
+      const formatted = formatImapError(leakErr, ["ramakrishna@example.com", "my_secret_pass"]);
+      expect(formatted).not.toContain("ramakrishna@example.com");
+      expect(formatted).not.toContain("my_secret_pass");
+      expect(formatted).not.toContain("super_secret");
+      expect(formatted).not.toContain("token=xyz123");
+      expect(formatted).not.toContain("alerts@othercompany.com");
+      expect(formatted).toContain("[email]");
+      expect(formatted).toContain("[MASKED]");
+    });
   });
 });

@@ -149,7 +149,7 @@ Home | Experience | Work | Skills | Contact, then a theme toggle, then a Resume 
 - Form: keep the existing form, fields, validation, honeypot and error texts exactly as in docs/content.md "Form messages". Success text stays as today.
 
 ## Footer
-(c) 2026 Ramakrishna. Built with Next.js and plain CSS. GitHub, LinkedIn, back to top.
+(c) 2026 Ramakrishna. GitHub, LinkedIn, back to top.
 
 ## Story pages: shared structure (every /work/[slug] page, same order)
 1. Breadcrumb, category tag, H1 (project title), headline sentence, tech tags.
