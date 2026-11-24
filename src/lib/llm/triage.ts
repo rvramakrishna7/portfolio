@@ -197,6 +197,10 @@ ${job.description.slice(0, 1500)}`;
     filterReason = "Low relevance score";
   }
 
+  if (job.source === "linkedin" && (!job.description || !job.description.trim()) && expClass === "unclear") {
+    summaryLine = "LinkedIn description missing, check experience";
+  }
+
   return {
     expClass,
     expMinYears,

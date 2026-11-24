@@ -47,7 +47,7 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
       timePosted: "past-week",
       sortBy: "date",
       maxResults: 100,
-      fetchDetails: false,
+      fetchDetails: true,
       scrapeCompany: false,
       proxyConfiguration: { useApifyProxy: true },
     });
@@ -320,5 +320,34 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
     const sanitized = sanitizeErrorMessage(rawError);
     expect(sanitized).not.toContain("secret_token");
     expect(sanitized).toBe("Request failed to https://api.apify.com/v2/acts/foo/runs");
+  });
+
+  it("tolerantly maps alternative description fields (jobDescription, descriptionText, descriptionHtml)", () => {
+    const rawItems = [
+      {
+        jobId: "li-desc-1",
+        title: "Frontend Engineer",
+        company: "Stripe",
+        jobDescription: "<p>Work on React UI</p>",
+      },
+      {
+        jobId: "li-desc-2",
+        title: "Backend Engineer",
+        company: "Vercel",
+        descriptionText: "Build Node.js APIs",
+      },
+      {
+        jobId: "li-desc-3",
+        title: "Fullstack Engineer",
+        company: "Supabase",
+        descriptionHtml: "<div>PostgreSQL and TypeScript</div>",
+      },
+    ];
+
+    const jobs = parseApifyLinkedInItems(rawItems);
+    expect(jobs).toHaveLength(3);
+    expect(jobs[0].description).toBe("Work on React UI");
+    expect(jobs[1].description).toBe("Build Node.js APIs");
+    expect(jobs[2].description).toBe("PostgreSQL and TypeScript");
   });
 });
