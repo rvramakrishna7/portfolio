@@ -122,13 +122,88 @@ export interface FetchLinkedInApifyOptions {
   fetchFn?: typeof fetch;
 }
 
+export interface StartApifyRunResult {
+  started: boolean;
+  apifyRunId?: string;
+  apifyDatasetId?: string;
+  startedAt?: string;
+  status?: string;
+  error?: string;
+}
+
+export interface ApifyRunStatusResult {
+  status: "RUNNING" | "READY" | "SUCCEEDED" | "FAILED" | "ABORTED" | "TIMED-OUT" | string;
+  defaultDatasetId?: string;
+  error?: string;
+}
+
+export const APIFY_MIN_INTERVAL_HOURS = 20;
+export const APIFY_MIN_INTERVAL_MS = APIFY_MIN_INTERVAL_HOURS * 60 * 60 * 1000;
+
 /**
- * Fetches LinkedIn jobs/posts via Apify actor.
- * If APIFY_API_TOKEN is missing, fails open by returning { jobs: [], error: "apify not configured" }.
+ * Sanitizes error messages by stripping query parameters from URLs (e.g. ?token=...)
+ * and masking potential credential substrings.
  */
-export async function fetchLinkedInApify(
+export function sanitizeErrorMessage(err: unknown): string {
+  if (!err) return "unknown error";
+  const msg = err instanceof Error ? err.message : String(err);
+  // Strip query parameters from any URLs (e.g. https://...?... -> https://...)
+  const stripped = msg.replace(/\?[^ \t\r\n'"]*/g, "");
+  // Mask anything resembling a token or password
+  return stripped.replace(/(?:key|token|secret|password|bearer|auth)[=:\s]+[A-Za-z0-9_\-\.]{8,}/gi, (m) => m.slice(0, 8) + "[MASKED]");
+}
+
+/**
+ * Evaluates whether a new Apify actor run is allowed:
+ * 1. Must have no pending run.
+ * 2. Total cost guard: Refuses to start if more than 0 runs started in the last 20 hours (one per day).
+ */
+export function canStartNewApifyRun(
+  recentRuns: Array<{ stats?: { apifyStartedAt?: string; apifyRunId?: string; apifyStatus?: string } | null }>,
+  clock: () => number = Date.now
+): { allowed: boolean; reason?: string } {
+  const now = clock();
+  let apifyRunsInLast20h = 0;
+  let lastStartedTime: number | null = null;
+
+  for (const run of recentRuns) {
+    const stats = run.stats;
+    if (!stats) continue;
+
+    const startedAtStr = stats.apifyStartedAt;
+    if (!startedAtStr) continue;
+
+    const startedTime = new Date(startedAtStr).getTime();
+    if (isNaN(startedTime)) continue;
+
+    if (lastStartedTime === null || startedTime > lastStartedTime) {
+      lastStartedTime = startedTime;
+    }
+
+    if (now - startedTime < APIFY_MIN_INTERVAL_MS) {
+      apifyRunsInLast20h++;
+    }
+  }
+
+  // Cost guard: strictly refuse if 1 or more runs were started in the last 20 hours
+  if (apifyRunsInLast20h >= 1) {
+    const hoursAgo = lastStartedTime !== null ? ((now - lastStartedTime) / (1000 * 60 * 60)).toFixed(1) : "?";
+    return {
+      allowed: false,
+      reason: `apify rate limit: last run was ${hoursAgo}h ago (minimum interval is 20h)`,
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Starts an asynchronous LinkedIn Apify actor run.
+ * Never waits for completion. Returns run id and default dataset id immediately.
+ */
+export async function startApifyLinkedInRun(
   options?: FetchLinkedInApifyOptions
-): Promise<AdapterResult> {
+): Promise<StartApifyRunResult> {
   const token = options?.token ?? process.env.APIFY_API_TOKEN;
   const actorId =
     options?.actorId ??
@@ -137,7 +212,7 @@ export async function fetchLinkedInApify(
 
   if (!token) {
     return {
-      jobs: [],
+      started: false,
       error: "apify not configured",
     };
   }
@@ -156,7 +231,7 @@ export async function fetchLinkedInApify(
   const query = options?.keywords?.join(" OR ") ?? defaultKeywords.join(" OR ");
 
   const encodedActorId = encodeURIComponent(actorId);
-  const url = `https://api.apify.com/v2/acts/${encodedActorId}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}`;
+  const url = `https://api.apify.com/v2/acts/${encodedActorId}/runs?maxTotalChargeUsd=0.25`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -165,6 +240,7 @@ export async function fetchLinkedInApify(
     const res = await fetchFn(url, {
       method: "POST",
       headers: {
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         Accept: "application/json",
       },
@@ -181,8 +257,122 @@ export async function fetchLinkedInApify(
 
     if (!res.ok) {
       return {
+        started: false,
+        error: `Apify start returned HTTP ${res.status}`,
+      };
+    }
+
+    const json = (await res.json()) as { data?: { id?: string; defaultDatasetId?: string; status?: string } };
+    const apifyRunId = json.data?.id;
+    const apifyDatasetId = json.data?.defaultDatasetId;
+
+    if (!apifyRunId || !apifyDatasetId) {
+      return {
+        started: false,
+        error: "Apify start response missing run or dataset id",
+      };
+    }
+
+    return {
+      started: true,
+      apifyRunId,
+      apifyDatasetId,
+      startedAt: new Date().toISOString(),
+      status: json.data?.status || "RUNNING",
+    };
+  } catch (err: unknown) {
+    clearTimeout(timeout);
+    return {
+      started: false,
+      error: `Apify start request failed: ${sanitizeErrorMessage(err)}`,
+    };
+  }
+}
+
+/**
+ * Checks the execution status of an active or past Apify actor run.
+ */
+export async function checkApifyRunStatus(
+  runId: string,
+  options?: { token?: string; fetchFn?: typeof fetch }
+): Promise<ApifyRunStatusResult> {
+  const token = options?.token ?? process.env.APIFY_API_TOKEN;
+  if (!token) {
+    return { status: "FAILED", error: "apify not configured" };
+  }
+
+  const fetchFn = options?.fetchFn ?? fetch;
+  const url = `https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetchFn(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      return {
+        status: "FAILED",
+        error: `Apify run check returned HTTP ${res.status}`,
+      };
+    }
+
+    const json = (await res.json()) as { data?: { status?: string; defaultDatasetId?: string } };
+    return {
+      status: json.data?.status || "RUNNING",
+      defaultDatasetId: json.data?.defaultDatasetId,
+    };
+  } catch (err: unknown) {
+    clearTimeout(timeout);
+    return {
+      status: "RUNNING",
+      error: `Apify status check failed: ${sanitizeErrorMessage(err)}`,
+    };
+  }
+}
+
+/**
+ * Fetches items from a completed Apify dataset (up to limit).
+ */
+export async function fetchApifyDatasetItems(
+  datasetId: string,
+  options?: { token?: string; limit?: number; fetchFn?: typeof fetch }
+): Promise<AdapterResult> {
+  const token = options?.token ?? process.env.APIFY_API_TOKEN;
+  if (!token) {
+    return { jobs: [], error: "apify not configured" };
+  }
+
+  const fetchFn = options?.fetchFn ?? fetch;
+  const limit = options?.limit ?? 200;
+  const url = `https://api.apify.com/v2/datasets/${encodeURIComponent(datasetId)}/items?limit=${limit}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetchFn(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      return {
         jobs: [],
-        error: `Apify returned HTTP ${res.status}`,
+        error: `Apify dataset fetch returned HTTP ${res.status}`,
       };
     }
 
@@ -193,7 +383,26 @@ export async function fetchLinkedInApify(
     clearTimeout(timeout);
     return {
       jobs: [],
-      error: `Apify request failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Apify dataset fetch failed: ${sanitizeErrorMessage(err)}`,
     };
   }
+}
+
+/**
+ * Backward compatibility adapter: fetches or checks Apify LinkedIn jobs.
+ */
+export async function fetchLinkedInApify(
+  options?: FetchLinkedInApifyOptions
+): Promise<AdapterResult> {
+  const startRes = await startApifyLinkedInRun(options);
+  if (!startRes.started) {
+    return {
+      jobs: [],
+      error: startRes.error,
+    };
+  }
+  // If run started, we don't block waiting. Results will be collected when SUCCEEDED.
+  return {
+    jobs: [],
+  };
 }

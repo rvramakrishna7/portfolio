@@ -36,6 +36,19 @@ export interface StoredJob {
   inbound_source?: string | null;
 }
 
+export interface SourceStatusInfo {
+  status: "ok" | "pending" | "error" | "skipped" | string;
+  count: number;
+  error?: string;
+  note?: string;
+  seen?: number;
+  fromKnownSender?: number;
+  fromFallbackSubject?: number;
+  parsedJobs?: number;
+  collected?: boolean;
+  [key: string]: unknown;
+}
+
 export interface SearchRunStats {
   llmCalls: number;
   llmErrors: number;
@@ -48,6 +61,15 @@ export interface SearchRunStats {
   boardsTotal?: number;
   boardsDone?: number;
   boardErrors?: Record<string, string>;
+  apifyRunId?: string;
+  apifyDatasetId?: string;
+  apifyStartedAt?: string;
+  apifyStatus?: string;
+  apifyCollected?: boolean;
+  apifyCount?: number;
+  apifyNote?: string;
+  apifyError?: string;
+  sources?: Record<string, SourceStatusInfo>;
 }
 
 export interface SearchRun {
@@ -121,6 +143,7 @@ export interface JobsRepository {
   ): Promise<void>;
   getSearchRun(id: string): Promise<SearchRun | null>;
   getLastSearchRun(): Promise<SearchRun | null>;
+  getLastSearchRuns?(limit?: number): Promise<SearchRun[]>;
   getCustomBoards?(): Promise<CustomBoard[]>;
   addCustomBoard?(board: { kind: "greenhouse" | "lever" | "ashby"; slug: string; label?: string }): Promise<CustomBoard>;
   deleteCustomBoard?(id: string): Promise<boolean>;
@@ -565,6 +588,12 @@ export class InMemoryJobsRepository implements JobsRepository {
     const list = Array.from(this.runs.values());
     if (list.length === 0) return null;
     return list[list.length - 1];
+  }
+
+  async getLastSearchRuns(limit = 10): Promise<SearchRun[]> {
+    return Array.from(this.runs.values())
+      .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+      .slice(0, limit);
   }
 
   async getCustomBoards(): Promise<CustomBoard[]> {
@@ -1234,6 +1263,14 @@ export class NeonJobsRepository implements JobsRepository {
       SELECT * FROM search_runs ORDER BY started_at DESC LIMIT 1
     `) as SearchRun[];
     return rows[0] || null;
+  }
+
+  async getLastSearchRuns(limit = 10): Promise<SearchRun[]> {
+    const sql = getSql();
+    const rows = (await sql`
+      SELECT * FROM search_runs ORDER BY started_at DESC LIMIT ${limit}
+    `) as SearchRun[];
+    return rows;
   }
 
   async getCustomBoards(): Promise<CustomBoard[]> {

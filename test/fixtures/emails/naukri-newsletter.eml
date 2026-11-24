@@ -1,0 +1,28 @@
+From: "Naukri Recommendations" <recommendations@naukrimail.com>
+To: <candidate@example.com>
+Subject: Handpicked New Jobs for you - Software Engineer Intern, Junior Developer
+Date: Mon, 23 Nov 2026 09:00:00 +0530
+Content-Type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html>
+<body>
+  <h2>Recommended Jobs For You</h2>
+  <table border="0" cellpadding="10" cellspacing="0">
+    <tr>
+      <td>
+        <a href="https://mailclick.naukri.com/cl/track?url=https%3A%2F%2Fwww.naukri.com%2Fjob-listings-software-engineer-intern-1001%3Fsource%3Dmailer%26sid%3D123">Software Engineer Intern</a>
+        <div>Tata Consultancy Services</div>
+        <div>Bengaluru, India</div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <a href="https://mailclick.naukri.com/cl/track?url=https%3A%2F%2Fwww.naukri.com%2Fjob-listings-junior-backend-developer-1002%3Fsource%3Dmailer%26spid%3D456">Junior Backend Developer</a>
+        <div>Infosys</div>
+        <div>Remote, India</div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

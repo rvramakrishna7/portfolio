@@ -277,7 +277,16 @@ describe("Resumable Job Search Pipeline", () => {
       boardQueue: [],
       fetchAggregatorsFn: async () => ({ jobs: [] }),
       fetchLinkedInFn: async () => ({ jobs: [fakeLinkedInJob] }),
-      ingestImapFn: async () => ({ fetched: 2, added: 1, duplicates: 0 }),
+      ingestImapFn: async () => ({
+        fetched: 2,
+        added: 1,
+        duplicates: 0,
+        filtered: 0,
+        seen: 2,
+        fromKnownSender: 2,
+        fromFallbackSubject: 0,
+        parsedJobs: 2,
+      }),
     });
 
     const run = await repo.getSearchRun(startRes.runId);

@@ -9,6 +9,10 @@ export interface ImapIngestionResult {
   added: number;
   duplicates: number;
   filtered: number;
+  seen: number;
+  fromKnownSender: number;
+  fromFallbackSubject: number;
+  parsedJobs: number;
   error?: string;
 }
 
@@ -75,6 +79,10 @@ export async function ingestGmailAlerts(
       added: 0,
       duplicates: 0,
       filtered: 0,
+      seen: 0,
+      fromKnownSender: 0,
+      fromFallbackSubject: 0,
+      parsedJobs: 0,
       error: "imap not configured",
     };
   }
@@ -104,6 +112,10 @@ export async function ingestGmailAlerts(
   let added = 0;
   let duplicates = 0;
   let filtered = 0;
+  let seen = 0;
+  let fromKnownSender = 0;
+  let fromFallbackSubject = 0;
+  let parsedJobs = 0;
 
   try {
     await client.connect();
@@ -121,8 +133,19 @@ export async function ingestGmailAlerts(
         { uid: true }
       );
 
+      seen = messages ? messages.length : 0;
+
       if (!messages || messages.length === 0) {
-        return { fetched: 0, added: 0, duplicates: 0, filtered: 0 };
+        return {
+          fetched: 0,
+          added: 0,
+          duplicates: 0,
+          filtered: 0,
+          seen: 0,
+          fromKnownSender: 0,
+          fromFallbackSubject: 0,
+          parsedJobs: 0,
+        };
       }
 
       // Process up to maxMessages, newest first
@@ -143,12 +166,21 @@ export async function ingestGmailAlerts(
           const fromAddress = parsed.from?.value?.[0]?.address || "";
           const subject = parsed.subject || "";
 
-          // If sender matches known alert senders or content has strong signals
-          if (isKnownAlertSender(fromAddress, subject) || /job|hiring|opening|alert/i.test(subject)) {
+          const isKnown = isKnownAlertSender(fromAddress, subject);
+          const isFallback = !isKnown && /job|hiring|opening|alert|recommended|opportunities|roles?/i.test(subject);
+
+          if (isKnown) {
+            fromKnownSender++;
+          } else if (isFallback) {
+            fromFallbackSubject++;
+          }
+
+          if (isKnown || isFallback) {
             const ingestRes = await parseEmailContent(parsed, repo);
             added += ingestRes.added;
             duplicates += ingestRes.duplicates;
             filtered += ingestRes.filtered;
+            parsedJobs += (ingestRes.added + ingestRes.duplicates + ingestRes.filtered);
           }
         } catch (msgErr) {
           console.warn(`[imap] Failed to process message UID ${uid}:`, msgErr);
@@ -158,13 +190,26 @@ export async function ingestGmailAlerts(
       lock.release();
     }
 
-    return { fetched, added, duplicates, filtered };
+    return {
+      fetched,
+      added,
+      duplicates,
+      filtered,
+      seen,
+      fromKnownSender,
+      fromFallbackSubject,
+      parsedJobs,
+    };
   } catch (err: unknown) {
     return {
       fetched,
       added,
       duplicates,
       filtered,
+      seen,
+      fromKnownSender,
+      fromFallbackSubject,
+      parsedJobs,
       error: `imap error: ${err instanceof Error ? err.message : String(err)}`,
     };
   } finally {

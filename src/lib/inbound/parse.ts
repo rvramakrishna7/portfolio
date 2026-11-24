@@ -53,7 +53,14 @@ export function normalizeUrl(rawUrl: string): string {
         lower === "trk" ||
         lower === "refid" ||
         lower === "trackingid" ||
-        lower === "source"
+        lower === "source" ||
+        lower === "sid" ||
+        lower === "spid" ||
+        lower === "src" ||
+        lower === "track" ||
+        lower === "qp" ||
+        lower === "clk" ||
+        lower === "click"
       ) {
         keysToRemove.push(key);
       }
@@ -71,6 +78,40 @@ export function normalizeUrl(rawUrl: string): string {
   } catch {
     return trimmed.toLowerCase();
   }
+}
+
+/**
+ * Resolves tracking and redirect URLs (e.g. Naukri tracking links, email click trackers)
+ * by extracting destination URL from query parameters without making any network requests.
+ * Strips tracking parameters from the resulting URL.
+ */
+export function resolveTrackingUrl(rawHref: string): string {
+  let url = rawHref.trim();
+  try {
+    const parsed = new URL(url);
+    const redirectParamNames = [
+      "targeturl",
+      "target_url",
+      "url",
+      "dest",
+      "destination",
+      "redirect",
+      "target",
+      "link",
+      "to",
+      "clk",
+    ];
+    for (const [key, val] of parsed.searchParams.entries()) {
+      if (redirectParamNames.includes(key.toLowerCase()) && /^https?:\/\//i.test(val)) {
+        url = val;
+        break;
+      }
+    }
+  } catch {
+    // If not a valid URL, use raw string
+  }
+
+  return normalizeUrl(url);
 }
 
 /**
@@ -159,6 +200,95 @@ function extractCompanyFromUrl(urlStr: string): string | null {
 }
 
 /**
+ * Extracts multiple job candidates from structured HTML newsletters and digests
+ * (Naukri alerts, LinkedIn job alerts, Wellfound digests).
+ */
+export function extractNewsletterHtmlCandidates(
+  html: string,
+  options?: { source?: string; defaultLocation?: string }
+): InboundCandidate[] {
+  const source = options?.source || "email";
+  const candidates: InboundCandidate[] = [];
+  const seenNormUrls = new Set<string>();
+
+  // 1. Try block-level extraction: table rows (<tr>...</tr>), list items (<li>...</li>), or articles/sections
+  const blockRegex = /<(?:tr|li|article|section)\b[^>]*>([\s\S]*?)<\/(?:tr|li|article|section)>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = blockRegex.exec(html)) !== null) {
+    const blockHtml = match[1];
+    const blockText = stripHtml(blockHtml).trim();
+    if (blockText.length < 5) continue;
+
+    // Search for anchor tags in this block
+    const anchorRegex = /<a\s+(?:[^>]*?\s+)?href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let anchorMatch: RegExpExecArray | null;
+    while ((anchorMatch = anchorRegex.exec(blockHtml)) !== null) {
+      const rawHref = anchorMatch[1];
+      const anchorText = cleanTitle(stripHtml(anchorMatch[2]));
+
+      if (!/^https?:\/\//i.test(rawHref)) continue;
+      if (isInvalidTitleLine(anchorText) || anchorText.length < 3) continue;
+
+      const resolvedUrl = resolveTrackingUrl(rawHref);
+      const normUrl = normalizeUrl(resolvedUrl);
+      if (seenNormUrls.has(normUrl)) continue;
+
+      const isJobLink =
+        /job-listings|jobs\/view|\/jobs\/|\/job\/|wellfound\.com|angel\.co|greenhouse\.io|lever\.co|ashbyhq\.com|careers/i.test(resolvedUrl) ||
+        containsJobSignal(anchorText) ||
+        containsJobSignal(blockText);
+
+      if (!isJobLink) continue;
+
+      const lines = blockText.split(/\r?\n/).map((l) => cleanTitle(l)).filter(Boolean);
+      let title = anchorText;
+      let company = "";
+      let location = options?.defaultLocation;
+
+      // Extract company and location from remaining lines
+      for (const line of lines) {
+        if (line === title) continue;
+        if (isInvalidTitleLine(line)) continue;
+        if (/remote|onsite|hybrid|india|bengaluru|mumbai|delhi|hyderabad|pune|gurgaon|noida|chennai/i.test(line)) {
+          if (!location) location = line;
+        } else if (!company && line.length < 50) {
+          company = line;
+        }
+      }
+
+      if (!company) {
+        const atMatch = title.match(/^(.+?)\s+at\s+([A-Za-z0-9&.\-_ ]+)$/i);
+        if (atMatch) {
+          title = cleanTitle(atMatch[1]);
+          company = atMatch[2].trim();
+        }
+      }
+
+      if (!company) {
+        company = extractCompanyFromUrl(resolvedUrl) || "Job Alert";
+      }
+
+      if (title && !isInvalidTitleLine(title)) {
+        seenNormUrls.add(normUrl);
+        candidates.push({
+          title,
+          company,
+          location,
+          url: resolvedUrl,
+          description: blockText || `${title} at ${company}`,
+          source,
+          inbound_raw: blockHtml,
+          isRemote: /remote/i.test(location || "") || /remote/i.test(blockText),
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+/**
  * Parses free text or HTML into raw job candidate objects.
  * Deduplicates candidates by normalized URL.
  */
@@ -173,6 +303,16 @@ export function parseInboundCandidates(
 
   // Check if input is HTML by detecting tags
   const isHtml = /<[a-z][\s\S]*>/i.test(rawInput);
+
+  if (isHtml) {
+    const newsletterCandidates = extractNewsletterHtmlCandidates(rawInput, {
+      source,
+      defaultLocation: options?.defaultLocation,
+    });
+    if (newsletterCandidates.length > 0) {
+      return newsletterCandidates;
+    }
+  }
 
   // If HTML, extract structured anchor tags first
   const htmlLinks: Array<{ href: string; text: string }> = [];

@@ -86,7 +86,10 @@ export function AdminDashboard() {
   });
   const [lastRunTime, setLastRunTime] = useState<string | null>(null);
   const [lastSourceCounts, setLastSourceCounts] = useState<Record<string, number> | null>(null);
-  const [lastRunStats, setLastRunStats] = useState<{ llmCalls: number } | null>(null);
+  const [lastRunStats, setLastRunStats] = useState<{
+    llmCalls: number;
+    sources?: Record<string, { status: string; count: number; error?: string; note?: string }>;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -139,8 +142,11 @@ export function AdminDashboard() {
       if (data.lastRun?.finished_at) {
         setLastRunTime(data.lastRun.finished_at);
         setLastSourceCounts(data.lastRun.source_counts || null);
-        if (data.lastRun.stats?.llmCalls !== undefined) {
-          setLastRunStats({ llmCalls: data.lastRun.stats.llmCalls });
+        if (data.lastRun.stats) {
+          setLastRunStats({
+            llmCalls: data.lastRun.stats.llmCalls || 0,
+            sources: data.lastRun.stats.sources,
+          });
         }
       }
     } catch (err: unknown) {
@@ -176,8 +182,11 @@ export function AdminDashboard() {
           if (data.lastRun?.finished_at) {
             setLastRunTime(data.lastRun.finished_at);
             setLastSourceCounts(data.lastRun.source_counts || null);
-            if (data.lastRun.stats?.llmCalls !== undefined) {
-              setLastRunStats({ llmCalls: data.lastRun.stats.llmCalls });
+            if (data.lastRun.stats) {
+              setLastRunStats({
+                llmCalls: data.lastRun.stats.llmCalls || 0,
+                sources: data.lastRun.stats.sources,
+              });
             }
           }
         }
@@ -652,6 +661,23 @@ export function AdminDashboard() {
                         Sources: {Object.entries(lastSourceCounts).map(([k, v]) => `${k} (${v})`).join(", ")}
                       </span>
                     )}
+                    {(() => {
+                      if (!lastRunStats?.sources) return null;
+                      const issues: string[] = [];
+                      for (const [src, info] of Object.entries(lastRunStats.sources)) {
+                        if (info.status === "error" || info.error) {
+                          issues.push(`${src}: ${info.error || "error"}`);
+                        } else if (info.status === "pending" || info.note) {
+                          issues.push(`${src}: ${info.note || info.status}`);
+                        }
+                      }
+                      if (issues.length === 0) return null;
+                      return (
+                        <span className="admin-source-issues" style={{ color: "var(--amber, #f59e0b)" }}>
+                          Source issues: {issues.join("; ")}
+                        </span>
+                      );
+                    })()}
                   </div>
                 )}
 
