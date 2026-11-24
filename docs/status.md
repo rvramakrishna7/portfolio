@@ -1,8 +1,12 @@
 # Status: Portfolio site
 
-Current step: Description enrichment and Maybe routing (`fix/description-enrichment`).
+Current step: Add job alert senders (`feat/more-alert-senders`).
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Additional job alert senders (`feat/more-alert-senders`):
+  - Added strict end-anchored sender domain patterns in `src/config/alert-senders.ts` for `unstop` (`unstop.com`, `emails.unstop.com`), `flexjobs` (`flexjobs.com`, `mg.flexjobs.com`), `workindia` (`workindia.info`, `workindia.in`), `jobhai` (`jobhai.com`), `micro1` (`micro1.io`, `micro1.ai`), `internshala` (`internshala.com`), `shine` (`shine.com`), and `cuvette` (`cuvette.tech`), and updated `indeed` to match any local-part on `indeed.com` and its subdomains.
+  - Anchored all sender patterns with `^...$` and trimmed `<...>` brackets in `isKnownAlertSender` so look-alike domains (e.g. `unstop.com.evil.io`) never match.
+  - Added unit tests per new sender, non-alert domain exclusions (`google.com`, `adobe`, `sbi`, `tradingview`, `railway`, `openai`, `resend.dev`, `uptimerobot`), and graceful handling of unknown email formats from known senders in `src/lib/inbound/imap.test.ts`.
 - Description enrichment, "real description" helper, non-LinkedIn Maybe routing, and email company-name cleanup (`fix/description-enrichment`):
   - Reverted non-LinkedIn missing-description jobs with `exp_class = 'unclear'` and valid geo (`worldwide`, `india_ok`) from Hidden; routed them to the Maybe tab with note `"description missing, check experience"`.
   - Added shared `hasRealDescription` helper in `src/lib/jobs/classify.ts` (treating empty, `< 80` trimmed chars, or equal to title/company lines as missing) and applied consistently across `classifyExperience`, `InMemoryJobsRepository`, `NeonJobsRepository` (NULL-safe `COALESCE` SQL predicates), `triageJobWithLlm`, `reclassifyLinkedInJobs`, and `AdminDashboard.tsx`.
