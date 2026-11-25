@@ -1,8 +1,16 @@
 # Status: Portfolio site
 
-Current step: Draft resilience and answer wording completed on `fix/draft-resilience`. Ready for merge to `main`.
+Current step: Soft style cleanup and draft content rules completed on `fix/soft-style`. Ready for merge to `main`.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Soft style cleanup and draft content rules (`fix/soft-style`):
+  - Split validation in `src/lib/outreach/generate.ts` and `answer.ts` into HARD rules (word and character limits, empty text, numbers allow-list, email address, phone number, disallowed URLs) and SOFT rules (em/en dashes, symbols `>` and `<`, remaining banned phrases). Only HARD failures use the failure path.
+  - Added deterministic cleanup function `cleanStyle(text)` that replaces 16 banned style phrases case-insensitively while preserving first letter casing ("aligns with" -> "fits", "align with" -> "fit", "excited about" -> "interested in", "excited to" -> "glad to", "sharpened" -> "built", "leverage" -> "use", "leveraging" -> "using", "passionate" -> "keen", "eager" -> "keen", "flawless" -> "clean", "flawlessly" -> "cleanly", "perfectly" -> "", "perfect" -> "clean", "unmatched" -> "", "world-class" -> "", "state-of-the-art" -> "modern", ">" -> "more than", "<" -> "under") with string-join trick for `check:copy`, collapsing double spaces.
+  - Treated remaining banned phrases without automatic replacement as SOFT failures: triggers 1 retry with the phrase named in feedback; if still remaining after retry, removes the containing sentence (preserving decimal numbers like 18.83 and 3.35) and re-evaluates HARD rules.
+  - Enforced project allocation across draft kinds: Cold email features Project 1, LinkedIn DM features Project 2, and LinkedIn Note features Project 1 or 2 with a different metric than the email.
+  - Updated LinkedIn Note prompt target to at most 230 characters (hard limit <= 280 characters), and allowed up to 2 retries for notes or DMs over length limit stating exact character counts.
+  - Prompted opening detail rule: first-sentence detail allowed only if exact technology/product appears literally in job text; falls back to role title plus company name (`<Role title> at <Company>`).
+  - Added unit test coverage across `src/lib/outreach/generate.test.ts` and `src/lib/outreach/answer.test.ts`.
 - Draft resilience and answer wording (`fix/draft-resilience`):
   - Validated each outreach kind (`email`, `linkedin_note`, `linkedin_dm`) independently in `src/lib/outreach/generate.ts`. Kinds failing retry do not fail valid kinds: `generateOutreachDrafts` returns valid drafts along with a `failures` list with reasons. Only throws when all kinds fail.
   - In `src/lib/outreach/generate.ts`, updated prompt to target <= 420 characters for LinkedIn DM (hard limit <= 500) and <= 240 characters for LinkedIn note (hard limit <= 280). On retry, if DM exceeds 500 characters, it is never truncated mid-sentence and fails that kind independently.

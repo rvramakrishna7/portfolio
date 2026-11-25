@@ -168,4 +168,23 @@ describe("Application Answer Generator (src/lib/outreach/answer.ts)", () => {
       ).toBe(true);
     }
   });
+
+  it("an answer containing 'aligns with' is saved, not failed, via cleanStyle", async () => {
+    const job = createSampleJob();
+    const wordAlignsWith = ["aligns ", "with"].join("");
+    const answerWithAlignsWith =
+      Array(75).fill("word").join(" ") + ` My experience ${wordAlignsWith} the role, and I built 1,212 tests.`;
+
+    const mockProvider = new MockAnswerLlmProvider([{ answer: answerWithAlignsWith }]);
+    const draft = await generateApplicationAnswer({
+      job,
+      question: "Why this role?",
+      provider: mockProvider,
+    });
+
+    expect(draft.kind).toBe("application_answer");
+    expect(draft.body).not.toContain("aligns with");
+    expect(draft.body).toContain("fits");
+    expect(mockProvider.callCount).toBe(1);
+  });
 });
