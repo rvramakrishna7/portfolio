@@ -51,7 +51,8 @@ export async function matchRepliesAndAlert(
   let possibleMatches = 0;
 
   // 1. Fetch all sent drafts
-  const allDrafts = await repo.listDrafts();
+  // The Neon repository returns only the newest 100 drafts by default, which would hide replies to older mail
+  const allDrafts = await repo.listDrafts({ limit: 1000 });
   const sentDrafts = allDrafts.filter((d) => Boolean(d.sent_at));
   if (sentDrafts.length === 0) {
     return { exactMatches: 0, possibleMatches: 0, alertsSent: 0 };

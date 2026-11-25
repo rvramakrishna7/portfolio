@@ -210,6 +210,13 @@ export function AdminDashboard() {
   const [isCheckingReplies, setIsCheckingReplies] = useState(false);
   const [replyCheckToast, setReplyCheckToast] = useState<string | null>(null);
 
+  // Sending approved email drafts from Gmail (owner clicks, two steps)
+  const [sendToast, setSendToast] = useState<string | null>(null);
+  const [confirmSendId, setConfirmSendId] = useState<string | null>(null);
+  const [sendingDraftId, setSendingDraftId] = useState<string | null>(null);
+  const [confirmSendAll, setConfirmSendAll] = useState(false);
+  const [isSendingAll, setIsSendingAll] = useState(false);
+
   // Visits tab state (Step 2)
   const [visitsList, setVisitsList] = useState<
     Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }>
@@ -885,6 +892,60 @@ export function AdminDashboard() {
       fetchJobs();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const showSendToast = (message: string) => {
+    setSendToast(message);
+    setTimeout(() => setSendToast(null), 7000);
+  };
+
+  const handleSendDraft = async (draft: OutreachDraft) => {
+    setConfirmSendId(null);
+    setSendingDraftId(draft.id);
+    try {
+      const res = await fetch(`/api/admin/drafts/${draft.id}/send`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        showSendToast(data.error || "Sending failed");
+        // The draft may have changed on the server (already sent, or marked sent after an unknown result)
+        await fetchDrafts(draftFilter, focusedJobId || undefined);
+        return;
+      }
+      setDrafts((prev) => prev.map((d) => (d.id === draft.id ? { ...d, ...data.draft } : d)));
+      if (data.counts) setDraftCounts(data.counts);
+      showSendToast(`Sent to ${data.draft.recipient || "the recipient"}`);
+      fetchJobs();
+    } catch {
+      showSendToast("Sending failed. Check the draft before trying again.");
+      await fetchDrafts(draftFilter, focusedJobId || undefined);
+    } finally {
+      setSendingDraftId(null);
+    }
+  };
+
+  const handleSendAll = async () => {
+    setConfirmSendAll(false);
+    setIsSendingAll(true);
+    try {
+      const res = await fetch("/api/admin/drafts/send-all", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Send all failed");
+      }
+      const parts = [`Sent ${data.sent}`];
+      if (data.failed) parts.push(`${data.failed} failed`);
+      if (data.eligibleLeft) parts.push(`${data.eligibleLeft} still waiting`);
+      if (data.stoppedBecause === "daily_cap") parts.push("daily limit reached");
+      else if (data.stoppedBecause === "not_configured") parts.push("email sending is not configured");
+      else if (data.stoppedBecause) parts.push("stopped early, check the drafts");
+      showSendToast(parts.join(", "));
+    } catch (err: unknown) {
+      showSendToast(err instanceof Error ? err.message : "Send all failed");
+    } finally {
+      await fetchDrafts(draftFilter, focusedJobId || undefined);
+      fetchJobs();
+      setIsSendingAll(false);
     }
   };
 
@@ -1836,6 +1897,27 @@ export function AdminDashboard() {
                   <div className="admin-budget-pill">
                     Drafts: {draftCounts.draft} &middot; Answers today: {answersToday}/20
                   </div>
+                  {draftCounts.approved > 0 &&
+                    (confirmSendAll ? (
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "0.85rem" }}>Send up to 10 approved emails now? The daily limit applies.</span>
+                        <button type="button" className="btn primary btn-sm admin-send-all-confirm-btn" onClick={handleSendAll}>
+                          Confirm
+                        </button>
+                        <button type="button" className="btn ghost btn-sm" onClick={() => setConfirmSendAll(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn ghost btn-sm admin-send-all-btn"
+                        onClick={() => setConfirmSendAll(true)}
+                        disabled={isSendingAll}
+                      >
+                        {isSendingAll ? "Sending..." : "Send all approved"}
+                      </button>
+                    ))}
                 </div>
 
                 {focusedJobId && (
@@ -1848,6 +1930,12 @@ export function AdminDashboard() {
                     >
                       Show all jobs
                     </button>
+                  </div>
+                )}
+
+                {sendToast && (
+                  <div className="admin-toast" role="status" style={{ marginBottom: "16px" }}>
+                    {sendToast}
                   </div>
                 )}
 
@@ -2105,6 +2193,34 @@ export function AdminDashboard() {
                                       Mark sent
                                     </button>
                                   )}
+                                  {isEmail &&
+                                    draft.status === "approved" &&
+                                    !draft.sent_at &&
+                                    !editingDrafts[draft.id] &&
+                                    (currentRecipient || "").trim() !== "" &&
+                                    (confirmSendId === draft.id ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="btn primary btn-sm admin-send-confirm-btn"
+                                          onClick={() => handleSendDraft(draft)}
+                                        >
+                                          Confirm send to {currentRecipient}
+                                        </button>
+                                        <button type="button" className="btn ghost btn-sm" onClick={() => setConfirmSendId(null)}>
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="btn primary btn-sm admin-send-btn"
+                                        onClick={() => setConfirmSendId(draft.id)}
+                                        disabled={sendingDraftId === draft.id}
+                                      >
+                                        {sendingDraftId === draft.id ? "Sending..." : "Send email"}
+                                      </button>
+                                    ))}
                                   <button
                                     type="button"
                                     className="btn primary btn-sm admin-approve-btn"

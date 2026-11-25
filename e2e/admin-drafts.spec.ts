@@ -826,4 +826,133 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
       .analyze();
     expect(axeResults.violations).toEqual([]);
   });
+
+  test("send approved email: two-step confirm, daily limit message, send all (Bundle B4)", async ({ page, context }) => {
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    await context.addCookies([
+      { name: "__Host-admin", value: token, domain: "localhost", path: "/", secure: true },
+      { name: "admin", value: token, domain: "localhost", path: "/" },
+    ]);
+
+    page.on("dialog", (dialog) => {
+      throw new Error(`Unexpected browser dialog: ${dialog.message()}`);
+    });
+
+    const baseDraft = {
+      id: "draft-send-1",
+      job_id: "seed-101",
+      kind: "email",
+      subject: "Full-Stack AI Engineering - Ramakrishna",
+      body: "Hi team, I noticed your opening at Global Tech Corp and would like to talk about it.",
+      status: "approved",
+      model: "openai/gpt-oss-120b",
+      edited: false,
+      recipient: "hr@example.com",
+      sent_at: null as string | null,
+      sent_channel: null as string | null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      job_title: "Full Stack Engineer (AI Platform)",
+      job_company: "Global Tech Corp",
+      job_url: "https://example.com/jobs/seed-101",
+    };
+
+    let draft = { ...baseDraft };
+    let sendCalls = 0;
+    let sendAllCalls = 0;
+    let sendMode: "ok" | "cap" = "cap";
+
+    const counts = () => ({ all: 1, draft: 0, approved: 1, discarded: 0 });
+
+    await page.route("**/api/admin/drafts**", async (route) => {
+      const url = new URL(route.request().url());
+      const method = route.request().method();
+
+      if (method === "POST" && url.pathname.endsWith("/send-all")) {
+        sendAllCalls++;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            sent: 2,
+            failed: 0,
+            skipped: [],
+            stoppedBecause: null,
+            remainingToday: 18,
+            eligibleLeft: 0,
+            counts: counts(),
+          }),
+        });
+      }
+
+      if (method === "POST" && url.pathname.endsWith("/send")) {
+        sendCalls++;
+        if (sendMode === "cap") {
+          return route.fulfill({
+            status: 429,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "Daily limit reached (20 of 20 sent today). Try again tomorrow.", code: "daily_cap" }),
+          });
+        }
+        draft = { ...draft, sent_at: new Date().toISOString(), sent_channel: "email" };
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ draft, counts: counts() }),
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/api/admin/drafts") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ drafts: [draft], counts: counts(), answersToday: 0 }),
+        });
+      }
+
+      return route.continue();
+    });
+
+    await page.goto("/admin");
+    await page.locator('.admin-tab-btn:has-text("Messages")').click();
+    await expect(page.locator(".admin-drafts-section")).toBeVisible();
+    await page.locator(".admin-filter-btn", { hasText: "Approved" }).click();
+
+    const card = page.locator(".admin-draft-card").first();
+    const sendBtn = card.locator(".admin-send-btn");
+    await expect(sendBtn).toBeVisible();
+
+    // Step 1: the first click only asks for confirmation. Nothing is sent. Cancel goes back.
+    await sendBtn.click();
+    await expect(card.locator(".admin-send-confirm-btn")).toContainText("hr@example.com");
+    expect(sendCalls).toBe(0);
+    await card.getByRole("button", { name: "Cancel" }).click();
+    await expect(sendBtn).toBeVisible();
+    expect(sendCalls).toBe(0);
+
+    // Step 2: daily limit error is shown and the draft stays sendable
+    await sendBtn.click();
+    await card.locator(".admin-send-confirm-btn").click();
+    await expect(page.locator(".admin-toast")).toContainText("Daily limit reached");
+    expect(sendCalls).toBe(1);
+    await expect(card.locator(".admin-send-btn")).toBeVisible();
+
+    // Step 3: success marks it sent and removes the send button
+    sendMode = "ok";
+    await card.locator(".admin-send-btn").click();
+    await card.locator(".admin-send-confirm-btn").click();
+    await expect(page.locator(".admin-toast")).toContainText("Sent to hr@example.com");
+    expect(sendCalls).toBe(2);
+    await expect(card.locator(".admin-send-btn")).toHaveCount(0);
+
+    // Send all: asks for confirmation first, then reports the result
+    await page.locator(".admin-send-all-btn").click();
+    expect(sendAllCalls).toBe(0);
+    await page.locator(".admin-send-all-confirm-btn").click();
+    await expect(page.locator(".admin-toast")).toContainText("Sent 2");
+    expect(sendAllCalls).toBe(1);
+  });
 });

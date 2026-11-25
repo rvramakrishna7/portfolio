@@ -357,6 +357,12 @@ export interface JobsRepository {
   listDrafts(opts?: ListDraftsOptions): Promise<OutreachDraft[]>;
   updateDraft(id: string, updates: UpdateDraftInput): Promise<OutreachDraft | null>;
   markDraftSent(id: string, channel: string): Promise<OutreachDraft | null>;
+  getDraftById(id: string): Promise<OutreachDraft | null>;
+  // Atomic: only an approved, unsent email draft can be claimed, and only once. Returns null otherwise.
+  claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null>;
+  // Undo a claim when the mail was definitely not sent.
+  releaseDraftSend(id: string): Promise<void>;
+  countEmailDraftsSentSince(sinceIso: string): Promise<number>;
   countDrafts(jobId?: string): Promise<DraftCountsByStatus>;
   countGenerationsToday(): Promise<number>;
   countAnswersToday(): Promise<number>;
@@ -1373,6 +1379,37 @@ export class InMemoryJobsRepository implements JobsRepository {
     }
     draft.updated_at = new Date().toISOString();
     return { ...draft };
+  }
+
+  async getDraftById(id: string): Promise<OutreachDraft | null> {
+    const draft = this.drafts.get(id);
+    if (!draft) return null;
+    const job = Array.from(this.jobs.values()).find((j) => j.id === draft.job_id);
+    return { ...draft, job_title: draft.job_title || job?.title, job_company: draft.job_company || job?.company };
+  }
+
+  async claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null> {
+    const draft = this.drafts.get(id);
+    if (!draft || draft.sent_at || draft.kind !== "email" || draft.status !== "approved") return null;
+    draft.sent_at = new Date().toISOString();
+    draft.sent_channel = channel;
+    draft.updated_at = new Date().toISOString();
+    return { ...draft };
+  }
+
+  async releaseDraftSend(id: string): Promise<void> {
+    const draft = this.drafts.get(id);
+    if (!draft || draft.sent_channel !== "email") return;
+    draft.sent_at = null;
+    draft.sent_channel = null;
+    draft.updated_at = new Date().toISOString();
+  }
+
+  async countEmailDraftsSentSince(sinceIso: string): Promise<number> {
+    const since = new Date(sinceIso).getTime();
+    return Array.from(this.drafts.values()).filter(
+      (d) => d.sent_channel === "email" && d.sent_at && new Date(d.sent_at).getTime() >= since
+    ).length;
   }
 
   async countDrafts(jobId?: string): Promise<DraftCountsByStatus> {
@@ -3184,6 +3221,53 @@ export class NeonJobsRepository implements JobsRepository {
     } catch {
       return null;
     }
+  }
+
+  async getDraftById(id: string): Promise<OutreachDraft | null> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      SELECT d.*, j.title AS job_title, j.company AS job_company, j.url AS job_url
+      FROM outreach_drafts d
+      LEFT JOIN jobs j ON d.job_id = j.id
+      WHERE d.id = ${id}::uuid
+      LIMIT 1
+    `) as OutreachDraft[];
+    return rows[0] || null;
+  }
+
+  // One statement, so two clicks or two requests cannot both claim the same draft.
+  // Errors are NOT swallowed here: the caller must know the claim did not happen because of the database.
+  async claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      UPDATE outreach_drafts
+      SET sent_at = NOW(), sent_channel = ${channel}, updated_at = NOW()
+      WHERE id = ${id}::uuid
+        AND sent_at IS NULL
+        AND kind = 'email'
+        AND status = 'approved'
+      RETURNING *
+    `) as OutreachDraft[];
+    return rows[0] || null;
+  }
+
+  async releaseDraftSend(id: string): Promise<void> {
+    const sql = this.resolveSql();
+    await sql`
+      UPDATE outreach_drafts
+      SET sent_at = NULL, sent_channel = NULL, updated_at = NOW()
+      WHERE id = ${id}::uuid AND sent_channel = 'email'
+    `;
+  }
+
+  async countEmailDraftsSentSince(sinceIso: string): Promise<number> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      SELECT COUNT(*)::int AS count
+      FROM outreach_drafts
+      WHERE sent_channel = 'email' AND sent_at >= ${sinceIso}::timestamptz
+    `) as Array<{ count: number }>;
+    return rows[0]?.count ?? 0;
   }
 
   async countDrafts(jobId?: string): Promise<DraftCountsByStatus> {
