@@ -1,8 +1,19 @@
 # Status: Portfolio site
 
-Current step: Outreach prompt fix and error visibility merged into `main`. Awaiting owner check before push.
+Current step: Groq model migration (gpt-oss-20b triage, gpt-oss-120b outreach, fallbacks, model testing UI) merged into `main`. Awaiting owner check before push.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Groq models migration after August 2026 decommission (`fix/groq-models`):
+  - Migrated `DEFAULT_TRIAGE_MODEL` to `openai/gpt-oss-20b` and `DEFAULT_OUTREACH_MODEL` to `openai/gpt-oss-120b` in `src/lib/llm/types.ts`.
+  - Added environment variable overrides `GROQ_TRIAGE_MODEL` and `GROQ_OUTREACH_MODEL` (trimmed, fallback to default when empty, never logging full values).
+  - Configured ordered fallback lists: triage [`openai/gpt-oss-20b`, `openai/gpt-oss-120b`], outreach [`openai/gpt-oss-120b`, `qwen/qwen3.6-27b`].
+  - Updated `GroqProvider.completeJson` in `src/lib/llm/groq.ts` with automatic fallback when a model returns HTTP 404 or an error indicating decommission/does not exist. The working fallback model is remembered process-wide for subsequent calls (no loop, max one extra call).
+  - Configured reasoning parameters for reasoning models (`reasoning_effort: "low"`), switched completion budget parameter to `max_completion_tokens` with reasoning token headroom so reasoning does not exhaust the output JSON limit.
+  - Added tolerant JSON parser (`extractJsonBlock`) in `src/lib/llm/groq.ts` to cleanly extract the first balanced `{...}` JSON block when surrounded by Markdown formatting or prose.
+  - Added `POST /api/admin/llm/test` protected behind `requireAdminApi` and `verifyAdminOrigin` (`X-Robots-Tag: noindex, nofollow`, Zod validation) testing triage and outreach models with tiny ~20 token requests.
+  - Added "Test Groq models" action button under Settings Connections tab in `AdminDashboard.tsx` displaying live status per model.
+  - Enhanced Jobs header stats summary to show `LLM: N calls, E errors` and display sanitized last error reason when all calls fail.
+  - Added unit test suites `src/app/api/admin/llm/test/route.test.ts` and expanded `src/lib/llm/groq.test.ts` covering 404 fallback, remembered fallback, env overrides, surrounding JSON extraction, and secret sanitization.
 - Outreach generation JSON prompt and error visibility (`fix/outreach-json`):
   - In `src/lib/outreach/generate.ts`, explicitly instructed system prompt: "Respond with a single JSON object and nothing else, exactly in this shape:" followed by literal shape `{"email":{"subject":"...","body":"..."},"linkedin_note":{"body":"..."},"linkedin_dm":{"body":"..."}}` to satisfy Groq `response_format: { type: "json_object" }` requirements.
   - Raised `maxTokens` to 1400 for both initial and retry generation calls.

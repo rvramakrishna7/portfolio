@@ -538,6 +538,7 @@ export async function startJobSearch(
   const stats: SearchRunStats = {
     llmCalls: 0,
     llmErrors: 0,
+    llmLastError: undefined,
     llmSkippedStale: 0,
     llmSkippedAlready: 0,
     llmSkippedIrrelevant: 0,
@@ -907,6 +908,7 @@ export async function stepJobSearch(
       : null;
 
     let triaged: TriagedJobResult;
+    const beforeCount = llmCallsMade.count;
     try {
       triaged = await triageJobWithLlm(
         item.job,
@@ -917,8 +919,15 @@ export async function stepJobSearch(
         llmCallsMade,
         existingData
       );
+      if (llmCallsMade.count > beforeCount && llmProvider.lastError) {
+        state.stats.llmErrors++;
+        state.stats.llmLastError = llmProvider.lastError;
+      }
     } catch {
       state.stats.llmErrors++;
+      if (llmProvider.lastError) {
+        state.stats.llmLastError = llmProvider.lastError;
+      }
       triaged = {
         expClass: item.ruleExp.expClass,
         expMinYears: item.ruleExp.minYears,

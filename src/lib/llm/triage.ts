@@ -15,6 +15,8 @@ import {
   LlmTriageOutput,
   LlmTriageOutputSchema,
   MAX_LLM_CALLS_PER_RUN,
+  getTriageModel,
+  TRIAGE_MODEL_FALLBACKS,
 } from "./types";
 
 /**
@@ -143,6 +145,8 @@ ${job.description.slice(0, 1500)}`;
         ],
         temperature: 0,
         maxTokens: 300,
+        model: getTriageModel(),
+        fallbackModels: [...TRIAGE_MODEL_FALLBACKS],
       },
       LlmTriageOutputSchema
     );
