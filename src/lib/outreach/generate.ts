@@ -335,11 +335,6 @@ export async function generateOutreachDrafts(
   const contactFirstName = contactNameRaw ? contactNameRaw.split(/\s+/)[0] : "";
   const salutation = contactFirstName ? `Hi ${contactFirstName},` : "Hi,";
 
-  // Role title for subject
-  const roleTitle = job.title.trim() || "Software Engineer";
-  const fullSubject = `${roleTitle} - Ramakrishna, BITS Pilani CS 2026`;
-  const suggestedSubject = fullSubject.length <= 70 ? fullSubject : `${roleTitle.slice(0, 70 - 32)} - Ramakrishna, BITS Pilani CS 2026`;
-
   // Filter skills to only those present in chosen projects
   const allowedTechSkills = Array.from(
     new Set(selectedProjects.flatMap((p) => p.skills))
@@ -368,7 +363,7 @@ export async function generateOutreachDrafts(
     `5. The FIRST sentence of the email, LinkedIn note, and LinkedIn DM must reference one concrete detail from the job (role title plus one specific thing from the description or tags).`,
     `6. The first sentence must NOT start with "Hi, I'm Ramakrishna, a CS" or "Hello, I'm".`,
     `7. Write "more than a minute" instead of ">1 min", and NEVER use the symbols ">" or "<".`,
-    `8. Subject line must be plain, specific, at most 70 characters, in the form "${suggestedSubject}".`,
+    "8. Subject line must be plain, specific, at most 70 characters, in the form \"<Role title> - Ramakrishna, BITS Pilani CS 2026\".",
     `9. Endings: each message ends with one clear low-pressure question OR the portfolio link (${profile.portfolioUrl}). In the LinkedIn note, do NOT use both.`,
     "10. Output Length Rules:",
     "    - Cold Email: Subject <= 70 characters. Body STRICTLY 90 to 150 words.",
