@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { StoredJob, JobsRepository, CreateDraftInput } from "../jobs/repository";
+import { StoredJob, JobsRepository, CreateDraftInput, generateTrackCode } from "../jobs/repository";
 import {
   LlmProvider,
   DEFAULT_OUTREACH_MODEL,
@@ -753,11 +753,19 @@ export async function generateOutreachDrafts(
   const validDrafts: CreateDraftInput[] = [];
   const failures: GenerateOutreachFailure[] = [];
 
+  const substituteTrackedUrl = (text: string, code: string): string => {
+    const trackedUrl = `https://rramakrishna.vercel.app/r/${code}`;
+    const plainPortfolioRegex = new RegExp(profile.portfolioUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:/)?", "g");
+    return text.replace(plainPortfolioRegex, trackedUrl);
+  };
+
   if (finalEmailErrors.length === 0) {
+    const code = generateTrackCode();
     validDrafts.push({
       kind: "email",
       subject: currentDrafts.email.subject.trim(),
-      body: currentDrafts.email.body.trim(),
+      body: substituteTrackedUrl(currentDrafts.email.body.trim(), code),
+      track_code: code,
       model,
     });
   } else {
@@ -768,9 +776,11 @@ export async function generateOutreachDrafts(
   }
 
   if (finalNoteErrors.length === 0) {
+    const code = generateTrackCode();
     validDrafts.push({
       kind: "linkedin_note",
-      body: currentDrafts.linkedin_note.body.trim(),
+      body: substituteTrackedUrl(currentDrafts.linkedin_note.body.trim(), code),
+      track_code: code,
       model,
     });
   } else {
@@ -781,9 +791,11 @@ export async function generateOutreachDrafts(
   }
 
   if (finalDmErrors.length === 0) {
+    const code = generateTrackCode();
     validDrafts.push({
       kind: "linkedin_dm",
-      body: currentDrafts.linkedin_dm.body.trim(),
+      body: substituteTrackedUrl(currentDrafts.linkedin_dm.body.trim(), code),
+      track_code: code,
       model,
     });
   } else {

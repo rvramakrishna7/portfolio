@@ -700,4 +700,130 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
     await expect(errorBanner).toBeVisible();
     await expect(errorBanner).toContainText("Saved 2 of 3 (LinkedIn DM failed: LinkedIn DM exceeds 500 characters (540 chars))");
   });
+
+  test("tracked links, bot vs human visits, and reply check workflow (Bundle B3 & C)", async ({
+    page,
+    context,
+    request,
+  }) => {
+    // 1. Generate a tracked code on /r/[code]
+    const testCode = "abc23456";
+
+    // 2. Visit with human UA
+    const humanRes = await request.get(`/r/${testCode}`, {
+      headers: {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36",
+        "x-vercel-ip-country": "IN",
+      },
+      maxRedirects: 0,
+    });
+    expect(humanRes.status()).toBe(302);
+    expect(humanRes.headers()["location"]).toMatch(/\/(?:$|\?)/);
+    expect(humanRes.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+    expect(humanRes.headers()["set-cookie"]).toBeUndefined();
+
+    // 3. Visit with bot UA
+    const botRes = await request.get(`/r/${testCode}`, {
+      headers: {
+        "user-agent": "facebookexternalhit/1.1",
+      },
+      maxRedirects: 0,
+    });
+    expect(botRes.status()).toBe(302);
+    expect(botRes.headers()["location"]).toMatch(/\/(?:$|\?)/);
+
+    // 4. Set up admin session and route mocks for Pipeline and Replies
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    await context.addCookies([
+      {
+        name: "__Host-admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+        secure: true,
+      },
+      {
+        name: "admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+      },
+    ]);
+
+    let replyCheckCalled = false;
+    await page.route("**/api/admin/replies/check", async (route) => {
+      replyCheckCalled = true;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "X-Robots-Tag": "noindex, nofollow" },
+        body: JSON.stringify({
+          success: true,
+          checked: 3,
+          exactMatches: 1,
+          possibleMatches: 1,
+          alertsSent: 1,
+        }),
+      });
+    });
+
+    await page.route("**/api/admin/pipeline", async (route) => {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          pipeline: [
+            {
+              id: "seed-101",
+              title: "Junior Backend Developer",
+              company: "Alpha Cloud",
+              url: "https://remoteok.com/remote-jobs/seed-101",
+              status: "applied",
+              channels: ["email"],
+              sentAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+              daysSinceSent: 2,
+              visitCount: 1, // 1 human visit recorded, bot excluded
+              lastVisitAt: new Date().toISOString(),
+              possibleReply: {
+                id: "reply-1",
+                snippet: "Thanks for applying to Alpha Cloud",
+                receivedAt: new Date().toISOString(),
+              },
+            },
+          ],
+        }),
+      });
+    });
+
+    // 5. Open admin dashboard and navigate to Pipeline tab
+    await page.goto("/admin");
+    const pipelineTabBtn = page.locator('.admin-tab-btn:has-text("Pipeline")');
+    await expect(pipelineTabBtn).toBeVisible();
+    await pipelineTabBtn.click();
+
+    // 6. Verify pipeline card displays exactly 1 visit
+    const pipelineCard = page.locator('.admin-pipeline-card[data-pipeline-id="seed-101"]');
+    await expect(pipelineCard).toBeVisible();
+    await expect(pipelineCard).toContainText("Visited 1 time");
+
+    // 7. Verify Possible reply badge and confirm/dismiss buttons
+    const possibleReplyBadge = pipelineCard.locator(".badge-possible-reply");
+    await expect(possibleReplyBadge).toBeVisible();
+    await expect(possibleReplyBadge).toContainText("Possible reply, confirm");
+
+    // 8. Test Check replies button
+    const checkRepliesBtn = page.locator(".admin-check-replies-btn");
+    await expect(checkRepliesBtn).toBeVisible();
+    await checkRepliesBtn.click();
+    expect(replyCheckCalled).toBe(true);
+
+    // 9. Axe accessibility test on pipeline view
+    const axeResults = await new AxeBuilder({ page })
+      .include(".admin-pipeline-section")
+      .analyze();
+    expect(axeResults.violations).toEqual([]);
+  });
 });

@@ -92,6 +92,29 @@ const PRESET_QUESTIONS = [
   "What is your biggest strength for this role?",
 ] as const;
 
+// A "possible reply" is only open while the job is still before the reply stage.
+// Once the owner confirms it (status "replied") or moves the job on, the badge goes away.
+const REPLY_STAGE_REACHED = ["replied", "interview", "offer", "rejected"];
+function hasOpenPossibleReply(job: { status: string; possibleReply?: unknown }): boolean {
+  return Boolean(job.possibleReply) && !REPLY_STAGE_REACHED.includes(job.status);
+}
+
+function formatRelativeTime(isoString: string): string {
+  try {
+    const diffMs = Date.now() - new Date(isoString).getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  } catch {
+    return "recently";
+  }
+}
+
 export function AdminDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("jobs");
@@ -184,6 +207,15 @@ export function AdminDashboard() {
   const [pipelineJobs, setPipelineJobs] = useState<PipelineJob[]>([]);
   const [isLoadingPipeline, setIsLoadingPipeline] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [isCheckingReplies, setIsCheckingReplies] = useState(false);
+  const [replyCheckToast, setReplyCheckToast] = useState<string | null>(null);
+
+  // Visits tab state (Step 2)
+  const [visitsList, setVisitsList] = useState<
+    Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }>
+  >([]);
+  const [isLoadingVisits, setIsLoadingVisits] = useState(false);
+  const [draftVisitsByJob, setDraftVisitsByJob] = useState<Record<string, { count: number; lastVisitAt: string | null }>>({});
 
   // Application answers state (Step 3)
   const [answeringJobId, setAnsweringJobId] = useState<string | null>(null);
@@ -546,6 +578,7 @@ export function AdminDashboard() {
       setDrafts(data.drafts || []);
       if (data.counts) setDraftCounts(data.counts);
       if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
+      if (data.visitsByJob) setDraftVisitsByJob(data.visitsByJob);
     } catch {
       // Ignore
     } finally {
@@ -599,6 +632,31 @@ export function AdminDashboard() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab === "visits") {
+      let ignore = false;
+      const load = async () => {
+        setIsLoadingVisits(true);
+        try {
+          const res = await fetch("/api/admin/visits");
+          if (res.ok) {
+            const data = await res.json();
+            if (!ignore) {
+              setVisitsList(data.visits || []);
+            }
+          }
+        } catch {
+          // Ignore
+        } finally {
+          if (!ignore) setIsLoadingVisits(false);
+        }
+      };
+      load();
+      return () => {
+        ignore = true;
+      };
+    }
+  }, [activeTab]);
+  useEffect(() => {
     if (activeTab === "messages") {
       let ignore = false;
       const load = async () => {
@@ -613,6 +671,7 @@ export function AdminDashboard() {
               setDrafts(data.drafts || []);
               if (data.counts) setDraftCounts(data.counts);
               if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
+              if (data.visitsByJob) setDraftVisitsByJob(data.visitsByJob);
             }
           }
         } catch {
@@ -851,6 +910,38 @@ export function AdminDashboard() {
     }
   };
 
+  const handleCheckRepliesNow = async () => {
+    setIsCheckingReplies(true);
+    setReplyCheckToast(null);
+    try {
+      const res = await fetch("/api/admin/replies/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Reply check failed");
+      }
+      setReplyCheckToast(
+        `Checked ${data.checked || 0} messages (${data.exactMatches || 0} exact, ${data.possibleMatches || 0} possible)`
+      );
+      setTimeout(() => setReplyCheckToast(null), 4000);
+      await fetchPipeline();
+      await fetchJobs();
+    } catch (err: unknown) {
+      setReplyCheckToast(err instanceof Error ? err.message : "Reply check failed");
+      setTimeout(() => setReplyCheckToast(null), 4000);
+    } finally {
+      setIsCheckingReplies(false);
+    }
+  };
+
+  const handleDismissPossibleReply = (jobId: string) => {
+    setPipelineJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, possibleReply: null } : j))
+    );
+  };
+
   const handleCopyDraft = async (draft: OutreachDraft) => {
     const currentSubject =
       editingDrafts[draft.id]?.subject !== undefined
@@ -945,18 +1036,30 @@ export function AdminDashboard() {
 
         <section className="admin-tabs-section" aria-label="Job Desk views">
           <div className="admin-tabs-nav" role="tablist" aria-label="Dashboard sections">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={`admin-tab-btn${activeTab === tab.key ? " active" : ""}`}
-                onClick={() => setActiveTab(tab.key)}
-                aria-selected={activeTab === tab.key}
-                role="tab"
-              >
-                {tab.label}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const unreadRepliesCount =
+                tab.key === "pipeline"
+                  ? pipelineJobs.filter((p) => hasOpenPossibleReply(p)).length
+                  : 0;
+
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`admin-tab-btn${activeTab === tab.key ? " active" : ""}`}
+                  onClick={() => setActiveTab(tab.key)}
+                  aria-selected={activeTab === tab.key}
+                  role="tab"
+                >
+                  {tab.label}
+                  {unreadRepliesCount > 0 && (
+                    <span className="badge-unread-count" aria-label={`${unreadRepliesCount} unread replies`}>
+                      {unreadRepliesCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           <div className="admin-tab-panel" role="tabpanel" aria-label={currentTab.label}>
@@ -1869,6 +1972,15 @@ export function AdminDashboard() {
                                       </span>
                                     )}
                                   </div>
+                                  <div className="admin-draft-visits-meta">
+                                    {draftVisitsByJob[draft.job_id]?.count ? (
+                                      <span className="badge-visit-count">
+                                        Visited {draftVisitsByJob[draft.job_id].count} time{draftVisitsByJob[draft.job_id].count === 1 ? "" : "s"}{draftVisitsByJob[draft.job_id].lastVisitAt ? `, last ${formatRelativeTime(draftVisitsByJob[draft.job_id].lastVisitAt!)}` : ""}
+                                      </span>
+                                    ) : (
+                                      <span className="badge-visit-zero">0 visits yet</span>
+                                    )}
+                                  </div>
                                 </div>
 
                                 {draft.kind === "application_answer" && draft.question && (
@@ -2058,9 +2170,25 @@ export function AdminDashboard() {
 
             {activeTab === "pipeline" && (
               <div className="admin-pipeline-section" aria-label="Pipeline stages">
-                <div className="admin-notice-banner" role="note">
-                  Nothing is sent from here. Track your applications and outreach manually.
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
+                  <div className="admin-notice-banner" role="note" style={{ flex: 1, margin: 0 }}>
+                    Nothing is sent from here. Track your applications and outreach manually.
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm admin-check-replies-btn"
+                    onClick={handleCheckRepliesNow}
+                    disabled={isCheckingReplies}
+                  >
+                    {isCheckingReplies ? "Checking replies..." : "Check replies now"}
+                  </button>
                 </div>
+
+                {replyCheckToast && (
+                  <div className="admin-toast" role="status" style={{ marginBottom: "16px" }}>
+                    {replyCheckToast}
+                  </div>
+                )}
 
                 {isLoadingPipeline && (
                   <div className="admin-loading-indicator">
@@ -2124,10 +2252,39 @@ export function AdminDashboard() {
                                 <span>Sent: {new Date(item.sentAt).toLocaleDateString()}</span>
                                 <span>•</span>
                                 <span>{item.daysSinceSent}d since sent</span>
+                                <span>•</span>
+                                {item.visitCount ? (
+                                  <span className="badge-visit-count">
+                                    Visited {item.visitCount} time{item.visitCount === 1 ? "" : "s"}{item.lastVisitAt ? `, last ${formatRelativeTime(item.lastVisitAt)}` : ""}
+                                  </span>
+                                ) : (
+                                  <span className="badge-visit-zero">0 visits yet</span>
+                                )}
                               </div>
                             </div>
 
                             <div className="admin-pipeline-badges">
+                              {hasOpenPossibleReply(item) && (
+                                <div className="badge-possible-reply" style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "4px" }}>
+                                  <span>Possible reply, confirm</span>
+                                  <button
+                                    type="button"
+                                    className="btn primary btn-sm"
+                                    style={{ padding: "2px 8px", fontSize: "0.75rem" }}
+                                    onClick={() => handlePipelineStatus(item.id, "replied")}
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn ghost btn-sm"
+                                    style={{ padding: "2px 8px", fontSize: "0.75rem" }}
+                                    onClick={() => handleDismissPossibleReply(item.id)}
+                                  >
+                                    Dismiss
+                                  </button>
+                                </div>
+                              )}
                               <span className={`badge-status ${item.status}`}>{item.status}</span>
                               {isFollowUp && <span className="badge-followup">Follow up</span>}
                             </div>
@@ -2174,7 +2331,55 @@ export function AdminDashboard() {
               </div>
             )}
 
-            {activeTab !== "jobs" && activeTab !== "settings" && activeTab !== "messages" && activeTab !== "pipeline" && (
+            {activeTab === "visits" && (
+              <div className="admin-visits-section" aria-label="Privacy-preserving visits">
+                {isLoadingVisits && (
+                  <div className="admin-loading-indicator">
+                    <p>Loading visits...</p>
+                  </div>
+                )}
+
+                {!isLoadingVisits && visitsList.length === 0 && (
+                  <div className="admin-empty-card">
+                    <h3>No visits recorded</h3>
+                    <p>Visits with referral tags and device types will show here with zero cookies or tracking.</p>
+                  </div>
+                )}
+
+                {!isLoadingVisits && visitsList.length > 0 && (
+                  <div className="admin-visits-table-wrapper" style={{ overflowX: "auto" }}>
+                    <table className="admin-visits-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--border)", textAlign: "left" }}>
+                          <th style={{ padding: "8px 12px" }}>Code</th>
+                          <th style={{ padding: "8px 12px" }}>Job / Company</th>
+                          <th style={{ padding: "8px 12px" }}>Time</th>
+                          <th style={{ padding: "8px 12px" }}>Type</th>
+                          <th style={{ padding: "8px 12px" }}>Country</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visitsList.map((v, idx) => (
+                          <tr key={`${v.code}-${v.visited_at}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                            <td style={{ padding: "8px 12px", fontFamily: "monospace" }}>/r/{v.code}</td>
+                            <td style={{ padding: "8px 12px" }}>{v.job_title ? `${v.job_title} (${v.job_company || "Unknown"})` : "Unknown draft"}</td>
+                            <td style={{ padding: "8px 12px" }}>{new Date(v.visited_at).toLocaleString()}</td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <span className={`badge-visit-type ${v.is_bot ? "bot" : "human"}`} style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "0.75rem", background: v.is_bot ? "var(--muted)" : "var(--accent)", color: "var(--background)" }}>
+                                {v.is_bot ? "Crawler / Bot" : "Human"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>{v.country || "n/a"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab !== "jobs" && activeTab !== "settings" && activeTab !== "messages" && activeTab !== "pipeline" && activeTab !== "visits" && (
               <div className="admin-empty-card">
                 <h3>{currentTab.emptyHeading}</h3>
                 <p>{currentTab.emptyText}</p>

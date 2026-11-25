@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { StoredJob, JobsRepository, CreateDraftInput } from "../jobs/repository";
+import { StoredJob, JobsRepository, CreateDraftInput, generateTrackCode } from "../jobs/repository";
 import {
   LlmProvider,
   getOutreachModel,
@@ -276,10 +276,16 @@ export async function generateApplicationAnswer(
     completion = { answer: cleanedRetryAnswer };
   }
 
+  const trackCode = generateTrackCode();
+  const trackedUrl = `https://rramakrishna.vercel.app/r/${trackCode}`;
+  const plainPortfolioRegex = new RegExp(profile.portfolioUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:/)?", "g");
+  const finalBody = completion.answer.trim().replace(plainPortfolioRegex, trackedUrl);
+
   return {
     kind: "application_answer",
     question,
-    body: completion.answer.trim(),
+    body: finalBody,
+    track_code: trackCode,
     model,
     status: "draft",
   };
