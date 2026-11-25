@@ -1,8 +1,17 @@
 # Status: Portfolio site
 
-Current step: B2-lite bundle (draft quality, application answers, sent tracking, triage fix) completed on `feat/b2-bundle`. Ready for merge to `main`.
+Current step: Draft resilience and answer wording completed on `fix/draft-resilience`. Ready for merge to `main`.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Draft resilience and answer wording (`fix/draft-resilience`):
+  - Validated each outreach kind (`email`, `linkedin_note`, `linkedin_dm`) independently in `src/lib/outreach/generate.ts`. Kinds failing retry do not fail valid kinds: `generateOutreachDrafts` returns valid drafts along with a `failures` list with reasons. Only throws when all kinds fail.
+  - In `src/lib/outreach/generate.ts`, updated prompt to target <= 420 characters for LinkedIn DM (hard limit <= 500) and <= 240 characters for LinkedIn note (hard limit <= 280). On retry, if DM exceeds 500 characters, it is never truncated mid-sentence and fails that kind independently.
+  - Extended banned phrase constant with string-join trick: `"excited about"`, `"aligns with"`, `"align with"`, `"sharpened"`, `"values"`, `"eager"`, in addition to existing `"passionate"` and `"leverage"`.
+  - In `src/lib/outreach/answer.ts`, updated application answer system prompt: never describe what the company values, believes or offers unless that exact fact appears in the job text or pasted description; speak only about the role, the work listed and candidate's own projects; start with a concrete detail from the job, not with "I am".
+  - In `src/app/api/admin/drafts/route.ts`, saved only valid drafts while returning `failures` in response JSON.
+  - In `src/app/admin/AdminDashboard.tsx`, replaced browser `alert()` with inline `setOutreachError(...)` banner displaying `Saved X of 3 (<kind> failed: <reason>)` on partial generation failure.
+  - Added unit tests in `src/lib/outreach/generate.test.ts` and `src/lib/outreach/answer.test.ts` testing new banned words, prompt instructions, partial success, and total failure.
+  - Added Playwright test in `e2e/admin-drafts.spec.ts` verifying partial failure saving email and note while displaying inline outreach error banner without browser alert dialog.
 - B2-lite bundle: draft quality, application answers, sent tracking, triage fix (`feat/b2-bundle`):
   - Migration 007_applications.sql: plain SQL (zero `$$` tokens) extending `outreach_drafts_kind_check` to allow kinds `email`, `linkedin_note`, `linkedin_dm`, `application_answer`, adding columns `question`, `recipient`, `sent_at`, `sent_channel` (nullable) with index on `(sent_at)`, and extending `jobs_status_check` to allow `new`, `shortlisted`, `skipped`, `applied`, `replied`, `interview`, `offer`, `rejected`.
   - Data layer in `src/lib/jobs/repository.ts`: updated `JobsRepository` across `InMemoryJobsRepository` and `NeonJobsRepository` with `createDrafts` (supports `application_answer`, `question`, preserves multiple answers per job while replacing unapproved drafts), `listDrafts` (supports `kind` filter), `updateDraft` (persists `recipient`), `markDraftSent(id, channel)` (sets `sent_at=now`, `sent_channel`, promotes draft to approved), `countAnswersToday()` (daily answer counter), `getPipelineJobs()` (aggregates sent channels and dates for sent/applied jobs, sorted newest first), and updated `getStats()` tracking `applied` and `replies`. Parity unit tests added in `src/lib/jobs/classify.test.ts`.

@@ -673,6 +673,22 @@ export function AdminDashboard() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to generate outreach drafts");
       }
+      if (data.failures && data.failures.length > 0) {
+        const failureDetails = data.failures
+          .map((f: { kind: string; reason: string }) => {
+            const kindLabel =
+              f.kind === "linkedin_dm"
+                ? "LinkedIn DM"
+                : f.kind === "linkedin_note"
+                ? "LinkedIn note"
+                : "Cold email";
+            return `${kindLabel} failed: ${f.reason}`;
+          })
+          .join("; ");
+        setOutreachError(`Saved ${data.drafts.length} of 3 (${failureDetails})`);
+      } else {
+        setOutreachError(null);
+      }
       if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
       setFocusedJobId(jobId);
       setActiveTab("messages");
@@ -681,7 +697,6 @@ export function AdminDashboard() {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       setOutreachError(errMsg);
-      alert(errMsg);
     } finally {
       setDraftingJobId(null);
     }

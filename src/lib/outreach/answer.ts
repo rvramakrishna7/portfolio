@@ -178,7 +178,7 @@ export async function generateApplicationAnswer(
     "RULES FOR THE ANSWER:",
     "1. Write in first person ('I', 'my'), using plain, human language. Be specific and direct.",
     "2. Use ONLY facts from the candidate profile and facts that literally appear in the job text or pasted description.",
-    "3. NEVER invent company facts (funding, products, customers, mission, culture). If the text gives few company facts, answer from the role and the work described, honestly.",
+    "3. NEVER invent company facts (funding, products, customers, mission, culture). Never describe what the company values, believes or offers unless that exact fact appears in the job text or pasted description; speak only about the role, the work listed and the candidate's own projects; start with a concrete detail from the job, not with 'I am'.",
     `4. WORD LIMIT: Exactly between ${minWords} and ${maxWords} words (target ${maxWords} words). Do not exceed ${maxWords} words.`,
     "5. Do not use em dashes or en dashes; use commas or hyphens.",
     "6. Do not include email addresses or phone numbers. Only portfolio or LinkedIn URLs are allowed.",

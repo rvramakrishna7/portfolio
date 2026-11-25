@@ -580,4 +580,124 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
       expect(axeResults.violations).toEqual([]);
     }
   });
+
+  test("draft outreach partial failure: email and note saved, DM fails validation, inline banner shows without alert", async ({
+    page,
+    context,
+  }) => {
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    await context.addCookies([
+      {
+        name: "__Host-admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+        secure: true,
+      },
+      {
+        name: "admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+      },
+    ]);
+
+    // Ensure no browser alert is fired
+    page.on("dialog", (dialog) => {
+      throw new Error(`Unexpected browser dialog: ${dialog.message()}`);
+    });
+
+    const savedDrafts = [
+      {
+        id: "draft-resilient-1",
+        job_id: "seed-101",
+        kind: "email",
+        subject: "Full-Stack AI Engineering - Ramakrishna",
+        body: "Hi team, I noticed your opening at Global Tech Corp. As a 2026 BITS Pilani graduate, I build dependable full-stack systems. In Vouch, I reduced AI review time from 18.83 s to 3.35 s with 10 of 10 runs correct. I also built Team MCP Gateway with 1,212 automated tests and 22 ms lookup latency. I would value the opportunity to discuss how I can contribute to your engineering goals. You can view my work at my portfolio link or we can arrange a brief introductory conversation. Best regards, Ramakrishna",
+        status: "draft",
+        model: "openai/gpt-oss-120b",
+        edited: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        job_title: "Full Stack Engineer (AI Platform)",
+        job_company: "Global Tech Corp",
+        job_url: "https://example.com/jobs/seed-101",
+      },
+      {
+        id: "draft-resilient-2",
+        job_id: "seed-101",
+        kind: "linkedin_note",
+        subject: null,
+        body: "Hi, I saw your Full-Stack AI Engineer opening. At Vouch, I built an evidence verification engine cutting review latency from 18.83 s to 3.35 s. I would love to connect and share more about how my background fits your team.",
+        status: "draft",
+        model: "openai/gpt-oss-120b",
+        edited: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        job_title: "Full Stack Engineer (AI Platform)",
+        job_company: "Global Tech Corp",
+        job_url: "https://example.com/jobs/seed-101",
+      },
+    ];
+
+    // Intercept drafts API returning partial failure (DM failed)
+    await page.route("**/api/admin/drafts**", async (route) => {
+      const method = route.request().method();
+      if (method === "POST") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            drafts: savedDrafts,
+            failures: [
+              {
+                kind: "linkedin_dm",
+                reason: "LinkedIn DM exceeds 500 characters (540 chars)",
+              },
+            ],
+            counts: { all: 2, draft: 2, approved: 0, discarded: 0 },
+          }),
+        });
+      }
+
+      if (method === "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            drafts: savedDrafts,
+            counts: { all: 2, draft: 2, approved: 0, discarded: 0 },
+          }),
+        });
+      }
+
+      return route.continue();
+    });
+
+    // 1. Visit admin page
+    await page.goto("/admin");
+    await expect(page).toHaveURL(/\/admin$/);
+
+    // 2. Click "Draft outreach" on a job card
+    const draftOutreachBtn = page.locator(".admin-draft-outreach-btn").first();
+    await expect(draftOutreachBtn).toBeVisible();
+    await draftOutreachBtn.click();
+
+    // 3. Verifies redirect to Messages tab
+    await expect(page.locator(".admin-drafts-section")).toBeVisible();
+
+    // 4. Verifies 2 drafts appear (email and note)
+    const draftCards = page.locator(".admin-draft-card");
+    await expect(draftCards).toHaveCount(2);
+    await expect(draftCards.nth(0)).toContainText("Cold email");
+    await expect(draftCards.nth(1)).toContainText("LinkedIn note");
+
+    // 5. Verifies inline outreach error banner is visible with specific message
+    const errorBanner = page.locator(".admin-drafts-section .admin-error-box");
+    await expect(errorBanner).toBeVisible();
+    await expect(errorBanner).toContainText("Saved 2 of 3 (LinkedIn DM failed: LinkedIn DM exceeds 500 characters (540 chars))");
+  });
 });
