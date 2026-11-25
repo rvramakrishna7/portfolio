@@ -58,6 +58,7 @@ export interface SourceStatusInfo {
 export interface SearchRunStats {
   llmCalls: number;
   llmErrors: number;
+  llmLastError?: string;
   llmSkippedStale: number;
   llmSkippedAlready?: number;
   llmSkippedIrrelevant?: number;

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { StoredJob, JobsRepository, CreateDraftInput } from "../jobs/repository";
-import { LlmProvider } from "../llm/types";
+import {
+  LlmProvider,
+  DEFAULT_OUTREACH_MODEL,
+  getOutreachModel,
+  OUTREACH_MODEL_FALLBACKS,
+} from "../llm/types";
 import { GroqProvider } from "../llm/groq";
 import {
   getCandidateProfile,
@@ -23,7 +28,7 @@ export const OutreachLlmSchema = z.object({
 
 export type OutreachLlmOutput = z.infer<typeof OutreachLlmSchema>;
 
-export const DEFAULT_OUTREACH_MODEL = "llama-3.3-70b-versatile";
+export { DEFAULT_OUTREACH_MODEL };
 export const MAX_GENERATIONS_PER_DAY = 10;
 
 // Em dash & en dash char codes avoiding raw literals in source
@@ -250,8 +255,8 @@ export async function generateOutreachDrafts(
     untrustedBlock,
   ].join("\n");
 
-  const model = options?.model || DEFAULT_OUTREACH_MODEL;
-  const provider = options?.provider || new GroqProvider();
+  const model = options?.model || getOutreachModel();
+  const provider = options?.provider || new GroqProvider(process.env.GROQ_API_KEY || "", model);
 
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: systemPrompt },
@@ -264,6 +269,7 @@ export async function generateOutreachDrafts(
       model,
       temperature: 0.6,
       maxTokens: 1400,
+      fallbackModels: [...OUTREACH_MODEL_FALLBACKS],
     },
     OutreachLlmSchema
   );
@@ -297,6 +303,7 @@ export async function generateOutreachDrafts(
         model,
         temperature: 0.6,
         maxTokens: 1400,
+        fallbackModels: [...OUTREACH_MODEL_FALLBACKS],
       },
       OutreachLlmSchema
     );

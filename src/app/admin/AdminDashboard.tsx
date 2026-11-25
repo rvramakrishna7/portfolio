@@ -109,7 +109,14 @@ export function AdminDashboard() {
   const [lastSourceCounts, setLastSourceCounts] = useState<Record<string, number> | null>(null);
   const [lastRunStats, setLastRunStats] = useState<{
     llmCalls: number;
+    llmErrors?: number;
+    llmLastError?: string;
     sources?: Record<string, { status: string; count: number; error?: string; note?: string }>;
+  } | null>(null);
+  const [isTestingGroq, setIsTestingGroq] = useState(false);
+  const [groqTestResults, setGroqTestResults] = useState<{
+    triage: { model: string; status: "ok" | "error"; error: string | null };
+    outreach: { model: string; status: "ok" | "error"; error: string | null };
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -187,6 +194,8 @@ export function AdminDashboard() {
         if (data.lastRun.stats) {
           setLastRunStats({
             llmCalls: data.lastRun.stats.llmCalls || 0,
+            llmErrors: data.lastRun.stats.llmErrors ?? 0,
+            llmLastError: data.lastRun.stats.llmLastError,
             sources: data.lastRun.stats.sources,
           });
         }
@@ -228,6 +237,8 @@ export function AdminDashboard() {
             if (data.lastRun.stats) {
               setLastRunStats({
                 llmCalls: data.lastRun.stats.llmCalls || 0,
+                llmErrors: data.lastRun.stats.llmErrors ?? 0,
+                llmLastError: data.lastRun.stats.llmLastError,
                 sources: data.lastRun.stats.sources,
               });
             }
@@ -541,6 +552,34 @@ export function AdminDashboard() {
     }
   }, [activeTab, draftFilter, focusedJobId]);
 
+  const handleTestGroqModels = async () => {
+    setIsTestingGroq(true);
+    try {
+      const res = await fetch("/api/admin/llm/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setGroqTestResults({
+          triage: { model: "triage", status: "error", error: data?.error || `http ${res.status}` },
+          outreach: { model: "outreach", status: "error", error: data?.error || `http ${res.status}` },
+        });
+        return;
+      }
+      setGroqTestResults(data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "network error";
+      setGroqTestResults({
+        triage: { model: "triage", status: "error", error: msg },
+        outreach: { model: "outreach", status: "error", error: msg },
+      });
+    } finally {
+      setIsTestingGroq(false);
+    }
+  };
+
   const handleDraftOutreach = async (jobId: string) => {
     setDraftingJobId(jobId);
     setOutreachError(null);
@@ -820,7 +859,12 @@ export function AdminDashboard() {
                     <span>Last run: {new Date(lastRunTime).toLocaleString()}</span>
                     {lastRunStats && (
                       <span className="admin-stats-summary">
-                        LLM: {lastRunStats.llmCalls} calls
+                        LLM: {lastRunStats.llmCalls} calls, {lastRunStats.llmErrors ?? 0} errors
+                        {lastRunStats.llmCalls > 0 &&
+                          (lastRunStats.llmErrors ?? 0) >= lastRunStats.llmCalls &&
+                          lastRunStats.llmLastError && (
+                            <> ({lastRunStats.llmLastError})</>
+                          )}
                       </span>
                     )}
                     {lastSourceCounts && (
@@ -1146,6 +1190,42 @@ export function AdminDashboard() {
                     <div className="admin-connection-hint">
                       Requires APIFY_API_TOKEN in server environment.
                     </div>
+                  </div>
+
+                  {/* Groq LLM */}
+                  <div className="admin-connection-card">
+                    <div className="admin-connection-header">
+                      <h3 className="admin-connection-title">Groq LLM</h3>
+                      <span className="admin-connection-badge ready">Active</span>
+                    </div>
+                    <p className="admin-connection-desc">
+                      Powers job triage classification and candidate outreach drafts.
+                    </p>
+                    <div className="admin-connection-hint" style={{ marginBottom: "12px" }}>
+                      Requires GROQ_API_KEY in server environment.
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className="btn primary btn-sm"
+                        onClick={handleTestGroqModels}
+                        disabled={isTestingGroq}
+                      >
+                        {isTestingGroq ? "Testing models..." : "Test Groq models"}
+                      </button>
+                    </div>
+                    {groqTestResults && (
+                      <div className="admin-feedback-box" role="status" style={{ marginTop: "12px" }}>
+                        <p style={{ margin: "0 0 6px 0" }}>
+                          <strong>Triage ({groqTestResults.triage.model}):</strong>{" "}
+                          {groqTestResults.triage.status === "ok" ? "OK" : groqTestResults.triage.error}
+                        </p>
+                        <p style={{ margin: 0 }}>
+                          <strong>Outreach ({groqTestResults.outreach.model}):</strong>{" "}
+                          {groqTestResults.outreach.status === "ok" ? "OK" : groqTestResults.outreach.error}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Gmail IMAP */}
