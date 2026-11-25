@@ -345,4 +345,95 @@ describe("Outreach Generator (generate.ts)", () => {
       expect(drafts[1].body).not.toContain(emDash);
     });
   });
+
+  describe("STEP 2: Project selection, prompt rules and validations", () => {
+    it("project selection for frontend or UI roles prefers Vouch and Zync over MCP Gateway and Restart Options", async () => {
+      const { getCandidateProfile } = await import("../../config/candidate-profile");
+      const { selectRelevantProjects } = await import("./generate");
+      const profile = getCandidateProfile();
+
+      const feJob = createSampleJob({
+        title: "Senior Frontend Engineer (UI/UX)",
+        description: "Looking for a UI developer with React experience.",
+        skills: ["react"],
+      });
+      const selected = selectRelevantProjects(feJob, profile.projects);
+      expect(selected.map((p) => p.id)).toEqual(["vouch", "zync"]);
+    });
+
+    it("project selection for backend, API, infrastructure roles prefers MCP Gateway and Restart Options", async () => {
+      const { getCandidateProfile } = await import("../../config/candidate-profile");
+      const { selectRelevantProjects } = await import("./generate");
+      const profile = getCandidateProfile();
+
+      const beJob = createSampleJob({
+        title: "Backend Cloud Infrastructure Developer",
+        description: "Looking for someone to manage APIs and microservices.",
+        skills: ["node.js"],
+      });
+      const selected = selectRelevantProjects(beJob, profile.projects);
+      expect(selected.map((p) => p.id)).toEqual(["mcp-gateway", "restart-options"]);
+    });
+
+    it("project selection for AI, LLM, agent, automation roles prefers Vouch and MCP Gateway", async () => {
+      const { getCandidateProfile } = await import("../../config/candidate-profile");
+      const { selectRelevantProjects } = await import("./generate");
+      const profile = getCandidateProfile();
+
+      const aiJob = createSampleJob({
+        title: "AI Automation Agent Engineer",
+        description: "Building autonomous LLM agents.",
+        skills: ["groq"],
+      });
+      const selected = selectRelevantProjects(aiJob, profile.projects);
+      expect(selected.map((p) => p.id)).toEqual(["vouch", "mcp-gateway"]);
+    });
+
+    it("for a Java job, Java never appears in the output prompt facts or candidate skills", async () => {
+      const javaJob = createSampleJob({
+        title: "Java Software Engineer",
+        description: "Must know Java 17, Spring Boot, and Hibernate.",
+        skills: ["java", "spring"],
+      });
+      const mockProvider = new MockLlmProvider([createValidLlmOutput()]);
+      const repo = new InMemoryJobsRepository();
+      await generateOutreachDrafts(javaJob, repo, { provider: mockProvider });
+
+      expect(mockProvider.capturedOptions).toHaveLength(1);
+      const systemPrompt = mockProvider.capturedOptions[0].messages.find((m) => m.role === "system")?.content || "";
+      expect(systemPrompt.toLowerCase()).not.toContain("java");
+      expect(systemPrompt).toContain("Allowed Technical Skills:");
+    });
+
+    it("banned phrase additions (proven, boost, rockstar, ninja, dynamic, thrilled) are rejected", async () => {
+      const { validateOutreachDrafts } = await import("./generate");
+      const badOutput = createValidLlmOutput({
+        email: {
+          subject: "Role - Ramakrishna",
+          body: VALID_EMAIL_BODY + " I am a proven rockstar ninja thrilled to boost performance.",
+        },
+      });
+      const errors = validateOutreachDrafts(badOutput);
+      expect(errors.some((e) => e.includes("rockstar"))).toBe(true);
+      expect(errors.some((e) => e.includes("ninja"))).toBe(true);
+      expect(errors.some((e) => e.includes("boost"))).toBe(true);
+    });
+
+    it("uses contact first name only when job record has contact name", async () => {
+      const repo = new InMemoryJobsRepository();
+      const mockProvider1 = new MockLlmProvider([createValidLlmOutput()]);
+      const jobWithoutContact = createSampleJob();
+      await generateOutreachDrafts(jobWithoutContact, repo, { provider: mockProvider1 });
+      const promptWithout = mockProvider1.capturedOptions[0].messages.find((m) => m.role === "system")?.content || "";
+      expect(promptWithout).toContain('Salutation: use "Hi," and nothing else.');
+
+      const mockProvider2 = new MockLlmProvider([createValidLlmOutput()]);
+      const jobWithContact = createSampleJob({
+        raw: { contact_name: "Anna Smith" },
+      });
+      await generateOutreachDrafts(jobWithContact, repo, { provider: mockProvider2 });
+      const promptWith = mockProvider2.capturedOptions[0].messages.find((m) => m.role === "system")?.content || "";
+      expect(promptWith).toContain('Salutation: use "Hi Anna," and nothing else.');
+    });
+  });
 });

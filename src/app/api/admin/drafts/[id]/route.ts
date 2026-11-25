@@ -8,6 +8,16 @@ const PatchDraftSchema = z.object({
   subject: z.string().nullable().optional(),
   body: z.string().optional(),
   status: z.enum(["draft", "approved", "discarded"]).optional(),
+  recipient: z
+    .string()
+    .nullable()
+    .optional()
+    .refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), {
+      message: "Invalid email format",
+    }),
+  action: z.enum(["mark_sent"]).optional(),
+  channel: z.string().optional(),
+  sent_channel: z.string().optional(),
 });
 
 export async function PATCH(
@@ -46,7 +56,19 @@ export async function PATCH(
   }
 
   const repo = getJobsRepository();
-  const updated = await repo.updateDraft(id, parsed.data);
+  let updated;
+  if (parsed.data.action === "mark_sent" || parsed.data.sent_channel) {
+    const channel =
+      parsed.data.channel || parsed.data.sent_channel || "manual";
+    updated = await repo.markDraftSent(id, channel);
+  } else {
+    updated = await repo.updateDraft(id, {
+      subject: parsed.data.subject,
+      body: parsed.data.body,
+      status: parsed.data.status,
+      recipient: parsed.data.recipient,
+    });
+  }
   if (!updated) {
     return NextResponse.json(
       { error: "Draft not found" },

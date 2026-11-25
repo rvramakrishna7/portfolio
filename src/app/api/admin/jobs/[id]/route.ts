@@ -5,7 +5,16 @@ import { getJobsRepository } from "@/lib/jobs/repository";
 import { z } from "zod";
 
 const PatchSchema = z.object({
-  status: z.enum(["new", "shortlisted", "skipped", "applied"]),
+  status: z.enum([
+    "new",
+    "shortlisted",
+    "skipped",
+    "applied",
+    "replied",
+    "interview",
+    "offer",
+    "rejected",
+  ]),
 });
 
 export async function PATCH(

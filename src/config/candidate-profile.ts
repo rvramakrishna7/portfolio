@@ -39,7 +39,7 @@ export const ALLOWED_CANDIDATE_NUMBERS = new Set([
 export function getCandidateProfile(): CandidateProfile {
   return {
     name: "Ramakrishna",
-    degree: "BS Computer Science, BITS Pilani (graduating 2026)",
+    degree: "BS Computer Science from BITS Pilani (2026)",
     targetRoles: "AI-focused full-stack and automation roles, remote, entry level",
     portfolioUrl: getSiteUrl(),
     linkedinUrl: "https://www.linkedin.com/in/rvramakrishna",
