@@ -9,6 +9,7 @@ import {
   HiddenReasonsCounts,
   OutreachDraft,
   DraftCountsByStatus,
+  PipelineJob,
 } from "@/lib/jobs/repository";
 import { formatJobAge } from "@/lib/jobs/freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
@@ -83,6 +84,13 @@ const HIDDEN_REASON_CHIPS: Array<{ key: keyof HiddenReasonsCounts; label: string
   { key: "low_relevance", label: "Low relevance" },
   { key: "missing_desc", label: "Missing desc" },
 ];
+
+const PRESET_QUESTIONS = [
+  "What interests you about working for this company?",
+  "Why this role?",
+  "Tell us about a project you are proud of",
+  "What is your biggest strength for this role?",
+] as const;
 
 export function AdminDashboard() {
   const router = useRouter();
@@ -169,8 +177,23 @@ export function AdminDashboard() {
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [outreachError, setOutreachError] = useState<string | null>(null);
   const [editingDrafts, setEditingDrafts] = useState<
-    Record<string, { subject?: string; body: string }>
+    Record<string, { subject?: string; body: string; recipient?: string }>
   >({});
+
+  // Pipeline tab state (Step 5)
+  const [pipelineJobs, setPipelineJobs] = useState<PipelineJob[]>([]);
+  const [isLoadingPipeline, setIsLoadingPipeline] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+
+  // Application answers state (Step 3)
+  const [answeringJobId, setAnsweringJobId] = useState<string | null>(null);
+  const [questionText, setQuestionText] = useState("");
+  const [pastedDescription, setPastedDescription] = useState("");
+  const [showPastedDesc, setShowPastedDesc] = useState(false);
+  const [maxWords, setMaxWords] = useState<number>(100);
+  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState(false);
+  const [answerError, setAnswerError] = useState<string | null>(null);
+  const [answersToday, setAnswersToday] = useState(0);
 
   const fetchJobs = useCallback(async () => {
     setFetchError(null);
@@ -522,12 +545,58 @@ export function AdminDashboard() {
       const data = await res.json();
       setDrafts(data.drafts || []);
       if (data.counts) setDraftCounts(data.counts);
+      if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
     } catch {
       // Ignore
     } finally {
       setIsLoadingDrafts(false);
     }
   }, []);
+
+  const fetchPipeline = useCallback(async () => {
+    setIsLoadingPipeline(true);
+    setPipelineError(null);
+    try {
+      const res = await fetch("/api/admin/pipeline");
+      if (!res.ok) throw new Error("Failed to load pipeline");
+      const data = await res.json();
+      setPipelineJobs(data.pipeline || []);
+    } catch (err: unknown) {
+      setPipelineError(err instanceof Error ? err.message : "Failed to load pipeline");
+    } finally {
+      setIsLoadingPipeline(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "pipeline") {
+      let ignore = false;
+      const load = async () => {
+        setIsLoadingPipeline(true);
+        setPipelineError(null);
+        try {
+          const res = await fetch("/api/admin/pipeline");
+          if (!res.ok) throw new Error("Failed to load pipeline");
+          const data = await res.json();
+          if (!ignore) {
+            setPipelineJobs(data.pipeline || []);
+          }
+        } catch (err: unknown) {
+          if (!ignore) {
+            setPipelineError(err instanceof Error ? err.message : "Failed to load pipeline");
+          }
+        } finally {
+          if (!ignore) {
+            setIsLoadingPipeline(false);
+          }
+        }
+      };
+      load();
+      return () => {
+        ignore = true;
+      };
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === "messages") {
@@ -543,6 +612,7 @@ export function AdminDashboard() {
             if (!ignore) {
               setDrafts(data.drafts || []);
               if (data.counts) setDraftCounts(data.counts);
+              if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
             }
           }
         } catch {
@@ -585,6 +655,12 @@ export function AdminDashboard() {
   };
 
   const handleDraftOutreach = async (jobId: string) => {
+    const existingGroup = drafts.filter((d) => d.job_id === jobId);
+    if (existingGroup.some((d) => Boolean(d.sent_at))) {
+      if (!window.confirm("Some drafts for this role have been marked as sent. Regenerate anyway?")) {
+        return;
+      }
+    }
     setDraftingJobId(jobId);
     setOutreachError(null);
     try {
@@ -597,6 +673,7 @@ export function AdminDashboard() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to generate outreach drafts");
       }
+      if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
       setFocusedJobId(jobId);
       setActiveTab("messages");
       setDraftFilter("all");
@@ -612,8 +689,16 @@ export function AdminDashboard() {
 
   const handleUpdateDraft = async (
     draftId: string,
-    updates: { subject?: string; body?: string; status?: "draft" | "approved" | "discarded" }
+    updates: { subject?: string; body?: string; status?: "draft" | "approved" | "discarded"; recipient?: string }
   ) => {
+    if (updates.status === "discarded") {
+      const draft = drafts.find((d) => d.id === draftId);
+      if (draft?.sent_at) {
+        if (!window.confirm("This draft was marked as sent. Are you sure you want to discard it?")) {
+          return;
+        }
+      }
+    }
     setSavingDraftId(draftId);
     try {
       const res = await fetch(`/api/admin/drafts/${draftId}`, {
@@ -636,6 +721,118 @@ export function AdminDashboard() {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
       setSavingDraftId(null);
+    }
+  };
+
+  const handleGenerateAnswer = async (jobId: string) => {
+    if (!questionText.trim()) return;
+    setIsGeneratingAnswer(true);
+    setAnswerError(null);
+    try {
+      const res = await fetch("/api/admin/answers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId,
+          question: questionText.trim(),
+          pastedDescription: pastedDescription.trim() || undefined,
+          maxWords,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate application answer");
+      }
+      setAnsweringJobId(null);
+      setQuestionText("");
+      setPastedDescription("");
+      setShowPastedDesc(false);
+      if (data.counts) setDraftCounts(data.counts);
+      if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
+      setFocusedJobId(jobId);
+      setActiveTab("messages");
+      setDraftFilter("all");
+      await fetchDrafts("all", jobId);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setAnswerError(errMsg);
+    } finally {
+      setIsGeneratingAnswer(false);
+    }
+  };
+
+  const handleRegenerateAnswer = async (draft: OutreachDraft) => {
+    if (draft.sent_at) {
+      if (!window.confirm("This answer was already marked as sent. Regenerate anyway?")) {
+        return;
+      }
+    }
+    setIsGeneratingAnswer(true);
+    try {
+      const res = await fetch("/api/admin/answers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: draft.job_id,
+          question: draft.question || "Tell us about a project you are proud of",
+          maxWords: 100,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to regenerate answer");
+      }
+      if (data.counts) setDraftCounts(data.counts);
+      if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
+      await fetchDrafts(draftFilter, focusedJobId || undefined);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsGeneratingAnswer(false);
+    }
+  };
+
+  const handleMarkSent = async (draft: OutreachDraft) => {
+    try {
+      const res = await fetch(`/api/admin/drafts/${draft.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mark_sent",
+          channel: draft.kind,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to mark draft as sent");
+      }
+      setDrafts((prev) => prev.map((d) => (d.id === draft.id ? data.draft : d)));
+      if (data.counts) setDraftCounts(data.counts);
+      fetchJobs();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handlePipelineStatus = async (
+    jobId: string,
+    newStatus: "replied" | "interview" | "offer" | "rejected"
+  ) => {
+    try {
+      const res = await fetch(`/api/admin/jobs/${jobId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setPipelineJobs((prev) =>
+          prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j))
+        );
+        fetchPipeline();
+        fetchJobs();
+      }
+    } catch {
+      // Ignore
     }
   };
 
@@ -1161,16 +1358,135 @@ export function AdminDashboard() {
                               Skip
                             </button>
                             {(viewFilter === "shortlist" || viewFilter === "maybe" || viewFilter === "inbox") && (
-                              <button
-                                type="button"
-                                className="btn ghost btn-sm admin-draft-outreach-btn"
-                                onClick={() => handleDraftOutreach(job.id)}
-                                disabled={draftingJobId === job.id}
-                              >
-                                {draftingJobId === job.id ? "Drafting..." : "Draft outreach"}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn ghost btn-sm admin-draft-outreach-btn"
+                                  onClick={() => handleDraftOutreach(job.id)}
+                                  disabled={draftingJobId === job.id}
+                                >
+                                  {draftingJobId === job.id ? "Drafting..." : "Draft outreach"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn ghost btn-sm admin-answer-question-btn"
+                                  onClick={() => {
+                                    if (answeringJobId === job.id) {
+                                      setAnsweringJobId(null);
+                                    } else {
+                                      setAnsweringJobId(job.id);
+                                      setQuestionText("");
+                                      setPastedDescription("");
+                                      setShowPastedDesc(false);
+                                      setAnswerError(null);
+                                    }
+                                  }}
+                                  aria-expanded={answeringJobId === job.id}
+                                >
+                                  {answeringJobId === job.id ? "Close answer panel" : "Answer a question"}
+                                </button>
+                              </>
                             )}
                           </div>
+
+                          {answeringJobId === job.id && (
+                            <div className="admin-answer-panel" aria-label="Generate application answer">
+                              <div className="admin-answer-presets" role="group" aria-label="Question presets">
+                                <span className="admin-answer-presets-label">Presets:</span>
+                                {PRESET_QUESTIONS.map((q) => (
+                                  <button
+                                    key={q}
+                                    type="button"
+                                    className="btn ghost btn-sm preset-chip"
+                                    onClick={() => setQuestionText(q)}
+                                  >
+                                    {q}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <div className="admin-input-group" style={{ marginTop: "8px" }}>
+                                <label htmlFor={`question-${job.id}`}>Application question (1 to 500 characters)</label>
+                                <textarea
+                                  id={`question-${job.id}`}
+                                  className="admin-textarea"
+                                  rows={3}
+                                  maxLength={500}
+                                  placeholder="e.g. What interests you about working for this company?"
+                                  value={questionText}
+                                  onChange={(e) => setQuestionText(e.target.value)}
+                                />
+                                <div className="admin-counter">{questionText.length} / 500 characters</div>
+                              </div>
+
+                              <div style={{ marginTop: "4px" }}>
+                                <button
+                                  type="button"
+                                  className="btn ghost btn-sm"
+                                  onClick={() => setShowPastedDesc(!showPastedDesc)}
+                                  aria-expanded={showPastedDesc}
+                                >
+                                  {showPastedDesc
+                                    ? "Hide full description"
+                                    : "+ Paste the full job description (optional, improves the answer)"}
+                                </button>
+                                {showPastedDesc && (
+                                  <div className="admin-input-group" style={{ marginTop: "6px" }}>
+                                    <textarea
+                                      id={`desc-${job.id}`}
+                                      className="admin-textarea"
+                                      rows={5}
+                                      maxLength={6000}
+                                      placeholder="Paste full job posting text here..."
+                                      value={pastedDescription}
+                                      onChange={(e) => setPastedDescription(e.target.value)}
+                                    />
+                                    <div className="admin-counter">{pastedDescription.length} / 6000 characters</div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
+                                <label htmlFor={`words-${job.id}`} style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+                                  Word limit:
+                                </label>
+                                <select
+                                  id={`words-${job.id}`}
+                                  className="admin-select"
+                                  value={maxWords}
+                                  onChange={(e) => setMaxWords(Number(e.target.value))}
+                                >
+                                  <option value={60}>60 words</option>
+                                  <option value={100}>100 words (default)</option>
+                                  <option value={150}>150 words</option>
+                                  <option value={200}>200 words</option>
+                                </select>
+
+                                <button
+                                  type="button"
+                                  className="btn primary btn-sm admin-generate-answer-btn"
+                                  onClick={() => handleGenerateAnswer(job.id)}
+                                  disabled={isGeneratingAnswer || !questionText.trim()}
+                                >
+                                  {isGeneratingAnswer ? "Generating answer..." : "Generate answer"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="btn ghost btn-sm"
+                                  onClick={() => setAnsweringJobId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+
+                              {answerError && (
+                                <div className="admin-error-box" role="alert" style={{ marginTop: "8px" }}>
+                                  <p style={{ margin: 0 }}>{answerError}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </article>
                       );
                     })}
@@ -1368,35 +1684,40 @@ export function AdminDashboard() {
                   Nothing is sent from here. Copy the text and send it yourself.
                 </div>
 
-                <div className="admin-view-filters" role="group" aria-label="Filter drafts by status">
-                  <button
-                    type="button"
-                    className={`admin-filter-btn${draftFilter === "all" ? " active" : ""}`}
-                    onClick={() => setDraftFilter("all")}
-                  >
-                    All ({draftCounts.all})
-                  </button>
-                  <button
-                    type="button"
-                    className={`admin-filter-btn${draftFilter === "draft" ? " active" : ""}`}
-                    onClick={() => setDraftFilter("draft")}
-                  >
-                    Draft ({draftCounts.draft})
-                  </button>
-                  <button
-                    type="button"
-                    className={`admin-filter-btn${draftFilter === "approved" ? " active" : ""}`}
-                    onClick={() => setDraftFilter("approved")}
-                  >
-                    Approved ({draftCounts.approved})
-                  </button>
-                  <button
-                    type="button"
-                    className={`admin-filter-btn${draftFilter === "discarded" ? " active" : ""}`}
-                    onClick={() => setDraftFilter("discarded")}
-                  >
-                    Discarded ({draftCounts.discarded})
-                  </button>
+                <div className="admin-drafts-header-bar">
+                  <div className="admin-view-filters" role="group" aria-label="Filter drafts by status">
+                    <button
+                      type="button"
+                      className={`admin-filter-btn${draftFilter === "all" ? " active" : ""}`}
+                      onClick={() => setDraftFilter("all")}
+                    >
+                      All ({draftCounts.all})
+                    </button>
+                    <button
+                      type="button"
+                      className={`admin-filter-btn${draftFilter === "draft" ? " active" : ""}`}
+                      onClick={() => setDraftFilter("draft")}
+                    >
+                      Draft ({draftCounts.draft})
+                    </button>
+                    <button
+                      type="button"
+                      className={`admin-filter-btn${draftFilter === "approved" ? " active" : ""}`}
+                      onClick={() => setDraftFilter("approved")}
+                    >
+                      Approved ({draftCounts.approved})
+                    </button>
+                    <button
+                      type="button"
+                      className={`admin-filter-btn${draftFilter === "discarded" ? " active" : ""}`}
+                      onClick={() => setDraftFilter("discarded")}
+                    >
+                      Discarded ({draftCounts.discarded})
+                    </button>
+                  </div>
+                  <div className="admin-budget-pill">
+                    Drafts: {draftCounts.draft} &middot; Answers today: {answersToday}/20
+                  </div>
                 </div>
 
                 {focusedJobId && (
@@ -1483,7 +1804,9 @@ export function AdminDashboard() {
                                 ? "Cold email"
                                 : draft.kind === "linkedin_note"
                                 ? "LinkedIn note"
-                                : "LinkedIn DM";
+                                : draft.kind === "linkedin_dm"
+                                ? "LinkedIn DM"
+                                : "Application answer";
 
                             const currentSubject =
                               editingDrafts[draft.id]?.subject !== undefined
@@ -1493,6 +1816,10 @@ export function AdminDashboard() {
                               editingDrafts[draft.id]?.body !== undefined
                                 ? editingDrafts[draft.id].body
                                 : draft.body;
+                            const currentRecipient =
+                              editingDrafts[draft.id]?.recipient !== undefined
+                                ? editingDrafts[draft.id].recipient
+                                : (draft.recipient || "");
 
                             const isEmail = draft.kind === "email";
                             const emailWords = currentBody.trim().split(/\s+/).filter(Boolean).length;
@@ -1510,7 +1837,9 @@ export function AdminDashboard() {
                               editingDrafts[draft.id] !== undefined &&
                               (editingDrafts[draft.id].body !== draft.body ||
                                 (draft.subject !== null &&
-                                  editingDrafts[draft.id].subject !== draft.subject));
+                                  editingDrafts[draft.id].subject !== draft.subject) ||
+                                (draft.recipient !== null &&
+                                  editingDrafts[draft.id].recipient !== draft.recipient));
 
                             return (
                               <article key={draft.id} className="admin-draft-card" data-draft-id={draft.id}>
@@ -1519,8 +1848,47 @@ export function AdminDashboard() {
                                     <span className="badge-kind">{kindLabel}</span>
                                     <span className={`badge-status ${draft.status}`}>{draft.status}</span>
                                     {draft.edited && <span className="badge-edited">Edited</span>}
+                                    {draft.sent_at && (
+                                      <span className="badge-sent">
+                                        Sent {new Date(draft.sent_at).toLocaleDateString()}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
+
+                                {draft.kind === "application_answer" && draft.question && (
+                                  <div className="admin-draft-question">
+                                    <span className="admin-draft-question-label">Question</span>
+                                    <p className="admin-draft-question-text">{draft.question}</p>
+                                  </div>
+                                )}
+
+                                {isEmail && (
+                                  <div className="admin-draft-field">
+                                    <label htmlFor={`recipient-${draft.id}`}>Recipient email (optional)</label>
+                                    <input
+                                      id={`recipient-${draft.id}`}
+                                      type="email"
+                                      className="admin-input"
+                                      placeholder="recruiter@example.com"
+                                      value={currentRecipient || ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setEditingDrafts((prev) => ({
+                                          ...prev,
+                                          [draft.id]: {
+                                            ...prev[draft.id],
+                                            recipient: val,
+                                            body:
+                                              prev[draft.id]?.body !== undefined
+                                                ? prev[draft.id].body
+                                                : draft.body,
+                                          },
+                                        }));
+                                      }}
+                                    />
+                                  </div>
+                                )}
 
                                 {isEmail && (
                                   <div className="admin-draft-field">
@@ -1535,6 +1903,7 @@ export function AdminDashboard() {
                                         setEditingDrafts((prev) => ({
                                           ...prev,
                                           [draft.id]: {
+                                            ...prev[draft.id],
                                             subject: val,
                                             body:
                                               prev[draft.id]?.body !== undefined
@@ -1562,6 +1931,7 @@ export function AdminDashboard() {
                                       setEditingDrafts((prev) => ({
                                         ...prev,
                                         [draft.id]: {
+                                          ...prev[draft.id],
                                           subject:
                                             prev[draft.id]?.subject !== undefined
                                               ? prev[draft.id].subject
@@ -1579,6 +1949,7 @@ export function AdminDashboard() {
                                     {isEmail && `Word count: ${emailWords} (target 90-150 words)`}
                                     {isNote && `${currentBody.length} / 280 characters`}
                                     {isDm && `${currentBody.length} / 500 characters`}
+                                    {draft.kind === "application_answer" && `Word count: ${emailWords}`}
                                   </div>
                                 </div>
 
@@ -1590,6 +1961,23 @@ export function AdminDashboard() {
                                   >
                                     Copy
                                   </button>
+                                  {isEmail && (
+                                    <a
+                                      href={`mailto:${encodeURIComponent(currentRecipient || "")}?subject=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}
+                                      className="btn ghost btn-sm admin-mailto-btn"
+                                    >
+                                      Open in mail app
+                                    </a>
+                                  )}
+                                  {!draft.sent_at && (
+                                    <button
+                                      type="button"
+                                      className="btn ghost btn-sm admin-mark-sent-btn"
+                                      onClick={() => handleMarkSent(draft)}
+                                    >
+                                      Mark sent
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     className="btn primary btn-sm admin-approve-btn"
@@ -1598,6 +1986,7 @@ export function AdminDashboard() {
                                         status: "approved",
                                         subject: isEmail ? currentSubject : undefined,
                                         body: currentBody,
+                                        recipient: isEmail ? currentRecipient : undefined,
                                       })
                                     }
                                     disabled={savingDraftId === draft.id}
@@ -1612,6 +2001,7 @@ export function AdminDashboard() {
                                         handleUpdateDraft(draft.id, {
                                           subject: isEmail ? currentSubject : undefined,
                                           body: currentBody,
+                                          recipient: isEmail ? currentRecipient : undefined,
                                         })
                                       }
                                       disabled={savingDraftId === draft.id}
@@ -1629,6 +2019,16 @@ export function AdminDashboard() {
                                       Discard
                                     </button>
                                   )}
+                                  {draft.kind === "application_answer" && (
+                                    <button
+                                      type="button"
+                                      className="btn ghost btn-sm admin-regenerate-answer-btn"
+                                      onClick={() => handleRegenerateAnswer(draft)}
+                                      disabled={isGeneratingAnswer}
+                                    >
+                                      {isGeneratingAnswer ? "Regenerating..." : "Regenerate answer"}
+                                    </button>
+                                  )}
                                 </div>
                               </article>
                             );
@@ -1641,7 +2041,125 @@ export function AdminDashboard() {
               </div>
             )}
 
-            {activeTab !== "jobs" && activeTab !== "settings" && activeTab !== "messages" && (
+            {activeTab === "pipeline" && (
+              <div className="admin-pipeline-section" aria-label="Pipeline stages">
+                <div className="admin-notice-banner" role="note">
+                  Nothing is sent from here. Track your applications and outreach manually.
+                </div>
+
+                {isLoadingPipeline && (
+                  <div className="admin-loading-indicator">
+                    <p>Loading pipeline...</p>
+                  </div>
+                )}
+
+                {pipelineError && (
+                  <div className="admin-error-box" role="alert">
+                    <p>{pipelineError}</p>
+                  </div>
+                )}
+
+                {!isLoadingPipeline && !pipelineError && pipelineJobs.length === 0 && (
+                  <div className="admin-empty-card">
+                    <h3>Pipeline is clear</h3>
+                    <p>Roles you mark applied or outreach drafts you mark sent will appear here.</p>
+                  </div>
+                )}
+
+                {!isLoadingPipeline && !pipelineError && pipelineJobs.length > 0 && (
+                  <div className="admin-pipeline-list" role="feed" aria-label="Pipeline job listings">
+                    {pipelineJobs.map((item) => {
+                      const isFollowUp =
+                        item.daysSinceSent >= 5 &&
+                        item.status !== "replied" &&
+                        item.status !== "interview" &&
+                        item.status !== "offer";
+
+                      const formattedChannels =
+                        item.channels.length > 0
+                          ? item.channels
+                              .map((c) =>
+                                c === "email"
+                                  ? "Email"
+                                  : c === "linkedin_note"
+                                  ? "LinkedIn note"
+                                  : c === "linkedin_dm"
+                                  ? "LinkedIn DM"
+                                  : c === "application_answer"
+                                  ? "Application answer"
+                                  : c
+                              )
+                              .join(" + ")
+                          : "Manual application";
+
+                      return (
+                        <article key={item.id} className="admin-pipeline-card" data-pipeline-id={item.id}>
+                          <div className="admin-pipeline-card-top">
+                            <div>
+                              <h3 className="admin-draft-job-title">
+                                <a href={item.url} target="_blank" rel="noopener noreferrer">
+                                  {item.title} ↗
+                                </a>
+                              </h3>
+                              <div className="admin-pipeline-meta">
+                                <span>{item.company}</span>
+                                <span>•</span>
+                                <span>Channels: {formattedChannels}</span>
+                                <span>•</span>
+                                <span>Sent: {new Date(item.sentAt).toLocaleDateString()}</span>
+                                <span>•</span>
+                                <span>{item.daysSinceSent}d since sent</span>
+                              </div>
+                            </div>
+
+                            <div className="admin-pipeline-badges">
+                              <span className={`badge-status ${item.status}`}>{item.status}</span>
+                              {isFollowUp && <span className="badge-followup">Follow up</span>}
+                            </div>
+                          </div>
+
+                          <div className="admin-pipeline-actions">
+                            <span style={{ fontSize: "0.8rem", color: "var(--muted)", marginRight: "4px" }}>
+                              Status:
+                            </span>
+                            <button
+                              type="button"
+                              className={`btn ${item.status === "replied" ? "primary" : "ghost"} btn-sm`}
+                              onClick={() => handlePipelineStatus(item.id, "replied")}
+                            >
+                              Mark replied
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn ${item.status === "interview" ? "primary" : "ghost"} btn-sm`}
+                              onClick={() => handlePipelineStatus(item.id, "interview")}
+                            >
+                              Interview
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn ${item.status === "offer" ? "primary" : "ghost"} btn-sm`}
+                              onClick={() => handlePipelineStatus(item.id, "offer")}
+                            >
+                              Offer
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn ${item.status === "rejected" ? "primary" : "ghost"} btn-sm btn-danger`}
+                              onClick={() => handlePipelineStatus(item.id, "rejected")}
+                            >
+                              Rejected
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab !== "jobs" && activeTab !== "settings" && activeTab !== "messages" && activeTab !== "pipeline" && (
               <div className="admin-empty-card">
                 <h3>{currentTab.emptyHeading}</h3>
                 <p>{currentTab.emptyText}</p>

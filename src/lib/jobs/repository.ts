@@ -31,7 +31,7 @@ export interface StoredJob {
   filter_reason: string | null;
   summary_line: string | null;
   match_score: number | null;
-  status: "new" | "shortlisted" | "skipped" | "applied";
+  status: "new" | "shortlisted" | "skipped" | "applied" | "replied" | "interview" | "offer" | "rejected";
   raw: unknown;
   last_seen_at: string;
   triaged_at?: string | null;
@@ -212,7 +212,7 @@ export interface ViewCounts {
   reasons?: HiddenReasonsCounts;
 }
 
-export type OutreachDraftKind = "email" | "linkedin_note" | "linkedin_dm";
+export type OutreachDraftKind = "email" | "linkedin_note" | "linkedin_dm" | "application_answer";
 export type OutreachDraftStatus = "draft" | "approved" | "discarded";
 
 export interface OutreachDraft {
@@ -224,6 +224,10 @@ export interface OutreachDraft {
   status: OutreachDraftStatus;
   model: string | null;
   edited: boolean;
+  question?: string | null;
+  recipient?: string | null;
+  sent_at?: string | null;
+  sent_channel?: string | null;
   created_at: string;
   updated_at: string;
   job_title?: string;
@@ -237,11 +241,14 @@ export interface CreateDraftInput {
   body: string;
   model?: string | null;
   status?: OutreachDraftStatus;
+  question?: string | null;
+  recipient?: string | null;
 }
 
 export interface ListDraftsOptions {
   status?: OutreachDraftStatus;
   jobId?: string;
+  kind?: OutreachDraftKind;
   limit?: number;
   offset?: number;
 }
@@ -250,6 +257,7 @@ export interface UpdateDraftInput {
   subject?: string | null;
   body?: string;
   status?: OutreachDraftStatus;
+  recipient?: string | null;
 }
 
 export interface DraftCountsByStatus {
@@ -257,6 +265,17 @@ export interface DraftCountsByStatus {
   draft: number;
   approved: number;
   discarded: number;
+}
+
+export interface PipelineJob {
+  id: string;
+  title: string;
+  company: string;
+  url: string;
+  status: StoredJob["status"];
+  channels: string[];
+  sentAt: string;
+  daysSinceSent: number;
 }
 
 export interface JobsRepository {
@@ -281,7 +300,7 @@ export interface JobsRepository {
   }>;
   updateJobStatus(
     id: string,
-    status: "new" | "shortlisted" | "skipped" | "applied"
+    status: "new" | "shortlisted" | "skipped" | "applied" | "replied" | "interview" | "offer" | "rejected"
   ): Promise<boolean>;
   createSearchRun(): Promise<string>;
   updateSearchRun(
@@ -297,8 +316,11 @@ export interface JobsRepository {
   createDrafts(jobId: string, drafts: CreateDraftInput[]): Promise<OutreachDraft[]>;
   listDrafts(opts?: ListDraftsOptions): Promise<OutreachDraft[]>;
   updateDraft(id: string, updates: UpdateDraftInput): Promise<OutreachDraft | null>;
+  markDraftSent(id: string, channel: string): Promise<OutreachDraft | null>;
   countDrafts(jobId?: string): Promise<DraftCountsByStatus>;
   countGenerationsToday(): Promise<number>;
+  countAnswersToday(): Promise<number>;
+  getPipelineJobs(): Promise<PipelineJob[]>;
 }
 
 // Helper to determine whether a job matches a specific hidden reason filter
@@ -1017,20 +1039,82 @@ export class InMemoryJobsRepository implements JobsRepository {
     const today = new Date().toISOString().slice(0, 10);
     const jobsFound = list.length;
     const newToday = list.filter((j) => j.fetched_at.startsWith(today)).length;
-    const applied = list.filter((j) => j.status === "applied").length;
+    const applied = list.filter((j) =>
+      ["applied", "replied", "interview", "offer", "rejected"].includes(j.status)
+    ).length;
+    const replies = list.filter((j) =>
+      ["replied", "interview", "offer"].includes(j.status)
+    ).length;
 
     return {
       jobsFound,
       newToday,
       applied,
-      replies: 0,
+      replies,
       visits: 0,
     };
   }
 
+  async getPipelineJobs(): Promise<PipelineJob[]> {
+    const result: PipelineJob[] = [];
+    const now = Date.now();
+
+    for (const job of this.jobs.values()) {
+      const jobDrafts = Array.from(this.drafts.values()).filter(
+        (d) => (d.job_id === job.id || d.job_id === job.source_id) && Boolean(d.sent_at)
+      );
+
+      const hasSentDraft = jobDrafts.length > 0;
+      const hasPipelineStatus = [
+        "applied",
+        "replied",
+        "interview",
+        "offer",
+        "rejected",
+      ].includes(job.status);
+
+      if (!hasSentDraft && !hasPipelineStatus) {
+        continue;
+      }
+
+      const channels = Array.from(
+        new Set(jobDrafts.map((d) => d.sent_channel || d.kind))
+      );
+
+      let sentAt = job.fetched_at;
+      if (hasSentDraft) {
+        const sortedDates = jobDrafts
+          .map((d) => d.sent_at!)
+          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+        sentAt = sortedDates[0];
+      }
+
+      const sentTime = new Date(sentAt).getTime();
+      const daysSinceSent = isNaN(sentTime)
+        ? 0
+        : Math.max(0, Math.floor((now - sentTime) / (1000 * 60 * 60 * 24)));
+
+      result.push({
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        url: job.apply_url || job.url,
+        status: job.status,
+        channels,
+        sentAt,
+        daysSinceSent,
+      });
+    }
+
+    result.sort(
+      (a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
+    );
+    return result;
+  }
+
   async updateJobStatus(
     id: string,
-    status: "new" | "shortlisted" | "skipped" | "applied"
+    status: "new" | "shortlisted" | "skipped" | "applied" | "replied" | "interview" | "offer" | "rejected"
   ): Promise<boolean> {
     for (const job of this.jobs.values()) {
       if (job.id === id) {
@@ -1121,10 +1205,13 @@ export class InMemoryJobsRepository implements JobsRepository {
     const job = await this.getJobById(jobId);
 
     for (const d of drafts) {
-      // Replace earlier non-approved drafts of the same job and kind
-      for (const [key, existing] of this.drafts.entries()) {
-        if (existing.job_id === jobId && existing.kind === d.kind && existing.status !== "approved") {
-          this.drafts.delete(key);
+      // For email, linkedin_note, linkedin_dm: replace earlier non-approved drafts of the same job and kind.
+      // For application_answer: keep individual answers (do not overwrite other questions)
+      if (d.kind !== "application_answer") {
+        for (const [key, existing] of this.drafts.entries()) {
+          if (existing.job_id === jobId && existing.kind === d.kind && existing.status !== "approved") {
+            this.drafts.delete(key);
+          }
         }
       }
 
@@ -1138,6 +1225,10 @@ export class InMemoryJobsRepository implements JobsRepository {
         status: d.status || "draft",
         model: d.model || null,
         edited: false,
+        question: d.question || null,
+        recipient: d.recipient || null,
+        sent_at: null,
+        sent_channel: null,
         created_at: nowIso,
         updated_at: nowIso,
         job_title: job?.title,
@@ -1157,6 +1248,9 @@ export class InMemoryJobsRepository implements JobsRepository {
     }
     if (opts?.jobId) {
       list = list.filter((d) => d.job_id === opts.jobId);
+    }
+    if (opts?.kind) {
+      list = list.filter((d) => d.kind === opts.kind);
     }
     list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     if (opts?.offset) list = list.slice(opts.offset);
@@ -1188,7 +1282,23 @@ export class InMemoryJobsRepository implements JobsRepository {
     if (updates.status !== undefined) {
       draft.status = updates.status;
     }
+    if (updates.recipient !== undefined) {
+      draft.recipient = updates.recipient;
+    }
     draft.edited = edited;
+    draft.updated_at = new Date().toISOString();
+    return { ...draft };
+  }
+
+  async markDraftSent(id: string, channel: string): Promise<OutreachDraft | null> {
+    const draft = this.drafts.get(id);
+    if (!draft) return null;
+
+    draft.sent_at = new Date().toISOString();
+    draft.sent_channel = channel;
+    if (draft.status === "draft") {
+      draft.status = "approved";
+    }
     draft.updated_at = new Date().toISOString();
     return { ...draft };
   }
@@ -1209,10 +1319,17 @@ export class InMemoryJobsRepository implements JobsRepository {
     const today = new Date().toISOString().slice(0, 10);
     const todayJobIds = new Set(
       Array.from(this.drafts.values())
-        .filter((d) => d.created_at.slice(0, 10) === today)
+        .filter((d) => d.created_at.slice(0, 10) === today && d.kind !== "application_answer")
         .map((d) => d.job_id)
     );
     return todayJobIds.size;
+  }
+
+  async countAnswersToday(): Promise<number> {
+    const today = new Date().toISOString().slice(0, 10);
+    return Array.from(this.drafts.values()).filter(
+      (d) => d.created_at.slice(0, 10) === today && d.kind === "application_answer"
+    ).length;
   }
 }
 
@@ -2637,13 +2754,14 @@ export class NeonJobsRepository implements JobsRepository {
   }
 
   async getStats() {
-    const sql = getSql();
+    const sql = this.resolveSql();
 
     const counts = await sql`
       SELECT
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE fetched_at >= NOW() - INTERVAL '24 hours')::int AS new_today,
-        COUNT(*) FILTER (WHERE status = 'applied')::int AS applied
+        COUNT(*) FILTER (WHERE status IN ('applied', 'replied', 'interview', 'offer', 'rejected'))::int AS applied,
+        COUNT(*) FILTER (WHERE status IN ('replied', 'interview', 'offer'))::int AS replies
       FROM jobs
     `;
 
@@ -2651,14 +2769,14 @@ export class NeonJobsRepository implements JobsRepository {
       jobsFound: counts[0]?.total || 0,
       newToday: counts[0]?.new_today || 0,
       applied: counts[0]?.applied || 0,
-      replies: 0,
+      replies: counts[0]?.replies || 0,
       visits: 0,
     };
   }
 
   async updateJobStatus(
     id: string,
-    status: "new" | "shortlisted" | "skipped" | "applied"
+    status: "new" | "shortlisted" | "skipped" | "applied" | "replied" | "interview" | "offer" | "rejected"
   ): Promise<boolean> {
     const sql = getSql();
     const res = await sql`
@@ -2784,17 +2902,20 @@ export class NeonJobsRepository implements JobsRepository {
     const created: OutreachDraft[] = [];
 
     for (const d of drafts) {
-      // Replace earlier non-approved drafts of the same job and kind
-      await sql`
-        DELETE FROM outreach_drafts
-        WHERE job_id = ${jobId}::uuid
-          AND kind = ${d.kind}
-          AND status != 'approved'
-      `;
+      // For email, linkedin_note, linkedin_dm: replace earlier non-approved drafts of the same job and kind.
+      // For application_answer: keep individual answers (do not overwrite other questions)
+      if (d.kind !== "application_answer") {
+        await sql`
+          DELETE FROM outreach_drafts
+          WHERE job_id = ${jobId}::uuid
+            AND kind = ${d.kind}
+            AND status != 'approved'
+        `;
+      }
 
       const rows = (await sql`
         INSERT INTO outreach_drafts (
-          job_id, kind, subject, body, status, model, edited, created_at, updated_at
+          job_id, kind, subject, body, status, model, edited, question, recipient, created_at, updated_at
         ) VALUES (
           ${jobId}::uuid,
           ${d.kind},
@@ -2803,6 +2924,8 @@ export class NeonJobsRepository implements JobsRepository {
           ${d.status || "draft"},
           ${d.model || null},
           false,
+          ${d.question || null},
+          ${d.recipient || null},
           NOW(),
           NOW()
         )
@@ -2821,6 +2944,7 @@ export class NeonJobsRepository implements JobsRepository {
     const sql = this.resolveSql();
     const statusFilter = opts?.status || "";
     const jobIdFilter = opts?.jobId || "";
+    const kindFilter = opts?.kind || "";
     const limit = opts?.limit ?? 100;
     const offset = opts?.offset ?? 0;
 
@@ -2830,6 +2954,7 @@ export class NeonJobsRepository implements JobsRepository {
       LEFT JOIN jobs j ON d.job_id = j.id
       WHERE (${statusFilter} = '' OR d.status = ${statusFilter})
         AND (${jobIdFilter} = '' OR d.job_id = ${jobIdFilter}::uuid)
+        AND (${kindFilter} = '' OR d.kind = ${kindFilter})
       ORDER BY d.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `) as OutreachDraft[];
@@ -2849,6 +2974,7 @@ export class NeonJobsRepository implements JobsRepository {
       const newSubject = updates.subject !== undefined ? updates.subject : current.subject;
       const newBody = updates.body !== undefined ? updates.body : current.body;
       const newStatus = updates.status !== undefined ? updates.status : current.status;
+      const newRecipient = updates.recipient !== undefined ? updates.recipient : current.recipient;
       const isEdited =
         current.edited ||
         (updates.subject !== undefined && updates.subject !== current.subject) ||
@@ -2860,7 +2986,28 @@ export class NeonJobsRepository implements JobsRepository {
           subject = ${newSubject},
           body = ${newBody},
           status = ${newStatus},
+          recipient = ${newRecipient},
           edited = ${isEdited},
+          updated_at = NOW()
+        WHERE id = ${id}::uuid
+        RETURNING *
+      `) as OutreachDraft[];
+
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async markDraftSent(id: string, channel: string): Promise<OutreachDraft | null> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        UPDATE outreach_drafts
+        SET
+          sent_at = NOW(),
+          sent_channel = ${channel},
+          status = CASE WHEN status = 'draft' THEN 'approved' ELSE status END,
           updated_at = NOW()
         WHERE id = ${id}::uuid
         RETURNING *
@@ -2906,11 +3053,83 @@ export class NeonJobsRepository implements JobsRepository {
         SELECT COUNT(DISTINCT job_id)::int AS count
         FROM outreach_drafts
         WHERE created_at >= CURRENT_DATE
+          AND kind != 'application_answer'
       `) as Array<{ count?: number }>;
       return Number(rows[0]?.count || 0);
     } catch {
       return 0;
     }
+  }
+
+  async countAnswersToday(): Promise<number> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT COUNT(*)::int AS count
+        FROM outreach_drafts
+        WHERE created_at >= CURRENT_DATE
+          AND kind = 'application_answer'
+      `) as Array<{ count?: number }>;
+      return Number(rows[0]?.count || 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  async getPipelineJobs(): Promise<PipelineJob[]> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      SELECT
+        j.id,
+        j.title,
+        j.company,
+        COALESCE(j.apply_url, j.url) AS url,
+        j.status,
+        COALESCE(
+          ARRAY_AGG(DISTINCT COALESCE(d.sent_channel, d.kind)) FILTER (WHERE d.sent_at IS NOT NULL),
+          ARRAY[]::text[]
+        ) AS channels,
+        COALESCE(MAX(d.sent_at), j.fetched_at) AS sent_at
+      FROM jobs j
+      LEFT JOIN outreach_drafts d ON d.job_id = j.id
+      WHERE j.status IN ('applied', 'replied', 'interview', 'offer', 'rejected')
+         OR d.sent_at IS NOT NULL
+      GROUP BY j.id, j.title, j.company, j.apply_url, j.url, j.status, j.fetched_at
+      ORDER BY sent_at DESC
+    `) as Array<{
+      id: string;
+      title: string;
+      company: string;
+      url: string;
+      status: StoredJob["status"];
+      channels: string[] | null;
+      sent_at: string | Date;
+    }>;
+
+    const now = Date.now();
+    return rows.map((r) => {
+      const sentAtIso =
+        r.sent_at instanceof Date
+          ? r.sent_at.toISOString()
+          : typeof r.sent_at === "string"
+          ? r.sent_at
+          : new Date().toISOString();
+      const sentTime = new Date(sentAtIso).getTime();
+      const daysSinceSent = isNaN(sentTime)
+        ? 0
+        : Math.max(0, Math.floor((now - sentTime) / (1000 * 60 * 60 * 24)));
+
+      return {
+        id: r.id,
+        title: r.title,
+        company: r.company,
+        url: r.url,
+        status: r.status,
+        channels: Array.isArray(r.channels) ? r.channels : [],
+        sentAt: sentAtIso,
+        daysSinceSent,
+      };
+    });
   }
 }
 

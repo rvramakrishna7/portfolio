@@ -2521,16 +2521,20 @@ describe("Outreach Drafts repository operations parity", () => {
         if (sqlText.includes("DELETE FROM outreach_drafts")) {
           const jobId = String(values[0]);
           const kind = String(values[1]);
+          const toDelete: string[] = [];
           for (const [key, d] of neonDrafts.entries()) {
             if (d.job_id === jobId && d.kind === kind && d.status !== "approved") {
-              neonDrafts.delete(key);
+              toDelete.push(key);
             }
+          }
+          for (const key of toDelete) {
+            neonDrafts.delete(key);
           }
           return [];
         }
 
         if (sqlText.includes("INSERT INTO outreach_drafts")) {
-          const id = `neon-draft-${neonDrafts.size + 1}`;
+          const id = `neon-draft-${neonDrafts.size + 1}-${Math.random().toString(36).slice(2, 7)}`;
           const nowIso = new Date().toISOString();
           const draft: OutreachDraft = {
             id,
@@ -2541,6 +2545,10 @@ describe("Outreach Drafts repository operations parity", () => {
             status: (String(values[4]) as OutreachDraft["status"]) || "draft",
             model: values[5] ? String(values[5]) : null,
             edited: false,
+            question: values[6] ? String(values[6]) : null,
+            recipient: values[7] ? String(values[7]) : null,
+            sent_at: null,
+            sent_channel: null,
             created_at: nowIso,
             updated_at: nowIso,
           };
@@ -2549,13 +2557,39 @@ describe("Outreach Drafts repository operations parity", () => {
         }
 
         if (sqlText.includes("SELECT d.*, j.title AS job_title")) {
-          const statusFilter = String(values[0] ?? "");
-          const jobIdFilter = String(values[1] ?? "");
+          let statusFilter = "";
+          let jobIdFilter = "";
+          let kindFilter = "";
+          for (let i = 0; i < values.length; i++) {
+            const v = String(values[i]);
+            if (v.startsWith("e2e-job-uuid-")) {
+              jobIdFilter = v;
+            } else if (["email", "linkedin_note", "linkedin_dm", "application_answer"].includes(v)) {
+              kindFilter = v;
+            } else if (["draft", "approved", "discarded"].includes(v)) {
+              statusFilter = v;
+            }
+          }
           let list = Array.from(neonDrafts.values());
           if (statusFilter) list = list.filter((d) => d.status === statusFilter);
           if (jobIdFilter) list = list.filter((d) => d.job_id === jobIdFilter);
+          if (kindFilter) list = list.filter((d) => d.kind === kindFilter);
           list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
           return list;
+        }
+
+        if (sqlText.includes("UPDATE outreach_drafts") && sqlText.includes("sent_at = NOW()")) {
+          const channel = String(values[0]);
+          const id = String(values[values.length - 1]);
+          const draft = neonDrafts.get(id);
+          if (!draft) return [];
+          draft.sent_at = new Date().toISOString();
+          draft.sent_channel = channel;
+          if (draft.status === "draft") {
+            draft.status = "approved";
+          }
+          draft.updated_at = new Date().toISOString();
+          return [draft];
         }
 
         if (sqlText.includes("UPDATE outreach_drafts")) {
@@ -2565,10 +2599,12 @@ describe("Outreach Drafts repository operations parity", () => {
           const newSubject = values[0] !== undefined ? (values[0] === null ? null : String(values[0])) : draft.subject;
           const newBody = values[1] !== undefined ? String(values[1]) : draft.body;
           const newStatus = (values[2] !== undefined ? String(values[2]) : draft.status) as OutreachDraft["status"];
-          const isEdited = Boolean(values[3]);
+          const newRecipient = values[3] !== undefined ? (values[3] === null ? null : String(values[3])) : draft.recipient;
+          const isEdited = Boolean(values[4]);
           draft.subject = newSubject;
           draft.body = newBody;
           draft.status = newStatus;
+          if (newRecipient !== undefined) draft.recipient = newRecipient;
           draft.edited = isEdited;
           draft.updated_at = new Date().toISOString();
           return [draft];
@@ -2601,13 +2637,50 @@ describe("Outreach Drafts repository operations parity", () => {
           return [{ count: todayJobs.size }];
         }
 
+        if (sqlText.includes("FROM jobs j") && sqlText.includes("ORDER BY sent_at DESC")) {
+          const sentDrafts = Array.from(neonDrafts.values()).filter((d) => d.sent_at);
+          return sentDrafts.map((d) => ({
+            id: d.job_id,
+            title: "Test Role",
+            company: "Test Co",
+            url: "https://example.com/job",
+            status: "applied",
+            channels: [d.sent_channel || d.kind],
+            sent_at: d.sent_at,
+          }));
+        }
+
         return [];
       }) as unknown as ConstructorParameters<typeof NeonJobsRepository>[0];
 
       const neonRepo = new NeonJobsRepository(mockSql);
-      const testJobId = "e2e-job-uuid-1";
-
       for (const repo of [inMemRepo, neonRepo]) {
+        const testJobId = repo === inMemRepo ? "e2e-job-uuid-1" : "e2e-job-uuid-2";
+        if (repo === inMemRepo) {
+          await inMemRepo.upsertJob(
+            {
+              source: "test",
+              sourceId: testJobId,
+              url: "https://example.com/job",
+              title: "Test Role",
+              company: "Test Co",
+              location: "Remote",
+              remoteScope: "Worldwide",
+              tags: [],
+              description: "Test description",
+              postedAt: new Date().toISOString(),
+            },
+            {
+              expMinYears: 1,
+              expClass: "junior",
+              geoEligibility: "worldwide",
+              geoReason: "ok",
+              skills: ["TypeScript"],
+              summaryLine: "Great role",
+              matchScore: 90,
+            }
+          );
+        }
         // 1. Create initial drafts
         const created = await repo.createDrafts(testJobId, [
           { kind: "email", subject: "Initial subject", body: "Initial email body" },
@@ -2617,6 +2690,9 @@ describe("Outreach Drafts repository operations parity", () => {
         expect(created).toHaveLength(3);
         expect(created[0].status).toBe("draft");
         expect(created[0].edited).toBe(false);
+
+        const list1 = await repo.listDrafts({ jobId: testJobId });
+        expect(list1).toHaveLength(3);
 
         // 2. Count drafts
         const counts1 = await repo.countDrafts(testJobId);
@@ -2645,12 +2721,57 @@ describe("Outreach Drafts repository operations parity", () => {
         expect(regenerated).toHaveLength(3);
 
         const allDrafts = await repo.listDrafts({ jobId: testJobId });
+        if (!allDrafts.some((d) => d.kind === "email")) {
+          throw new Error(`Drafts after regeneration for repo=${repo.constructor.name}: ${JSON.stringify(allDrafts)}`);
+        }
         // The approved note was preserved, plus the fresh drafts
         expect(allDrafts.some((d) => d.status === "approved" && d.kind === "linkedin_note")).toBe(true);
+        expect(allDrafts.some((d) => d.kind === "email")).toBe(true);
 
         // 6. countGenerationsToday
         const gens = await repo.countGenerationsToday();
         expect(gens).toBeGreaterThanOrEqual(1);
+
+        // 7. Parity tests for B2-bundle (kind application_answer, question, recipient, markDraftSent, list by kind)
+        const answerDrafts = await repo.createDrafts(testJobId, [
+          {
+            kind: "application_answer",
+            body: "My answer to the question",
+            question: "Why this role?",
+          },
+        ]);
+        expect(answerDrafts).toHaveLength(1);
+        expect(answerDrafts[0].kind).toBe("application_answer");
+        expect(answerDrafts[0].question).toBe("Why this role?");
+        expect(answerDrafts[0].status).toBe("draft");
+
+        // listDrafts with kind filter
+        const filteredAnswers = await repo.listDrafts({ jobId: testJobId, kind: "application_answer" });
+        expect(filteredAnswers).toHaveLength(1);
+        expect(filteredAnswers[0].id).toBe(answerDrafts[0].id);
+
+        const filteredNotes = await repo.listDrafts({ jobId: testJobId, kind: "linkedin_note" });
+        expect(filteredNotes.every((d) => d.kind === "linkedin_note")).toBe(true);
+
+        // updateDraft with recipient on the newly regenerated email draft
+        const allCurrentDrafts = await repo.listDrafts({ jobId: testJobId });
+        const currentEmailDraft = allCurrentDrafts.find((d) => d.kind === "email");
+        if (!currentEmailDraft) {
+          throw new Error(`Email draft not found for repo=${repo.constructor.name}, found kinds: ${allCurrentDrafts.map((d) => d.kind).join(",")}`);
+        }
+        const updatedEmail = await repo.updateDraft(currentEmailDraft.id, { recipient: "hiring@company.com" });
+        expect(updatedEmail?.recipient).toBe("hiring@company.com");
+
+        // markDraftSent sets sent_at, sent_channel and approved if draft
+        const sentAnswer = await repo.markDraftSent(answerDrafts[0].id, "application_answer");
+        expect(sentAnswer?.sent_at).toBeTruthy();
+        expect(sentAnswer?.sent_channel).toBe("application_answer");
+        expect(sentAnswer?.status).toBe("approved");
+
+        // 8. Pipeline jobs parity
+        const pipeline = await repo.getPipelineJobs();
+        expect(pipeline.length).toBeGreaterThanOrEqual(1);
+        expect(pipeline.some((p) => p.channels.includes("application_answer"))).toBe(true);
       }
     });
   });

@@ -60,10 +60,13 @@ export async function POST(req: Request) {
   try {
     const generated = await generateOutreachDrafts(job, repo);
     const drafts = await repo.createDrafts(job.id, generated);
-    const counts = await repo.countDrafts();
+    const [counts, answersToday] = await Promise.all([
+      repo.countDrafts(),
+      repo.countAnswersToday(),
+    ]);
 
     return NextResponse.json(
-      { drafts, counts },
+      { drafts, counts, answersToday },
       { headers: { "X-Robots-Tag": "noindex, nofollow" } }
     );
   } catch (err: unknown) {
@@ -106,13 +109,14 @@ export async function GET(req: Request) {
       ? parsed.data.status
       : undefined;
 
-  const [drafts, counts] = await Promise.all([
+  const [drafts, counts, answersToday] = await Promise.all([
     repo.listDrafts({ status: filterStatus, jobId: parsed.data.jobId }),
     repo.countDrafts(parsed.data.jobId),
+    repo.countAnswersToday(),
   ]);
 
   return NextResponse.json(
-    { drafts, counts },
+    { drafts, counts, answersToday },
     { headers: { "X-Robots-Tag": "noindex, nofollow" } }
   );
 }

@@ -261,4 +261,323 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
       expect(axeResults.violations).toEqual([]);
     }
   });
+
+  test("application answers, sent tracking, and pipeline stages (Bundle B2-lite)", async ({
+    page,
+    context,
+  }) => {
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    await context.addCookies([
+      {
+        name: "__Host-admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+        secure: true,
+      },
+      {
+        name: "admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+      },
+    ]);
+
+    const mockDrafts: Array<{
+      id: string;
+      job_id: string;
+      kind: "email" | "linkedin_note" | "linkedin_dm" | "application_answer";
+      subject: string | null;
+      body: string;
+      status: "draft" | "approved" | "discarded";
+      model: string | null;
+      edited: boolean;
+      question?: string | null;
+      recipient?: string | null;
+      sent_at?: string | null;
+      sent_channel?: string | null;
+      created_at: string;
+      updated_at: string;
+      job_title: string;
+      job_company: string;
+      job_url: string;
+    }> = [
+      {
+        id: "draft-b2-email",
+        job_id: "seed-101",
+        kind: "email",
+        subject: "Full Stack Engineer (AI Platform) - Ramakrishna, BITS Pilani CS 2026",
+        body: "Hi Alex, I noticed your Full Stack Engineer opening at Global Tech Corp. As a BS Computer Science graduate from BITS Pilani (2026), I build robust full-stack software. At Vouch, I built an evidence verification engine that reduced AI review latency from 18.83 s to 3.35 s with all 50 verdicts correct across 10 of 10 runs. I also built Team MCP Gateway with 1,212 automated tests and 22 ms lookup caching. You can review my work at https://ramakrishna.dev. Best regards, Ramakrishna",
+        status: "draft",
+        model: "openai/gpt-oss-120b",
+        edited: false,
+        recipient: "recruiter@globaltech.com",
+        sent_at: null,
+        sent_channel: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        job_title: "Full Stack Engineer (AI Platform)",
+        job_company: "Global Tech Corp",
+        job_url: "https://example.com/jobs/seed-101",
+      },
+      {
+        id: "draft-b2-ans",
+        job_id: "seed-101",
+        kind: "application_answer",
+        subject: null,
+        question: "What interests you about working for this company?",
+        body: "I am drawn to Global Tech Corp because you build high-reliability developer infrastructure where latency and correctness directly impact end users. In my Vouch project, I designed a multi-model verification engine with 10 of 10 runs correct, reducing review time from 18.83 s to 3.35 s. At Team MCP Gateway, I designed Redis-cached routing serving 1,212 test assertions with 22 ms lookup speed. I want to bring this rigorous focus on performance, verification, and automated testing to your engineering team.",
+        status: "draft",
+        model: "openai/gpt-oss-120b",
+        edited: false,
+        sent_at: null,
+        sent_channel: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        job_title: "Full Stack Engineer (AI Platform)",
+        job_company: "Global Tech Corp",
+        job_url: "https://example.com/jobs/seed-101",
+      },
+    ];
+
+    const mockPipeline = [
+      {
+        id: "seed-101",
+        title: "Full Stack Engineer (AI Platform)",
+        company: "Global Tech Corp",
+        url: "https://example.com/jobs/seed-101",
+        status: "applied",
+        channels: ["email", "application_answer"],
+        sentAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(), // 6 days ago -> Follow up!
+        daysSinceSent: 6,
+      },
+    ];
+
+    // Mock API routes
+    await page.route("**/api/admin/drafts**", async (route) => {
+      const method = route.request().method();
+      const url = new URL(route.request().url());
+
+      if (method === "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            drafts: mockDrafts,
+            counts: {
+              all: mockDrafts.length,
+              draft: mockDrafts.filter((d) => d.status === "draft").length,
+              approved: mockDrafts.filter((d) => d.status === "approved").length,
+              discarded: mockDrafts.filter((d) => d.status === "discarded").length,
+            },
+            answersToday: 2,
+          }),
+        });
+      }
+
+      if (method === "PATCH") {
+        const id = url.pathname.split("/").pop();
+        const payload = route.request().postDataJSON();
+        const draft = mockDrafts.find((d) => d.id === id);
+        if (draft) {
+          if (payload.action === "mark_sent") {
+            draft.sent_at = new Date().toISOString();
+            draft.sent_channel = payload.channel || draft.kind;
+            draft.status = "approved";
+          }
+          if (payload.recipient !== undefined) draft.recipient = payload.recipient;
+          if (payload.status !== undefined) draft.status = payload.status;
+          draft.updated_at = new Date().toISOString();
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            draft,
+            counts: {
+              all: mockDrafts.length,
+              draft: mockDrafts.filter((d) => d.status === "draft").length,
+              approved: mockDrafts.filter((d) => d.status === "approved").length,
+              discarded: mockDrafts.filter((d) => d.status === "discarded").length,
+            },
+            answersToday: 2,
+          }),
+        });
+      }
+
+      return route.continue();
+    });
+
+    await page.route("**/api/admin/answers", async (route) => {
+      if (route.request().method() === "POST") {
+        const payload = route.request().postDataJSON();
+        const newAnswer = {
+          id: `draft-ans-${Date.now()}`,
+          job_id: payload.jobId,
+          kind: "application_answer" as const,
+          subject: null,
+          question: payload.question,
+          body: "Generated application answer discussing Vouch and Team MCP Gateway with concrete latency results.",
+          status: "draft" as const,
+          model: "openai/gpt-oss-120b",
+          edited: false,
+          sent_at: null,
+          sent_channel: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          job_title: "Full Stack Engineer (AI Platform)",
+          job_company: "Global Tech Corp",
+          job_url: "https://example.com/jobs/seed-101",
+        };
+        mockDrafts.push(newAnswer);
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            draft: newAnswer,
+            counts: {
+              all: mockDrafts.length,
+              draft: mockDrafts.filter((d) => d.status === "draft").length,
+              approved: mockDrafts.filter((d) => d.status === "approved").length,
+              discarded: mockDrafts.filter((d) => d.status === "discarded").length,
+            },
+            answersToday: 3,
+          }),
+        });
+      }
+      return route.continue();
+    });
+
+    await page.route("**/api/admin/pipeline", async (route) => {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ pipeline: mockPipeline }),
+      });
+    });
+
+    await page.route("**/api/admin/jobs/*", async (route) => {
+      if (route.request().method() === "PATCH") {
+        const payload = route.request().postDataJSON();
+        if (mockPipeline[0]) {
+          mockPipeline[0].status = payload.status;
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ success: true, status: payload.status }),
+        });
+      }
+      return route.continue();
+    });
+
+    // 1. Visit admin
+    await page.goto("/admin");
+    await expect(page).toHaveURL(/\/admin$/);
+
+    // 2. Click "Answer a question" on job card
+    const answerBtn = page.locator(".admin-answer-question-btn").first();
+    await expect(answerBtn).toBeVisible();
+    await answerBtn.click();
+
+    // Verify inline panel opened
+    const answerPanel = page.locator(".admin-answer-panel");
+    await expect(answerPanel).toBeVisible();
+
+    // Click preset chip
+    const presetChip = answerPanel.locator(".preset-chip").first();
+    await presetChip.click();
+    const textarea = answerPanel.locator("textarea").first();
+    await expect(textarea).toHaveValue("What interests you about working for this company?");
+
+    // Toggle full job description paste
+    const toggleDescBtn = answerPanel.locator('button:has-text("Paste the full job description")');
+    await toggleDescBtn.click();
+    const descTextarea = answerPanel.locator('textarea[placeholder*="Paste full job posting"]');
+    await expect(descTextarea).toBeVisible();
+    await descTextarea.fill("Full description of the role with requirements.");
+
+    // Submit answer generation
+    const generateBtn = answerPanel.locator("button.admin-generate-answer-btn");
+    await generateBtn.click();
+
+    // 3. Verifies redirect to Messages tab
+    await expect(page.locator(".admin-drafts-section")).toBeVisible();
+    await expect(page.locator(".admin-budget-pill")).toContainText("Answers today:");
+
+    // 4. Verify Application answer card rendering
+    const cards = page.locator(".admin-draft-card");
+    await expect(cards).toHaveCount(3);
+    const ansCard = cards.filter({ hasText: "Application answer" }).first();
+    await expect(ansCard).toBeVisible();
+    await expect(ansCard.locator(".admin-draft-question")).toContainText("What interests you about working for this company?");
+
+    // 5. Email draft: recipient input and mailto link
+    const emailCard = cards.filter({ hasText: "Cold email" }).first();
+    const recipientInput = emailCard.locator('input[type="email"]');
+    await expect(recipientInput).toBeVisible();
+    await expect(recipientInput).toHaveValue("recruiter@globaltech.com");
+
+    const mailtoBtn = emailCard.locator("a.admin-mailto-btn");
+    await expect(mailtoBtn).toBeVisible();
+    const href = await mailtoBtn.getAttribute("href");
+    expect(href).toContain("mailto:recruiter%40globaltech.com");
+    expect(href).toContain("subject=");
+
+    // 6. Mark sent button
+    const markSentBtn = emailCard.locator("button.admin-mark-sent-btn");
+    await expect(markSentBtn).toBeVisible();
+    await markSentBtn.click();
+    await expect(emailCard.locator(".badge-sent")).toBeVisible();
+    await expect(emailCard.locator("button.admin-mark-sent-btn")).not.toBeVisible();
+
+    // 7. Pipeline tab
+    const pipelineTabBtn = page.locator('button.admin-tab-btn:has-text("Pipeline")');
+    await pipelineTabBtn.click();
+    await expect(page.locator(".admin-pipeline-section")).toBeVisible();
+
+    const pipelineNotice = page.locator(".admin-pipeline-section .admin-notice-banner");
+    await expect(pipelineNotice).toContainText("Nothing is sent from here. Track your applications and outreach manually.");
+
+    const pipelineCard = page.locator(".admin-pipeline-card").first();
+    await expect(pipelineCard).toBeVisible();
+    await expect(pipelineCard).toContainText("Global Tech Corp");
+    await expect(pipelineCard).toContainText("Email + Application answer");
+    await expect(pipelineCard).toContainText("6d since sent");
+    // Verify Follow up badge for >= 5 days
+    await expect(pipelineCard.locator(".badge-followup")).toBeVisible();
+
+    // Update status to replied
+    const repliedBtn = pipelineCard.locator('button:has-text("Mark replied")');
+    await repliedBtn.click();
+    await expect(pipelineCard.locator(".badge-status")).toContainText("replied");
+    // Follow up badge should disappear once replied
+    await expect(pipelineCard.locator(".badge-followup")).not.toBeVisible();
+
+    // 8. Responsive & axe scans across 5 widths
+    const viewports = [375, 768, 1024, 1280, 1440];
+    for (const width of viewports) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.waitForTimeout(100);
+
+      const noScroll = await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+      );
+      expect(noScroll).toBe(true);
+
+      const screenshotPath = path.join(
+        screenshotsDir,
+        `admin-pipeline-${width}.png`
+      );
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+
+      const axeResults = await new AxeBuilder({ page })
+        .include(".admin-pipeline-section")
+        .analyze();
+      expect(axeResults.violations).toEqual([]);
+    }
+  });
 });

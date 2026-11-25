@@ -3001,4 +3001,151 @@ dialog.palette::backdrop {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.badge-sent {
+  font: 500 0.75rem var(--mono);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  color: var(--text);
+}
+
+.badge-followup {
+  font: 600 0.75rem var(--mono);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid #f59e0b;
+  color: #d97706;
+}
+
+[data-theme="dark"] .badge-followup {
+  border-color: #f59e0b;
+  color: #fbbf24;
+}
+
+.admin-answer-panel {
+  margin-top: 14px;
+  padding: 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-answer-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-answer-presets-label {
+  font: 600 0.75rem var(--mono);
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.preset-chip {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.admin-draft-question {
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+.admin-draft-question-label {
+  display: block;
+  font: 600 0.72rem var(--mono);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.admin-draft-question-text {
+  margin: 0;
+  font: 500 0.88rem var(--sans);
+  color: var(--text);
+}
+
+.admin-drafts-header-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.admin-budget-pill {
+  font: 500 0.8rem var(--mono);
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.admin-pipeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.admin-pipeline-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-pipeline-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.admin-pipeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font: 400 0.85rem var(--sans);
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.admin-pipeline-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-pipeline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+}
+
+
 

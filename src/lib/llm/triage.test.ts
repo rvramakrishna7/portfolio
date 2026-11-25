@@ -326,4 +326,80 @@ describe("LLM Triage & Guardrails", () => {
     expect(result.llmSkipped).toBe("irrelevant");
     expect(result.geoEligibility).toBe("restricted");
   });
+
+  describe("STEP 4: Tolerant triage schema coercion", () => {
+    it("accepts skills as comma-separated string, array of strings, null, or undefined and caps at 12", async () => {
+      const { LlmTriageOutputSchema } = await import("./types");
+      // 1. comma-separated string
+      const r1 = LlmTriageOutputSchema.parse({
+        expClass: "junior",
+        minYears: 2,
+        geo: "worldwide",
+        geoReason: "Anywhere",
+        summaryLine: "Summary",
+        skills: "react, node, typescript, docker, postgres, k8s, helm, groq, express, vite, vitest, next, extra1, extra2",
+      });
+      expect(Array.isArray(r1.skills)).toBe(true);
+      expect(r1.skills).toHaveLength(12);
+      expect(r1.skills[0]).toBe("react");
+
+      // 2. null skills
+      const r2 = LlmTriageOutputSchema.parse({
+        expClass: "junior",
+        minYears: null,
+        geo: "worldwide",
+        geoReason: "Anywhere",
+        summaryLine: "Summary",
+        skills: null,
+      });
+      expect(r2.skills).toEqual([]);
+
+      // 3. undefined skills
+      const r3 = LlmTriageOutputSchema.parse({
+        expClass: "fresher",
+        minYears: undefined,
+        geo: "india_ok",
+        geoReason: "India allowed",
+        summaryLine: "Summary",
+      });
+      expect(r3.skills).toEqual([]);
+    });
+
+    it("coerces minYears safely from strings, numbers, and null", async () => {
+      const { LlmTriageOutputSchema } = await import("./types");
+      const r1 = LlmTriageOutputSchema.parse({
+        expClass: "junior",
+        minYears: "3",
+        geo: "worldwide",
+        geoReason: "Anywhere",
+        summaryLine: "Summary",
+        skills: ["react"],
+      });
+      expect(r1.minYears).toBe(3);
+
+      const r2 = LlmTriageOutputSchema.parse({
+        expClass: "junior",
+        minYears: null,
+        geo: "worldwide",
+        geoReason: "Anywhere",
+        summaryLine: "Summary",
+        skills: ["react"],
+      });
+      expect(r2.minYears).toBeNull();
+    });
+
+    it("safely handles null or numbers where strings are expected for geoReason and summaryLine", async () => {
+      const { LlmTriageOutputSchema } = await import("./types");
+      const r = LlmTriageOutputSchema.parse({
+        expClass: "junior",
+        minYears: null,
+        geo: "worldwide",
+        geoReason: null,
+        summaryLine: null,
+        skills: [],
+      });
+      expect(r.geoReason).toBe("");
+      expect(r.summaryLine).toBe("");
+    });
+  });
 });
