@@ -169,16 +169,20 @@ describe("Outreach Generator (generate.ts)", () => {
     expect(retryOpts.messages.some((m) => m.content.includes("999"))).toBe(true);
   });
 
-  it("throws descriptive error when retry also fails validation", async () => {
+  it("throws descriptive error when retry also fails validation for all kinds", async () => {
     const repo = new InMemoryJobsRepository();
     const job = createSampleJob();
 
-    const badOutput1 = createValidLlmOutput({
+    const badOutput1 = {
+      email: { subject: "", body: "short" },
       linkedin_note: { body: "Banned phrase: synergy" },
-    });
-    const badOutput2 = createValidLlmOutput({
+      linkedin_dm: { body: "Banned phrase: synergy" },
+    };
+    const badOutput2 = {
+      email: { subject: "", body: "short" },
+      linkedin_note: { body: "Still synergy here" },
       linkedin_dm: { body: "Still synergy here" },
-    });
+    };
     const mockProvider = new MockLlmProvider([badOutput1, badOutput2]);
 
     await expect(
@@ -434,6 +438,73 @@ describe("Outreach Generator (generate.ts)", () => {
       await generateOutreachDrafts(jobWithContact, repo, { provider: mockProvider2 });
       const promptWith = mockProvider2.capturedOptions[0].messages.find((m) => m.role === "system")?.content || "";
       expect(promptWith).toContain('Salutation: use "Hi Anna," and nothing else.');
+    });
+
+    it("rejects all newly banned phrases including eagerness and alignments", async () => {
+      const { validateOutreachDrafts } = await import("./generate");
+      const phrases = [
+        ["excited ", "about"].join(""),
+        ["aligns ", "with"].join(""),
+        ["align ", "with"].join(""),
+        ["shar", "pened"].join(""),
+        ["val", "ues"].join(""),
+        ["ea", "ger"].join(""),
+        ["pass", "ionate"].join(""),
+        ["lever", "age"].join(""),
+      ];
+
+      for (const phrase of phrases) {
+        const badOutput = createValidLlmOutput({
+          email: {
+            subject: "Role - Ramakrishna",
+            body: `${VALID_EMAIL_BODY} Testing phrase ${phrase}.`,
+          },
+        });
+        const errors = validateOutreachDrafts(badOutput);
+        expect(
+          errors.some((e) => e.includes(`Banned phrase detected: "${phrase}"`)),
+          `Expected banned phrase error for "${phrase}"`
+        ).toBe(true);
+      }
+    });
+
+    it("partial success: saves valid drafts and collects failure when DM fails retry", async () => {
+      const repo = new InMemoryJobsRepository();
+      const job = createSampleJob();
+
+      const invalidDmBody = "Hi Alex, " + "word ".repeat(120);
+      const badOutput1 = createValidLlmOutput({
+        linkedin_dm: { body: invalidDmBody },
+      });
+      const badOutput2 = createValidLlmOutput({
+        linkedin_dm: { body: invalidDmBody },
+      });
+
+      const mockProvider = new MockLlmProvider([badOutput1, badOutput2]);
+      const result = await generateOutreachDrafts(job, repo, { provider: mockProvider });
+
+      expect(result).toHaveLength(2);
+      expect(result.drafts).toHaveLength(2);
+      expect(result.drafts.map((d) => d.kind)).toEqual(["email", "linkedin_note"]);
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0].kind).toBe("linkedin_dm");
+      expect(result.failures[0].reason).toContain("LinkedIn DM exceeds 500 characters");
+    });
+
+    it("fails when all kinds fail validation after retry", async () => {
+      const repo = new InMemoryJobsRepository();
+      const job = createSampleJob();
+
+      const allBadOutput = createValidLlmOutput({
+        email: { subject: "", body: "too short" },
+        linkedin_note: { body: "" },
+        linkedin_dm: { body: "" },
+      });
+
+      const mockProvider = new MockLlmProvider([allBadOutput, allBadOutput]);
+      await expect(
+        generateOutreachDrafts(job, repo, { provider: mockProvider })
+      ).rejects.toThrow(/Outreach draft validation failed after retry/);
     });
   });
 });

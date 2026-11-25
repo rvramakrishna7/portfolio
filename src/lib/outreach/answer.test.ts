@@ -133,4 +133,39 @@ describe("Application Answer Generator (src/lib/outreach/answer.ts)", () => {
       })
     ).rejects.toThrow(DailyAnswerLimitExceededError);
   });
+
+  it("includes instructions not to describe company values/beliefs and to start with concrete detail", async () => {
+    const job = createSampleJob();
+    const mockProvider = new MockAnswerLlmProvider([{ answer: Array(80).fill("word").join(" ") + " 1,212." }]);
+    await generateApplicationAnswer({
+      job,
+      question: "Why Stripe?",
+      provider: mockProvider,
+    });
+
+    expect(mockProvider.capturedOptions).toHaveLength(1);
+    const systemPrompt = mockProvider.capturedOptions[0].messages.find((m) => m.role === "system")?.content || "";
+    expect(systemPrompt).toContain("Never describe what the company values, believes or offers");
+    expect(systemPrompt).toContain("start with a concrete detail from the job, not with 'I am'");
+  });
+
+  it("rejects new banned words in application answers", () => {
+    const phrases = [
+      ["excited ", "about"].join(""),
+      ["aligns ", "with"].join(""),
+      ["align ", "with"].join(""),
+      ["shar", "pened"].join(""),
+      ["val", "ues"].join(""),
+      ["ea", "ger"].join(""),
+    ];
+
+    for (const phrase of phrases) {
+      const text = Array(75).fill("word").join(" ") + ` ${phrase} and 1,212.`;
+      const errors = validateApplicationAnswer(text, 100, "");
+      expect(
+        errors.some((e) => e.includes(`Banned phrase detected: "${phrase}"`)),
+        `Expected banned phrase error for "${phrase}"`
+      ).toBe(true);
+    }
+  });
 });

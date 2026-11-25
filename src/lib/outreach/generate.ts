@@ -107,6 +107,13 @@ export const BANNED_OUTREACH_PHRASES = [
   ["nin", "ja"].join(""),
   ["thril", "led"].join(""),
   ["excited ", "to"].join(""),
+  // Resilience & wording extensions:
+  ["excited ", "about"].join(""),
+  ["aligns ", "with"].join(""),
+  ["align ", "with"].join(""),
+  ["shar", "pened"].join(""),
+  ["val", "ues"].join(""),
+  ["ea", "ger"].join(""),
 ];
 
 export function stripHtml(input: string): string {
@@ -188,63 +195,23 @@ export function selectRelevantProjects(
   return selected.length > 0 ? selected : allProjects.slice(0, 2);
 }
 
-export function validateOutreachDrafts(output: OutreachLlmOutput): string[] {
+export function validateCommonContent(texts: string[]): string[] {
   const errors: string[] = [];
-
-  // 1. Email subject
-  const subject = output.email.subject.trim();
-  if (!subject) {
-    errors.push("Email subject is empty");
-  } else if (subject.length > 70) {
-    errors.push(`Email subject exceeds 70 characters (${subject.length} chars)`);
-  }
-
-  // 2. Email body (90 - 150 words)
-  const emailWords = output.email.body.trim().split(/\s+/).filter(Boolean).length;
-  if (emailWords < 90 || emailWords > 150) {
-    errors.push(
-      `Email body must be between 90 and 150 words (current: ${emailWords} words)`
-    );
-  }
-
-  // 3. LinkedIn note (<= 280 characters)
-  const noteLen = output.linkedin_note.body.trim().length;
-  if (noteLen === 0) {
-    errors.push("LinkedIn note is empty");
-  } else if (noteLen > 280) {
-    errors.push(
-      `LinkedIn note exceeds 280 characters (${noteLen} chars)`
-    );
-  }
-
-  // 4. LinkedIn DM (<= 500 characters)
-  const dmLen = output.linkedin_dm.body.trim().length;
-  if (dmLen === 0) {
-    errors.push("LinkedIn DM is empty");
-  } else if (dmLen > 500) {
-    errors.push(`LinkedIn DM exceeds 500 characters (${dmLen} chars)`);
-  }
-
-  const allTexts = [
-    output.email.subject,
-    output.email.body,
-    output.linkedin_note.body,
-    output.linkedin_dm.body,
-  ];
-
   const profile = getCandidateProfile();
   const allowedUrls = new Set([
     profile.portfolioUrl.replace(/\/+$/, ""),
     profile.linkedinUrl.replace(/\/+$/, ""),
   ]);
 
-  for (const text of allTexts) {
-    // 5. Em dash and En dash check
+  for (const text of texts) {
+    if (!text) continue;
+
+    // Em dash and En dash check
     if (text.includes(EM_DASH_CHAR) || text.includes(EN_DASH_CHAR) || text.includes(MINUS_SIGN_CHAR)) {
       errors.push("Forbidden dash character (em dash or en dash) used. Use hyphens or commas.");
     }
 
-    // 6. Banned phrases check
+    // Banned phrases check
     const lower = text.toLowerCase();
     for (const phrase of BANNED_OUTREACH_PHRASES) {
       if (lower.includes(phrase)) {
@@ -252,7 +219,7 @@ export function validateOutreachDrafts(output: OutreachLlmOutput): string[] {
       }
     }
 
-    // 7. Disallowed contact info
+    // Disallowed contact info
     if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) {
       errors.push("Email address found in draft text (contact must only be form / LinkedIn / portfolio link).");
     }
@@ -260,7 +227,7 @@ export function validateOutreachDrafts(output: OutreachLlmOutput): string[] {
       errors.push("Phone number found in draft text.");
     }
 
-    // 8. Numbers allow-list check
+    // Numbers allow-list check
     const numbers = text.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
     for (const num of numbers) {
       if (!ALLOWED_CANDIDATE_NUMBERS.has(num)) {
@@ -268,7 +235,7 @@ export function validateOutreachDrafts(output: OutreachLlmOutput): string[] {
       }
     }
 
-    // 9. URL allow-list check (only portfolioUrl and linkedinUrl allowed)
+    // URL allow-list check (only portfolioUrl and linkedinUrl allowed)
     const urls = text.match(/https?:\/\/[^\s)]+/g) || [];
     for (const u of urls) {
       const cleanUrl = u.replace(/[.,;!?]+$/, "").replace(/\/+$/, "");
@@ -281,10 +248,73 @@ export function validateOutreachDrafts(output: OutreachLlmOutput): string[] {
   return errors;
 }
 
+export function validateEmailDraft(subject: string, body: string): string[] {
+  const errors: string[] = [];
+  const s = subject.trim();
+  if (!s) {
+    errors.push("Email subject is empty");
+  } else if (s.length > 70) {
+    errors.push(`Email subject exceeds 70 characters (${s.length} chars)`);
+  }
+
+  const b = body.trim();
+  const emailWords = b.split(/\s+/).filter(Boolean).length;
+  if (emailWords < 90 || emailWords > 150) {
+    errors.push(`Email body must be between 90 and 150 words (current: ${emailWords} words)`);
+  }
+
+  errors.push(...validateCommonContent([s, b]));
+  return errors;
+}
+
+export function validateNoteDraft(body: string): string[] {
+  const errors: string[] = [];
+  const b = body.trim();
+  if (b.length === 0) {
+    errors.push("LinkedIn note is empty");
+  } else if (b.length > 280) {
+    errors.push(`LinkedIn note exceeds 280 characters (${b.length} chars)`);
+  }
+
+  errors.push(...validateCommonContent([b]));
+  return errors;
+}
+
+export function validateDmDraft(body: string): string[] {
+  const errors: string[] = [];
+  const b = body.trim();
+  if (b.length === 0) {
+    errors.push("LinkedIn DM is empty");
+  } else if (b.length > 500) {
+    errors.push(`LinkedIn DM exceeds 500 characters (${b.length} chars)`);
+  }
+
+  errors.push(...validateCommonContent([b]));
+  return errors;
+}
+
+export function validateOutreachDrafts(output: OutreachLlmOutput): string[] {
+  return [
+    ...validateEmailDraft(output.email.subject, output.email.body),
+    ...validateNoteDraft(output.linkedin_note.body),
+    ...validateDmDraft(output.linkedin_dm.body),
+  ];
+}
+
 export interface GenerateOutreachOptions {
   provider?: LlmProvider;
   model?: string;
 }
+
+export interface GenerateOutreachFailure {
+  kind: "email" | "linkedin_note" | "linkedin_dm";
+  reason: string;
+}
+
+export type GenerateOutreachResult = CreateDraftInput[] & {
+  drafts: CreateDraftInput[];
+  failures: GenerateOutreachFailure[];
+};
 
 export class DailyLimitExceededError extends Error {
   constructor(message = "Daily outreach generation limit reached (max 10/day).") {
@@ -297,7 +327,7 @@ export async function generateOutreachDrafts(
   job: StoredJob,
   repo: JobsRepository,
   options?: GenerateOutreachOptions
-): Promise<CreateDraftInput[]> {
+): Promise<GenerateOutreachResult> {
   // Check daily generation limit
   const todayCount = await repo.countGenerationsToday();
   if (todayCount >= MAX_GENERATIONS_PER_DAY) {
@@ -367,8 +397,8 @@ export async function generateOutreachDrafts(
     `9. Endings: each message ends with one clear low-pressure question OR the portfolio link (${profile.portfolioUrl}). In the LinkedIn note, do NOT use both.`,
     "10. Output Length Rules:",
     "    - Cold Email: Subject <= 70 characters. Body STRICTLY 90 to 150 words.",
-    "    - LinkedIn Note: Body STRICTLY <= 280 characters.",
-    "    - LinkedIn DM: Body STRICTLY <= 500 characters.",
+    "    - LinkedIn Note: Target at most 240 characters (STRICT hard limit: <= 280 characters).",
+    "    - LinkedIn DM: Target at most 420 characters (STRICT hard limit: <= 500 characters).",
     "11. Zero em dashes, zero en dashes. Use commas or hyphens.",
     "12. NEVER invent any metrics, statistics, or claims not given in the approved projects.",
     "13. DO NOT include email addresses or phone numbers in any draft.",
@@ -422,14 +452,23 @@ export async function generateOutreachDrafts(
     },
   };
 
-  const validationErrors = validateOutreachDrafts(completion);
+  let emailErrors = validateEmailDraft(completion.email.subject, completion.email.body);
+  let noteErrors = validateNoteDraft(completion.linkedin_note.body);
+  let dmErrors = validateDmDraft(completion.linkedin_dm.body);
 
-  // If validation failed, retry ONCE with error feedback
-  if (validationErrors.length > 0) {
+  const hasErrors = emailErrors.length > 0 || noteErrors.length > 0 || dmErrors.length > 0;
+
+  // If validation failed for any kind, retry ONCE with error feedback
+  if (hasErrors) {
+    const errorList: string[] = [];
+    if (emailErrors.length > 0) errorList.push(...emailErrors.map((e) => `[Email] ${e}`));
+    if (noteErrors.length > 0) errorList.push(...noteErrors.map((e) => `[LinkedIn Note] ${e}`));
+    if (dmErrors.length > 0) errorList.push(...dmErrors.map((e) => `[LinkedIn DM] ${e}`));
+
     const retryFeedback = [
       "Your previous output failed the following validation checks:",
-      ...validationErrors.map((e) => `- ${e}`),
-      "Please regenerate the complete JSON correcting all of these issues. Maintain strict word/character counts, zero em/en dashes, no banned phrases, and strictly approved numbers only.",
+      ...errorList.map((e) => `- ${e}`),
+      "Please regenerate the complete JSON correcting all of these issues. Maintain strict word/character counts (LinkedIn Note <= 240 chars target, <= 280 hard limit; LinkedIn DM <= 420 chars target, <= 500 hard limit; Email 90 to 150 words), zero em/en dashes, no banned phrases, and strictly approved numbers only.",
     ].join("\n");
 
     const retryMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -438,7 +477,7 @@ export async function generateOutreachDrafts(
       { role: "user", content: retryFeedback },
     ];
 
-    let retryCompletion = await provider.completeJson(
+    const retryCompletion = await provider.completeJson(
       {
         messages: retryMessages,
         model,
@@ -449,50 +488,110 @@ export async function generateOutreachDrafts(
       OutreachLlmSchema
     );
 
-    if (!retryCompletion) {
-      const reason = provider.lastError || "unknown error";
-      const msg = `LLM call failed (${reason})`;
-      console.warn(msg);
-      throw new Error(msg);
+    if (retryCompletion) {
+      const normalizedRetry = {
+        email: {
+          subject: normalizeOutreachText(retryCompletion.email.subject),
+          body: normalizeOutreachText(retryCompletion.email.body),
+        },
+        linkedin_note: {
+          body: normalizeOutreachText(retryCompletion.linkedin_note.body),
+        },
+        linkedin_dm: {
+          body: normalizeOutreachText(retryCompletion.linkedin_dm.body),
+        },
+      };
+
+      const secondEmailErrors = validateEmailDraft(normalizedRetry.email.subject, normalizedRetry.email.body);
+      const secondNoteErrors = validateNoteDraft(normalizedRetry.linkedin_note.body);
+      const secondDmErrors = validateDmDraft(normalizedRetry.linkedin_dm.body);
+
+      if (emailErrors.length > 0) {
+        if (secondEmailErrors.length === 0) {
+          completion.email = normalizedRetry.email;
+          emailErrors = [];
+        } else {
+          emailErrors = secondEmailErrors;
+        }
+      } else if (secondEmailErrors.length === 0) {
+        completion.email = normalizedRetry.email;
+      }
+
+      if (noteErrors.length > 0) {
+        if (secondNoteErrors.length === 0) {
+          completion.linkedin_note = normalizedRetry.linkedin_note;
+          noteErrors = [];
+        } else {
+          noteErrors = secondNoteErrors;
+        }
+      } else if (secondNoteErrors.length === 0) {
+        completion.linkedin_note = normalizedRetry.linkedin_note;
+      }
+
+      if (dmErrors.length > 0) {
+        if (secondDmErrors.length === 0) {
+          completion.linkedin_dm = normalizedRetry.linkedin_dm;
+          dmErrors = [];
+        } else {
+          dmErrors = secondDmErrors;
+        }
+      } else if (secondDmErrors.length === 0) {
+        completion.linkedin_dm = normalizedRetry.linkedin_dm;
+      }
     }
-
-    retryCompletion = {
-      email: {
-        subject: normalizeOutreachText(retryCompletion.email.subject),
-        body: normalizeOutreachText(retryCompletion.email.body),
-      },
-      linkedin_note: {
-        body: normalizeOutreachText(retryCompletion.linkedin_note.body),
-      },
-      linkedin_dm: {
-        body: normalizeOutreachText(retryCompletion.linkedin_dm.body),
-      },
-    };
-
-    const secondErrors = validateOutreachDrafts(retryCompletion);
-    if (secondErrors.length > 0) {
-      throw new Error(`Outreach draft validation failed after retry: ${secondErrors.join("; ")}`);
-    }
-
-    completion = retryCompletion;
   }
 
-  return [
-    {
+  const validDrafts: CreateDraftInput[] = [];
+  const failures: GenerateOutreachFailure[] = [];
+
+  if (emailErrors.length === 0) {
+    validDrafts.push({
       kind: "email",
       subject: completion.email.subject.trim(),
       body: completion.email.body.trim(),
       model,
-    },
-    {
+    });
+  } else {
+    failures.push({
+      kind: "email",
+      reason: emailErrors.join(", "),
+    });
+  }
+
+  if (noteErrors.length === 0) {
+    validDrafts.push({
       kind: "linkedin_note",
       body: completion.linkedin_note.body.trim(),
       model,
-    },
-    {
+    });
+  } else {
+    failures.push({
+      kind: "linkedin_note",
+      reason: noteErrors.join(", "),
+    });
+  }
+
+  if (dmErrors.length === 0) {
+    validDrafts.push({
       kind: "linkedin_dm",
       body: completion.linkedin_dm.body.trim(),
       model,
-    },
-  ];
+    });
+  } else {
+    failures.push({
+      kind: "linkedin_dm",
+      reason: dmErrors.join(", "),
+    });
+  }
+
+  if (validDrafts.length === 0) {
+    throw new Error(
+      `Outreach draft validation failed after retry: ${failures.map((f) => `${f.kind}: ${f.reason}`).join("; ")}`
+    );
+  }
+
+  return Object.assign([...validDrafts], {
+    drafts: validDrafts,
+    failures,
+  });
 }

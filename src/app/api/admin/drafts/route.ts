@@ -59,14 +59,14 @@ export async function POST(req: Request) {
 
   try {
     const generated = await generateOutreachDrafts(job, repo);
-    const drafts = await repo.createDrafts(job.id, generated);
+    const drafts = await repo.createDrafts(job.id, generated.drafts);
     const [counts, answersToday] = await Promise.all([
       repo.countDrafts(),
       repo.countAnswersToday(),
     ]);
 
     return NextResponse.json(
-      { drafts, counts, answersToday },
+      { drafts, failures: generated.failures, counts, answersToday },
       { headers: { "X-Robots-Tag": "noindex, nofollow" } }
     );
   } catch (err: unknown) {
