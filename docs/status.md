@@ -1,8 +1,14 @@
 # Status: Portfolio site
 
-Current step: Groq model migration (gpt-oss-20b triage, gpt-oss-120b outreach, fallbacks, model testing UI) merged into `main`. Awaiting owner check before push.
+Current step: Outreach dash normalization and LLM error reasons visibility merged into `main`. Awaiting owner check before push.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Outreach dash normalization and LLM error reasons visibility (`fix/outreach-dash`):
+  - Added `normalizeOutreachText(text)` in `src/lib/outreach/generate.ts` replacing em/en/minus dashes in digit ranges with hyphens (`-`), dashes with surrounding spaces with `" - "`, and standalone dashes with `", "` before validation. Also normalized curly quotes to straight quotes, ellipsis characters to `...`, and collapsed repeated horizontal spaces while preserving paragraph breaks.
+  - Added explicit prompt instruction in `generateOutreachDrafts`: "Do not use em dashes or en dashes; use commas or hyphens."
+  - Stored error reason counts in `search_runs.stats.llmErrorReasons` (`Record<string, number>`) across search pipeline runs with sanitized reasons.
+  - Enhanced Jobs header stats line via `formatLlmStatsSummary` in `src/app/admin/AdminDashboard.tsx` to display the most frequent error reason and its count (e.g. `LLM: 17 calls, 3 errors (http 429 x3)`) whenever errors > 0.
+  - Added unit tests in `src/lib/outreach/generate.test.ts` (covering dash normalization in ranges, with spaces, without spaces, curly quotes, and end-to-end provider pass on first attempt without retrying) and in `src/lib/jobs/pipeline.test.ts` (covering `recordLlmErrorReason` aggregation and `formatLlmStatsSummary` UI line).
 - Groq models migration after August 2026 decommission (`fix/groq-models`):
   - Migrated `DEFAULT_TRIAGE_MODEL` to `openai/gpt-oss-20b` and `DEFAULT_OUTREACH_MODEL` to `openai/gpt-oss-120b` in `src/lib/llm/types.ts`.
   - Added environment variable overrides `GROQ_TRIAGE_MODEL` and `GROQ_OUTREACH_MODEL` (trimmed, fallback to default when empty, never logging full values).

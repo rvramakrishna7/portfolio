@@ -6,6 +6,7 @@ import {
   DEFAULT_OUTREACH_MODEL,
   OutreachLlmOutput,
   stripHtml,
+  normalizeOutreachText,
 } from "./generate";
 import { StoredJob, InMemoryJobsRepository } from "../jobs/repository";
 import { LlmProvider, LlmCompletionOpts } from "../llm/types";
@@ -278,5 +279,70 @@ describe("Outreach Generator (generate.ts)", () => {
     } finally {
       console.warn = originalWarn;
     }
+  });
+
+  describe("normalizeOutreachText", () => {
+    const emDash = String.fromCharCode(8212);
+    const enDash = String.fromCharCode(8211);
+    const leftSingle = String.fromCharCode(8216);
+    const rightSingle = String.fromCharCode(8217);
+    const leftDouble = String.fromCharCode(8220);
+    const rightDouble = String.fromCharCode(8221);
+    const ellipsis = String.fromCharCode(8230);
+
+    it("normalizes em dash with spaces around it to ' - '", () => {
+      const input = `Reduced latency ${emDash} from 18 s to 3 s`;
+      expect(normalizeOutreachText(input)).toBe("Reduced latency - from 18 s to 3 s");
+    });
+
+    it("normalizes en dash in a number range to '-'", () => {
+      const input = `Graduated 2022${enDash}2026 with strong fundamentals`;
+      expect(normalizeOutreachText(input)).toBe("Graduated 2022-2026 with strong fundamentals");
+    });
+
+    it("normalizes dash without spaces to ', '", () => {
+      const input = `Vouch${emDash}evidence platform`;
+      expect(normalizeOutreachText(input)).toBe("Vouch, evidence platform");
+    });
+
+    it("normalizes curly quotes and ellipsis", () => {
+      const input = `${leftDouble}Hello${rightDouble} and ${leftSingle}world${rightSingle}${ellipsis}`;
+      expect(normalizeOutreachText(input)).toBe('"Hello" and \'world\'...');
+    });
+
+    it("leaves text with no dashes unchanged", () => {
+      const input = "Clean technical text with standard commas, periods, and words.";
+      expect(normalizeOutreachText(input)).toBe(input);
+    });
+
+    it("end-to-end: provider output containing em dashes passes after normalization with no retry call", async () => {
+      const repo = new InMemoryJobsRepository();
+      const job = createSampleJob();
+
+      // Output containing em dash with spaces in email body and dash without spaces in note
+      const dashEmailBody = VALID_EMAIL_BODY.replace("BITS Pilani,", `BITS Pilani ${emDash}`);
+      const dashNoteBody = VALID_NOTE_BODY.replace("Vouch,", `Vouch${emDash}`);
+      const dashOutput = createValidLlmOutput({
+        email: {
+          subject: `Full-Stack AI Engineering ${emDash} Ramakrishna`,
+          body: dashEmailBody,
+        },
+        linkedin_note: {
+          body: dashNoteBody,
+        },
+      });
+
+      const mockProvider = new MockLlmProvider([dashOutput]);
+
+      const drafts = await generateOutreachDrafts(job, repo, { provider: mockProvider });
+
+      expect(mockProvider.callCount).toBe(1); // Crucial: passed without retry!
+      expect(drafts).toHaveLength(3);
+      expect(drafts[0].subject).toBe("Full-Stack AI Engineering - Ramakrishna");
+      expect(drafts[0].body).toContain("BITS Pilani -");
+      expect(drafts[0].body).not.toContain(emDash);
+      expect(drafts[1].body).toContain("Vouch,");
+      expect(drafts[1].body).not.toContain(emDash);
+    });
   });
 });

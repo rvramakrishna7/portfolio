@@ -3,9 +3,11 @@ import {
   startJobSearch,
   stepJobSearch,
   clearActivePipelinesForTest,
+  recordLlmErrorReason,
+  formatLlmStatsSummary,
   BoardQueueItem,
 } from "./pipeline";
-import { InMemoryJobsRepository } from "./repository";
+import { InMemoryJobsRepository, SearchRunStats } from "./repository";
 import { AdapterResult, NormalizedJob } from "./types";
 import { TriagedJobResult } from "../llm/triage";
 import { LlmProvider, LlmCompletionOpts } from "../llm/types";
@@ -489,5 +491,48 @@ describe("Resumable Job Search Pipeline", () => {
     expect(storedAfterRefetch?.geo_eligibility).toBe("worldwide");
     expect(storedAfterRefetch?.summary_line).toBe("Junior Full Stack role");
     expect(storedAfterRefetch?.triaged_at).toBeTruthy();
+  });
+
+  describe("LLM Error Reasons Aggregation & UI Formatting", () => {
+    it("aggregates sanitized error reasons and increments counts correctly", () => {
+      const stats: SearchRunStats = {
+        llmCalls: 5,
+        llmErrors: 0,
+        llmSkippedStale: 0,
+        shortlistCount: 0,
+        hiddenCount: 0,
+        languageHidden: 0,
+      };
+
+      // Record first error
+      recordLlmErrorReason(stats, "http 429: rate limit exceeded");
+      expect(stats.llmErrorReasons).toEqual({
+        "http 429: rate limit exceeded": 1,
+      });
+
+      // Record same error again
+      recordLlmErrorReason(stats, "http 429: rate limit exceeded");
+      expect(stats.llmErrorReasons!["http 429: rate limit exceeded"]).toBe(2);
+
+      // Record error with sensitive token to ensure sanitization
+      recordLlmErrorReason(stats, "http 401: Invalid key gsk_1234567890abcdef1234567890");
+      expect(stats.llmErrorReasons!["http 401: Invalid key [REDACTED]"]).toBe(1);
+    });
+
+    it("formats LLM stats summary line showing most frequent reason and count when errors > 0", () => {
+      // 0 errors
+      expect(formatLlmStatsSummary(10, 0)).toBe("LLM: 10 calls, 0 errors");
+
+      // 3 errors of same reason
+      const reasons1 = { "http 429": 3 };
+      expect(formatLlmStatsSummary(17, 3, reasons1)).toBe("LLM: 17 calls, 3 errors (http 429 x3)");
+
+      // Multiple reasons: picks the most frequent reason
+      const reasons2 = { "http 500": 2, "http 429": 5, "timeout": 1 };
+      expect(formatLlmStatsSummary(20, 8, reasons2)).toBe("LLM: 20 calls, 8 errors (http 429 x5)");
+
+      // Fallback when errorReasons is missing but lastError is present
+      expect(formatLlmStatsSummary(5, 2, undefined, "network error")).toBe("LLM: 5 calls, 2 errors (network error x2)");
+    });
   });
 });

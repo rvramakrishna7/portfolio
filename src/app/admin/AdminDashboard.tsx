@@ -13,6 +13,7 @@ import {
 import { formatJobAge } from "@/lib/jobs/freshness";
 import { MAX_AGE_DAYS_DEFAULT } from "@/config/job-profile";
 import { hasRealDescription, getMissingDescriptionNote } from "@/lib/jobs/classify";
+import { formatLlmStatsSummary } from "@/lib/jobs/stats-format";
 
 interface StatItem {
   id: string;
@@ -111,6 +112,7 @@ export function AdminDashboard() {
     llmCalls: number;
     llmErrors?: number;
     llmLastError?: string;
+    llmErrorReasons?: Record<string, number>;
     sources?: Record<string, { status: string; count: number; error?: string; note?: string }>;
   } | null>(null);
   const [isTestingGroq, setIsTestingGroq] = useState(false);
@@ -196,6 +198,7 @@ export function AdminDashboard() {
             llmCalls: data.lastRun.stats.llmCalls || 0,
             llmErrors: data.lastRun.stats.llmErrors ?? 0,
             llmLastError: data.lastRun.stats.llmLastError,
+            llmErrorReasons: data.lastRun.stats.llmErrorReasons,
             sources: data.lastRun.stats.sources,
           });
         }
@@ -239,6 +242,7 @@ export function AdminDashboard() {
                 llmCalls: data.lastRun.stats.llmCalls || 0,
                 llmErrors: data.lastRun.stats.llmErrors ?? 0,
                 llmLastError: data.lastRun.stats.llmLastError,
+                llmErrorReasons: data.lastRun.stats.llmErrorReasons,
                 sources: data.lastRun.stats.sources,
               });
             }
@@ -859,12 +863,12 @@ export function AdminDashboard() {
                     <span>Last run: {new Date(lastRunTime).toLocaleString()}</span>
                     {lastRunStats && (
                       <span className="admin-stats-summary">
-                        LLM: {lastRunStats.llmCalls} calls, {lastRunStats.llmErrors ?? 0} errors
-                        {lastRunStats.llmCalls > 0 &&
-                          (lastRunStats.llmErrors ?? 0) >= lastRunStats.llmCalls &&
-                          lastRunStats.llmLastError && (
-                            <> ({lastRunStats.llmLastError})</>
-                          )}
+                        {formatLlmStatsSummary(
+                          lastRunStats.llmCalls,
+                          lastRunStats.llmErrors ?? 0,
+                          lastRunStats.llmErrorReasons,
+                          lastRunStats.llmLastError
+                        )}
                       </span>
                     )}
                     {lastSourceCounts && (

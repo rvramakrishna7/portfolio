@@ -31,9 +31,54 @@ export type OutreachLlmOutput = z.infer<typeof OutreachLlmSchema>;
 export { DEFAULT_OUTREACH_MODEL };
 export const MAX_GENERATIONS_PER_DAY = 10;
 
-// Em dash & en dash char codes avoiding raw literals in source
+// Em dash, en dash & minus sign char codes avoiding raw literals in source
 const EM_DASH_CHAR = String.fromCharCode(8212);
 const EN_DASH_CHAR = String.fromCharCode(8211);
+const MINUS_SIGN_CHAR = String.fromCharCode(8722);
+
+/**
+ * Normalizes generated outreach text before validation:
+ * - Replaces em/en/minus dashes in ranges (between digits) with "-"
+ * - Replaces em/en/minus dashes with spaces around them with " - "
+ * - Replaces other em/en/minus dashes with ", "
+ * - Replaces curly quotes with straight quotes
+ * - Replaces ellipsis character with "..."
+ * - Collapses repeated horizontal spaces
+ */
+export function normalizeOutreachText(text: string): string {
+  if (!text) return "";
+
+  const DASH_CLASS = `[${EM_DASH_CHAR}${EN_DASH_CHAR}${MINUS_SIGN_CHAR}]`;
+
+  const LEFT_SINGLE_QUOTE = String.fromCharCode(8216);
+  const RIGHT_SINGLE_QUOTE = String.fromCharCode(8217);
+  const LEFT_DOUBLE_QUOTE = String.fromCharCode(8220);
+  const RIGHT_DOUBLE_QUOTE = String.fromCharCode(8221);
+  const ELLIPSIS = String.fromCharCode(8230);
+
+  let result = text;
+
+  // 1. Curly quotes to straight quotes
+  result = result.replace(new RegExp(`[${LEFT_SINGLE_QUOTE}${RIGHT_SINGLE_QUOTE}]`, "g"), "'");
+  result = result.replace(new RegExp(`[${LEFT_DOUBLE_QUOTE}${RIGHT_DOUBLE_QUOTE}]`, "g"), '"');
+
+  // 2. Ellipsis character to "..."
+  result = result.replace(new RegExp(ELLIPSIS, "g"), "...");
+
+  // 3. Dashes between digits for ranges: e.g. 10–20 -> 10-20
+  result = result.replace(new RegExp(`(\\d)\\s*${DASH_CLASS}\\s*(\\d)`, "g"), "$1-$2");
+
+  // 4. Dashes with spaces around: e.g. "foo [dash] bar" -> "foo - bar"
+  result = result.replace(new RegExp(`\\s+${DASH_CLASS}\\s+`, "g"), " - ");
+
+  // 5. Remaining dashes (without spaces on both sides): e.g. "foo[dash]bar" -> "foo, bar"
+  result = result.replace(new RegExp(`\\s*${DASH_CLASS}\\s*`, "g"), ", ");
+
+  // 6. Collapse repeated horizontal spaces
+  result = result.replace(/[^\S\r\n]+/g, " ");
+
+  return result.trim();
+}
 
 // Banned phrases constructed dynamically so check:copy doesn't trigger on source code
 export const BANNED_OUTREACH_PHRASES = [
@@ -136,7 +181,7 @@ export function validateOutreachDrafts(output: OutreachLlmOutput): string[] {
 
   for (const text of allTexts) {
     // 5. Em dash and En dash check
-    if (text.includes(EM_DASH_CHAR) || text.includes(EN_DASH_CHAR)) {
+    if (text.includes(EM_DASH_CHAR) || text.includes(EN_DASH_CHAR) || text.includes(MINUS_SIGN_CHAR)) {
       errors.push("Forbidden dash character (em dash or en dash) used. Use hyphens or commas.");
     }
 
@@ -241,6 +286,7 @@ export async function generateOutreachDrafts(
     "   - Body STRICTLY <= 500 characters.",
     "   - Mentions 1-2 projects + CTA to portfolio or brief chat.",
     "4. MANDATORY CONSTRAINTS:",
+    "   - Do not use em dashes or en dashes; use commas or hyphens.",
     "   - NEVER use em dash or en dash. Use hyphens or commas.",
     "   - NEVER invent any metrics, statistics, or claims not given in the candidate facts.",
     "   - DO NOT include email addresses or phone numbers in any draft.",
@@ -281,6 +327,19 @@ export async function generateOutreachDrafts(
     throw new Error(msg);
   }
 
+  completion = {
+    email: {
+      subject: normalizeOutreachText(completion.email.subject),
+      body: normalizeOutreachText(completion.email.body),
+    },
+    linkedin_note: {
+      body: normalizeOutreachText(completion.linkedin_note.body),
+    },
+    linkedin_dm: {
+      body: normalizeOutreachText(completion.linkedin_dm.body),
+    },
+  };
+
   const validationErrors = validateOutreachDrafts(completion);
 
   // If validation failed, retry ONCE with error feedback
@@ -297,7 +356,7 @@ export async function generateOutreachDrafts(
       { role: "user", content: retryFeedback },
     ];
 
-    const retryCompletion = await provider.completeJson(
+    let retryCompletion = await provider.completeJson(
       {
         messages: retryMessages,
         model,
@@ -314,6 +373,19 @@ export async function generateOutreachDrafts(
       console.warn(msg);
       throw new Error(msg);
     }
+
+    retryCompletion = {
+      email: {
+        subject: normalizeOutreachText(retryCompletion.email.subject),
+        body: normalizeOutreachText(retryCompletion.email.body),
+      },
+      linkedin_note: {
+        body: normalizeOutreachText(retryCompletion.linkedin_note.body),
+      },
+      linkedin_dm: {
+        body: normalizeOutreachText(retryCompletion.linkedin_dm.body),
+      },
+    };
 
     const secondErrors = validateOutreachDrafts(retryCompletion);
     if (secondErrors.length > 0) {
