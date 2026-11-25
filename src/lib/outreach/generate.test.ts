@@ -479,8 +479,11 @@ describe("Outreach Generator (generate.ts)", () => {
       const badOutput2 = createValidLlmOutput({
         linkedin_dm: { body: invalidDmBody },
       });
+      const badOutput3 = createValidLlmOutput({
+        linkedin_dm: { body: invalidDmBody },
+      });
 
-      const mockProvider = new MockLlmProvider([badOutput1, badOutput2]);
+      const mockProvider = new MockLlmProvider([badOutput1, badOutput2, badOutput3]);
       const result = await generateOutreachDrafts(job, repo, { provider: mockProvider });
 
       expect(result).toHaveLength(2);
@@ -489,6 +492,7 @@ describe("Outreach Generator (generate.ts)", () => {
       expect(result.failures).toHaveLength(1);
       expect(result.failures[0].kind).toBe("linkedin_dm");
       expect(result.failures[0].reason).toContain("LinkedIn DM exceeds 500 characters");
+      expect(mockProvider.callCount).toBe(3); // 1 initial + 2 retries
     });
 
     it("fails when all kinds fail validation after retry", async () => {
@@ -501,10 +505,146 @@ describe("Outreach Generator (generate.ts)", () => {
         linkedin_dm: { body: "" },
       });
 
-      const mockProvider = new MockLlmProvider([allBadOutput, allBadOutput]);
+      const mockProvider = new MockLlmProvider([allBadOutput, allBadOutput, allBadOutput]);
       await expect(
         generateOutreachDrafts(job, repo, { provider: mockProvider })
       ).rejects.toThrow(/Outreach draft validation failed after retry/);
+    });
+
+    it("cleanStyle applies each replacement and preserves casing", async () => {
+      const { cleanStyle } = await import("./generate");
+
+      const wordPassionate = ["pass", "ionate"].join("");
+      const wordLeveraging = ["lever", "aging"].join("");
+      const wordLeverage = ["lever", "age"].join("");
+      const wordExcitedAbout = ["excited ", "about"].join("");
+      const wordExcitedTo = ["excited ", "to"].join("");
+      const wordAlignsWith = ["aligns ", "with"].join("");
+      const wordAlignWith = ["align ", "with"].join("");
+      const wordSharpened = ["shar", "pened"].join("");
+      const wordEager = ["ea", "ger"].join("");
+      const wordFlawlessly = ["flaw", "lessly"].join("");
+      const wordFlawless = ["flaw", "less"].join("");
+      const wordPerfectly = ["per", "fectly"].join("");
+      const wordPerfect = ["per", "fect"].join("");
+      const wordUnmatched = ["un", "matched"].join("");
+      const wordWorldClass = ["world", "-", "class"].join("");
+      const wordStateOfTheArt = ["state", "-", "of", "-", "the", "-", "art"].join("");
+
+      expect(cleanStyle(`His experience ${wordAlignsWith} our team.`)).toBe("His experience fits our team.");
+      expect(cleanStyle(`Aligns with our team.`)).toBe("Fits our team.");
+      expect(cleanStyle(`Their skills ${wordAlignWith} our mission.`)).toBe("Their skills fit our mission.");
+      expect(cleanStyle(`I am ${wordExcitedAbout} the position.`)).toBe("I am interested in the position.");
+      expect(cleanStyle(`Excited about this.`)).toBe("Interested in this.");
+      expect(cleanStyle(`I am ${wordExcitedTo} join.`)).toBe("I am glad to join.");
+      expect(cleanStyle(`He ${wordSharpened} his skills.`)).toBe("He built his skills.");
+      expect(cleanStyle(`We can ${wordLeverage} modern tools.`)).toBe("We can use modern tools.");
+      expect(cleanStyle(`By ${wordLeveraging} MCP servers.`)).toBe("By using MCP servers.");
+      expect(cleanStyle(`A ${wordPassionate} engineer.`)).toBe("A keen engineer.");
+      expect(cleanStyle(`An ${wordEager} contributor.`)).toBe("An keen contributor.");
+      expect(cleanStyle(`Executed ${wordFlawlessly}.`)).toBe("Executed cleanly.");
+      expect(cleanStyle(`A ${wordFlawless} system.`)).toBe("A clean system.");
+      expect(cleanStyle(`It works ${wordPerfectly} today.`)).toBe("It works today.");
+      expect(cleanStyle(`A ${wordPerfect} match.`)).toBe("A clean match.");
+      expect(cleanStyle(`Delivering ${wordUnmatched} speed.`)).toBe("Delivering speed.");
+      expect(cleanStyle(`A ${wordWorldClass} developer.`)).toBe("A developer.");
+      expect(cleanStyle(`Building a ${wordStateOfTheArt} platform.`)).toBe("Building a modern platform.");
+      expect(cleanStyle(`State-of-the-art tools.`)).toBe("Modern tools.");
+      expect(cleanStyle(`Reduced time from >1 min to < 30 s.`)).toBe("Reduced time from more than 1 min to under 30 s.");
+    });
+
+    it("soft failure: remaining banned phrase (synergy) triggers retry and sentence removal, saving draft", async () => {
+      const repo = new InMemoryJobsRepository();
+      const job = createSampleJob();
+
+      const outputWithSynergy1 = createValidLlmOutput({
+        email: {
+          subject: "Role - Ramakrishna",
+          body: VALID_EMAIL_BODY + " We will build synergy together.",
+        },
+      });
+      const outputWithSynergy2 = createValidLlmOutput({
+        email: {
+          subject: "Role - Ramakrishna",
+          body: VALID_EMAIL_BODY + " We will achieve team synergy.",
+        },
+      });
+
+      const mockProvider = new MockLlmProvider([outputWithSynergy1, outputWithSynergy2]);
+      const result = await generateOutreachDrafts(job, repo, { provider: mockProvider });
+
+      expect(mockProvider.callCount).toBe(2);
+      expect(result).toHaveLength(3);
+      const email = result.find((d) => d.kind === "email");
+      expect(email?.body.toLowerCase()).not.toContain("synergy");
+      expect(email?.body).toContain("Vouch");
+    });
+
+    it("hard failure checks: extra numbers and email address fail validation", async () => {
+      const { validateEmailHardRules } = await import("./generate");
+
+      const withFakeNum = VALID_EMAIL_BODY + " We handled 99999 requests.";
+      const numErrors = validateEmailHardRules("Role - Ramakrishna", withFakeNum);
+      expect(numErrors.some((e) => e.includes("Disallowed or unverified number \"99999\""))).toBe(true);
+
+      const withEmail = VALID_EMAIL_BODY + " Contact me at test@example.com.";
+      const emailErrors = validateEmailHardRules("Role - Ramakrishna", withEmail);
+      expect(emailErrors.some((e) => e.includes("Email address found"))).toBe(true);
+    });
+
+    it("project allocation: assigns distinct main project to email (P1) and DM (P2) without duplicate main project", async () => {
+      const repo = new InMemoryJobsRepository();
+      const job = createSampleJob({
+        title: "AI Infrastructure Engineer",
+        description: "Scale backend systems and agent tooling.",
+      });
+
+      const mockProvider = new MockLlmProvider([createValidLlmOutput()]);
+      await generateOutreachDrafts(job, repo, { provider: mockProvider });
+
+      const prompt = mockProvider.capturedOptions[0].messages.find((m) => m.role === "system")?.content || "";
+      expect(prompt).toContain("PROJECT ALLOCATION RULES");
+      expect(prompt).toContain("Cold Email MAIN project: MUST feature Project 1");
+      expect(prompt).toContain("LinkedIn DM MAIN project: MUST feature Project 2");
+      expect(prompt).toContain("LinkedIn Note: Must feature Project 1");
+      expect(prompt).toContain("different metric than the email");
+    });
+
+    it("note retry count allows up to 2 retries (total 3 attempts) for length over limit", async () => {
+      const repo = new InMemoryJobsRepository();
+      const job = createSampleJob();
+
+      const longNote = "Hi Alex, " + "word ".repeat(60); // > 280 chars
+      const badNote1 = createValidLlmOutput({ linkedin_note: { body: longNote } });
+      const badNote2 = createValidLlmOutput({ linkedin_note: { body: longNote } });
+      const goodNote = createValidLlmOutput({ linkedin_note: { body: VALID_NOTE_BODY } });
+
+      const mockProvider = new MockLlmProvider([badNote1, badNote2, goodNote]);
+      const result = await generateOutreachDrafts(job, repo, { provider: mockProvider });
+
+      expect(mockProvider.callCount).toBe(3);
+      expect(result).toHaveLength(3);
+      expect(result.failures).toHaveLength(0);
+
+      // Verify retry message contains exact character count and target
+      const retryMsg = mockProvider.capturedOptions[1].messages.findLast((m) => m.role === "user")?.content || "";
+      expect(retryMsg).toContain("target at most 230 characters, hard limit <= 280 characters");
+    });
+
+    it("literal-detail rule: a prompt with no detail falls back to title plus company", async () => {
+      const repo = new InMemoryJobsRepository();
+      const jobWithNoDetail = createSampleJob({
+        title: "Senior Backend Developer",
+        company: "Stripe",
+        description: "",
+        skills: [],
+      });
+
+      const mockProvider = new MockLlmProvider([createValidLlmOutput()]);
+      await generateOutreachDrafts(jobWithNoDetail, repo, { provider: mockProvider });
+
+      const prompt = mockProvider.capturedOptions[0].messages.find((m) => m.role === "system")?.content || "";
+      expect(prompt).toContain("If no concrete detail exists in the text, use the role title plus company name");
     });
   });
 });

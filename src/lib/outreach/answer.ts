@@ -12,9 +12,12 @@ import {
 } from "../../config/candidate-profile";
 import {
   normalizeOutreachText,
+  cleanStyle,
   selectRelevantProjects,
   stripHtml,
-  BANNED_OUTREACH_PHRASES,
+  findRemainingBannedPhrases,
+  removeSentencesWithPhrases,
+  validateSoftRules,
 } from "./generate";
 
 export const AnswerLlmSchema = z.object({
@@ -45,7 +48,7 @@ export interface GenerateApplicationAnswerOptions {
   repo?: JobsRepository;
 }
 
-export function validateApplicationAnswer(
+export function validateApplicationAnswerHardRules(
   answer: string,
   maxWords: number,
   jobTextForNumbers: string
@@ -65,23 +68,7 @@ export function validateApplicationAnswer(
     errors.push(`Answer must be between ${minWords} and ${maxWords} words (current: ${words} words)`);
   }
 
-  // 2. Dash characters
-  const EM_DASH_CHAR = String.fromCharCode(8212);
-  const EN_DASH_CHAR = String.fromCharCode(8211);
-  const MINUS_SIGN_CHAR = String.fromCharCode(8722);
-  if (text.includes(EM_DASH_CHAR) || text.includes(EN_DASH_CHAR) || text.includes(MINUS_SIGN_CHAR)) {
-    errors.push("Forbidden dash character (em dash or en dash) used. Use hyphens or commas.");
-  }
-
-  // 3. Banned phrases check
-  const lower = text.toLowerCase();
-  for (const phrase of BANNED_OUTREACH_PHRASES) {
-    if (lower.includes(phrase)) {
-      errors.push(`Banned phrase detected: "${phrase}"`);
-    }
-  }
-
-  // 4. Disallowed contact info
+  // 2. Disallowed contact info
   if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) {
     errors.push("Email address found in answer text.");
   }
@@ -89,7 +76,7 @@ export function validateApplicationAnswer(
     errors.push("Phone number found in answer text.");
   }
 
-  // 5. Allowed numbers check: candidate profile numbers + numbers present in job text
+  // 3. Allowed numbers check: candidate profile numbers + numbers present in job text
   const numbersInJob = new Set(jobTextForNumbers.match(/\b\d+(?:[.,]\d+)?\b/g) || []);
   const numbersInAnswer = text.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
   for (const num of numbersInAnswer) {
@@ -98,7 +85,7 @@ export function validateApplicationAnswer(
     }
   }
 
-  // 6. URL allow-list check
+  // 4. URL allow-list check
   const profile = getCandidateProfile();
   const allowedUrls = new Set([
     profile.portfolioUrl.replace(/\/+$/, ""),
@@ -113,6 +100,21 @@ export function validateApplicationAnswer(
   }
 
   return errors;
+}
+
+export function validateApplicationAnswerSoftRules(answer: string): string[] {
+  return validateSoftRules([answer]);
+}
+
+export function validateApplicationAnswer(
+  answer: string,
+  maxWords: number,
+  jobTextForNumbers: string
+): string[] {
+  return [
+    ...validateApplicationAnswerHardRules(answer, maxWords, jobTextForNumbers),
+    ...validateApplicationAnswerSoftRules(answer),
+  ];
 }
 
 export async function generateApplicationAnswer(
@@ -221,16 +223,18 @@ export async function generateApplicationAnswer(
   }
 
   completion = {
-    answer: normalizeOutreachText(completion.answer),
+    answer: cleanStyle(normalizeOutreachText(completion.answer)),
   };
 
-  const validationErrors = validateApplicationAnswer(completion.answer, maxWords, jobTextForNumbers);
+  const hardErrors = validateApplicationAnswerHardRules(completion.answer, maxWords, jobTextForNumbers);
+  const softErrors = validateApplicationAnswerSoftRules(completion.answer);
 
-  if (validationErrors.length > 0) {
+  if (hardErrors.length > 0 || softErrors.length > 0) {
+    const feedbackLines = [...hardErrors, ...softErrors];
     const retryFeedback = [
       "Your previous output failed the following validation checks:",
-      ...validationErrors.map((e) => `- ${e}`),
-      `Please regenerate the JSON correcting all of these issues. Maintain strict word count between ${minWords} and ${maxWords} words, zero em/en dashes, no banned phrases, and strictly approved numbers only.`,
+      ...feedbackLines.map((e) => `- ${e}`),
+      `Please regenerate the JSON correcting all of these issues. Maintain strict word count between ${minWords} and ${maxWords} words, zero em/en dashes, no banned phrases, plain metrics, and strictly approved numbers only.`,
     ].join("\n");
 
     const retryMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -239,7 +243,7 @@ export async function generateApplicationAnswer(
       { role: "user", content: retryFeedback },
     ];
 
-    let retryCompletion = await provider.completeJson(
+    const retryCompletion = await provider.completeJson(
       {
         messages: retryMessages,
         model,
@@ -257,16 +261,19 @@ export async function generateApplicationAnswer(
       throw new Error(msg);
     }
 
-    retryCompletion = {
-      answer: normalizeOutreachText(retryCompletion.answer),
-    };
+    let cleanedRetryAnswer = cleanStyle(normalizeOutreachText(retryCompletion.answer));
 
-    const secondErrors = validateApplicationAnswer(retryCompletion.answer, maxWords, jobTextForNumbers);
-    if (secondErrors.length > 0) {
-      throw new Error(`Application answer validation failed after retry: ${secondErrors.join("; ")}`);
+    const remainingBanned = findRemainingBannedPhrases(cleanedRetryAnswer);
+    if (remainingBanned.length > 0) {
+      cleanedRetryAnswer = removeSentencesWithPhrases(cleanedRetryAnswer, remainingBanned);
     }
 
-    completion = retryCompletion;
+    const secondHardErrors = validateApplicationAnswerHardRules(cleanedRetryAnswer, maxWords, jobTextForNumbers);
+    if (secondHardErrors.length > 0) {
+      throw new Error(`Application answer validation failed after retry: ${secondHardErrors.join("; ")}`);
+    }
+
+    completion = { answer: cleanedRetryAnswer };
   }
 
   return {
