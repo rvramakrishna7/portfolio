@@ -27,7 +27,18 @@ import {
   getMissingDescriptionNote,
 } from "./classify";
 import { LlmProvider } from "../llm/types";
-import { GroqProvider } from "../llm/groq";
+import { GroqProvider, sanitizeErrorMessage as sanitizeLlmErrorMessage } from "../llm/groq";
+
+export function recordLlmErrorReason(stats: SearchRunStats, rawReason?: string | null): void {
+  if (!rawReason) return;
+  const sanitized = sanitizeLlmErrorMessage(rawReason);
+  if (!stats.llmErrorReasons) {
+    stats.llmErrorReasons = {};
+  }
+  stats.llmErrorReasons[sanitized] = (stats.llmErrorReasons[sanitized] || 0) + 1;
+}
+
+export { formatLlmStatsSummary } from "./stats-format";
 import { triageJobWithLlm, hashString, TriagedJobResult } from "../llm/triage";
 import {
   getJobsRepository,
@@ -539,6 +550,7 @@ export async function startJobSearch(
     llmCalls: 0,
     llmErrors: 0,
     llmLastError: undefined,
+    llmErrorReasons: {},
     llmSkippedStale: 0,
     llmSkippedAlready: 0,
     llmSkippedIrrelevant: 0,
@@ -653,6 +665,8 @@ export async function stepJobSearch(
         ...runStats,
         llmCalls: runStats.llmCalls ?? 0,
         llmErrors: runStats.llmErrors ?? 0,
+        llmLastError: runStats.llmLastError,
+        llmErrorReasons: runStats.llmErrorReasons ? { ...runStats.llmErrorReasons } : {},
         llmSkippedStale: runStats.llmSkippedStale ?? 0,
         llmSkippedAlready: runStats.llmSkippedAlready ?? 0,
         llmSkippedIrrelevant: runStats.llmSkippedIrrelevant ?? 0,
@@ -922,11 +936,13 @@ export async function stepJobSearch(
       if (llmCallsMade.count > beforeCount && llmProvider.lastError) {
         state.stats.llmErrors++;
         state.stats.llmLastError = llmProvider.lastError;
+        recordLlmErrorReason(state.stats, llmProvider.lastError);
       }
     } catch {
       state.stats.llmErrors++;
       if (llmProvider.lastError) {
         state.stats.llmLastError = llmProvider.lastError;
+        recordLlmErrorReason(state.stats, llmProvider.lastError);
       }
       triaged = {
         expClass: item.ruleExp.expClass,
@@ -1033,6 +1049,10 @@ export async function stepJobSearch(
     sources: {
       ...(currentRun?.stats?.sources || {}),
       ...(state.stats.sources || {}),
+    },
+    llmErrorReasons: {
+      ...((currentRun?.stats?.llmErrorReasons as Record<string, number>) || {}),
+      ...(state.stats.llmErrorReasons || {}),
     },
   };
 

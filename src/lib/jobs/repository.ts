@@ -59,6 +59,7 @@ export interface SearchRunStats {
   llmCalls: number;
   llmErrors: number;
   llmLastError?: string;
+  llmErrorReasons?: Record<string, number>;
   llmSkippedStale: number;
   llmSkippedAlready?: number;
   llmSkippedIrrelevant?: number;
