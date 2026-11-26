@@ -648,3 +648,21 @@ describe("Outreach Generator (generate.ts)", () => {
     });
   });
 });
+
+describe("removeSentencesWithDisallowedNumbers", () => {
+  it("drops only the sentence that holds an unapproved number", async () => {
+    const { removeSentencesWithDisallowedNumbers } = await import("./generate");
+    const text =
+      "Hi Asha, I built Vouch. Your team runs 3000 nodes. We cut review time from 18.83 s to 3.35 s.";
+    const out = removeSentencesWithDisallowedNumbers(text);
+    expect(out).not.toContain("3000");
+    expect(out).toContain("Vouch");
+    expect(out).toContain("18.83");
+  });
+
+  it("leaves text with approved numbers untouched", async () => {
+    const { removeSentencesWithDisallowedNumbers } = await import("./generate");
+    const text = "I wrote 1,212 automated tests. The cache answers in 22 ms.";
+    expect(removeSentencesWithDisallowedNumbers(text)).toBe(text);
+  });
+});

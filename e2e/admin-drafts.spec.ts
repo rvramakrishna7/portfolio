@@ -167,7 +167,7 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
     // 3. Verifies redirect to Messages tab
     await expect(page.locator(".admin-drafts-section")).toBeVisible();
     const notice = page.locator(".admin-notice-banner");
-    await expect(notice).toContainText("Nothing is sent from here. Copy the text and send it yourself.");
+    await expect(notice).toContainText("Approve a draft, then use Send email to send it from Gmail.");
 
     // 4. Verifies 3 drafts appear
     const draftCards = page.locator(".admin-draft-card");
@@ -244,10 +244,17 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.waitForTimeout(100);
 
-      const noScroll = await page.evaluate(
-        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
-      );
-      expect(noScroll).toBe(true);
+      const overflowing = await page.evaluate(() => {
+        const root = document.documentElement;
+        if (root.scrollWidth <= root.clientWidth) return [];
+        // Name the elements that stick out, so a failure says what to fix
+        return Array.from(document.body.querySelectorAll("*"))
+          .map((el) => ({ el, right: Math.round(el.getBoundingClientRect().right) }))
+          .filter((x) => x.right > root.clientWidth + 1)
+          .slice(0, 6)
+          .map((x) => `${x.el.tagName.toLowerCase()}.${String(x.el.className).split(" ").join(".")} right=${x.right} viewport=${root.clientWidth}`);
+      });
+      expect(overflowing, `horizontal overflow at ${width}px`).toEqual([]);
 
       const screenshotPath = path.join(
         screenshotsDir,
@@ -563,10 +570,17 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.waitForTimeout(100);
 
-      const noScroll = await page.evaluate(
-        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
-      );
-      expect(noScroll).toBe(true);
+      const overflowing = await page.evaluate(() => {
+        const root = document.documentElement;
+        if (root.scrollWidth <= root.clientWidth) return [];
+        // Name the elements that stick out, so a failure says what to fix
+        return Array.from(document.body.querySelectorAll("*"))
+          .map((el) => ({ el, right: Math.round(el.getBoundingClientRect().right) }))
+          .filter((x) => x.right > root.clientWidth + 1)
+          .slice(0, 6)
+          .map((x) => `${x.el.tagName.toLowerCase()}.${String(x.el.className).split(" ").join(".")} right=${x.right} viewport=${root.clientWidth}`);
+      });
+      expect(overflowing, `horizontal overflow at ${width}px`).toEqual([]);
 
       const screenshotPath = path.join(
         screenshotsDir,

@@ -3149,3 +3149,736 @@ dialog.palette::backdrop {
 
 
 
+
+/* ===== Admin polish (Apple-style, CSS only; class names unchanged) ===== */
+.admin-dashboard-container,
+.admin-login-layout {
+  --adm-radius: 18px;
+  --adm-radius-sm: 12px;
+  --adm-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+  --adm-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.05), 0 14px 32px rgba(0, 0, 0, 0.09);
+  --adm-ring: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+  --adm-soft: color-mix(in srgb, var(--text) 5%, transparent);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+:root[data-theme="dark"] .admin-dashboard-container,
+:root[data-theme="dark"] .admin-login-layout {
+  --adm-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --adm-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.55), 0 14px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Header: sticky bar */
+.admin-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.admin-brand h1 {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.admin-status-badge {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  border-color: transparent;
+  color: var(--ok);
+  padding: 3px 10px;
+}
+
+.admin-content {
+  max-width: 1160px;
+}
+
+/* Stats: big calm numbers */
+.admin-stats-grid {
+  gap: 14px;
+}
+
+.admin-stat-card {
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border-radius: var(--adm-radius);
+  box-shadow: var(--adm-shadow);
+  padding: 20px 22px;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.admin-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--adm-shadow-hover);
+}
+
+.admin-stat-num {
+  font-size: 2.1rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.admin-stat-label {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* Tabs: segmented control */
+.admin-tabs-nav {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 2px;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--adm-soft);
+  margin-bottom: 24px;
+}
+
+.admin-tab-btn {
+  min-height: 38px;
+  padding: 6px 16px;
+  border: 0;
+  font-size: 0.88rem;
+  color: #48484a;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+:root[data-theme="dark"] .admin-tab-btn {
+  color: #a1a1a6;
+}
+
+.admin-tab-btn:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.admin-tab-btn.active {
+  background: var(--card);
+  color: var(--text);
+  border: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Panels and cards */
+.admin-tab-panel {
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 24px;
+  box-shadow: var(--adm-shadow);
+}
+
+.admin-panel-header h2 {
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.admin-panel-desc {
+  color: var(--muted);
+}
+
+.admin-job-card,
+.admin-pipeline-card,
+.admin-draft-card,
+.admin-connection-card,
+.admin-board-item,
+.admin-empty-card {
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  border-radius: var(--adm-radius-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.admin-job-card:hover,
+.admin-pipeline-card:hover,
+.admin-draft-card:hover,
+.admin-connection-card:hover {
+  box-shadow: var(--adm-shadow-hover);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+
+.admin-job-card,
+.admin-pipeline-card {
+  padding: 22px;
+  gap: 14px;
+}
+
+.admin-draft-card {
+  padding: 20px;
+  border-radius: 16px;
+}
+
+.admin-job-title,
+.admin-draft-job-title {
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.admin-job-company,
+.admin-job-meta,
+.admin-pipeline-meta {
+  color: var(--muted);
+}
+
+.admin-empty-card {
+  border-style: dashed;
+  box-shadow: none;
+  text-align: center;
+  padding: 36px 20px;
+  color: var(--muted);
+}
+
+/* Inputs */
+.admin-input,
+.admin-select,
+.admin-textarea,
+.admin-search-input {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.admin-input:focus,
+.admin-select:focus,
+.admin-textarea:focus,
+.admin-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--adm-ring);
+}
+
+.admin-textarea {
+  line-height: 1.6;
+}
+
+.admin-draft-field label,
+.admin-input-group label {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+/* Buttons inside the dashboard: pills */
+.admin-dashboard-container .btn {
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  transition: transform 120ms ease, box-shadow 160ms ease, background-color 160ms ease, opacity 160ms ease;
+}
+
+.admin-dashboard-container .btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.admin-dashboard-container .btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.admin-dashboard-container .btn.primary:hover:not(:disabled) {
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.admin-dashboard-container .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-dashboard-container .btn:focus-visible,
+.admin-tab-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--adm-ring);
+}
+
+.admin-dashboard-container .btn.ghost {
+  background: var(--adm-soft);
+  border-color: transparent;
+}
+
+.admin-dashboard-container .btn.ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+}
+
+.admin-dashboard-container .btn-danger {
+  color: var(--error);
+}
+
+.admin-draft-card-actions {
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* Badges and chips: soft tinted pills */
+.admin-dashboard-container .badge,
+.admin-dashboard-container .score-badge,
+.admin-dashboard-container .geo-badge,
+.admin-dashboard-container .exp-badge,
+.admin-dashboard-container .email-badge,
+.admin-dashboard-container .skill-pill,
+.admin-dashboard-container .reason-chip,
+.admin-dashboard-container .preset-chip {
+  border-radius: 999px;
+  padding: 3px 10px;
+  letter-spacing: 0.01em;
+  border-color: transparent;
+}
+
+.admin-dashboard-container .skill-pill {
+  background: var(--adm-soft);
+  color: var(--muted);
+}
+
+/* Notices, toast, errors */
+.admin-notice-banner {
+  border-radius: var(--adm-radius-sm);
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.admin-toast {
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.admin-error-box {
+  border-radius: var(--adm-radius-sm);
+}
+
+/* Tables (visits) */
+.admin-visits-table-wrapper {
+  border-radius: var(--adm-radius-sm);
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  overflow: hidden;
+}
+
+.admin-visits-table th {
+  background: var(--adm-soft);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.admin-visits-table tbody tr:hover td {
+  background: var(--adm-soft);
+}
+
+/* Login */
+.admin-card-form {
+  border-radius: 24px;
+  box-shadow: var(--adm-shadow);
+  background: var(--card);
+}
+
+.admin-card-container h1 {
+  letter-spacing: -0.03em;
+}
+
+
+
+@media (max-width: 640px) {
+  .admin-tabs-nav {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .admin-tab-panel {
+    border-radius: 18px;
+    padding: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-tab-panel {
+    animation: none;
+  }
+
+  .admin-dashboard-container .btn,
+  .admin-stat-card,
+  .admin-job-card,
+  .admin-draft-card {
+    transition: none;
+  }
+}
+
+/* ===== Admin layout fixes ===== */
+/* Visually hidden text that stays available to screen readers (this class was used but never defined) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* main#main { display: block } is more specific than the admin classes, so restore them here */
+main#main.admin-login-layout {
+  display: flex;
+}
+
+/* The owner area has its own header, so hide the public site chrome there */
+body:has(.admin-dashboard-container) .site-head,
+body:has(.admin-dashboard-container) .site-footer,
+body:has(.admin-dashboard-container) .progress,
+body:has(.admin-dashboard-container) .totop,
+body:has(.admin-login-layout) .site-head,
+body:has(.admin-login-layout) .site-footer,
+body:has(.admin-login-layout) .progress,
+body:has(.admin-login-layout) .totop {
+  display: none;
+}
+
+.admin-login-layout {
+  background: var(--bg);
+}
+
+.admin-card-container {
+  text-align: left;
+}
+
+.admin-view-site {
+  font: 500 0.88rem var(--sans);
+  color: var(--muted);
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+.admin-view-site:hover {
+  color: var(--text);
+  background: var(--adm-soft, rgba(127, 127, 127, 0.1));
+}
+
+/* Stats */
+.admin-stats-section {
+  margin-bottom: 8px;
+}
+
+.admin-stat-card {
+  min-height: 112px;
+  justify-content: space-between;
+}
+
+/* Filters: one tidy row, compact controls */
+.admin-filter-bar,
+.admin-search-filters,
+.admin-view-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-search-filters {
+  margin: 14px 0 6px;
+}
+
+.admin-select,
+.admin-search-input {
+  height: 40px;
+  font: 500 0.88rem var(--sans);
+  color: var(--text);
+  width: auto;
+  min-width: 170px;
+}
+
+.admin-search-input {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.admin-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2386868B' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+
+/* Job view filter buttons as a segmented row of pills */
+.admin-filter-btn,
+.filter-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  font: 600 0.84rem var(--sans);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.admin-filter-btn:hover,
+.filter-btn:hover {
+  color: var(--text);
+  border-color: var(--text-3, var(--line));
+}
+
+.admin-filter-btn.active,
+.filter-btn.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+/* Meta text lines inside the jobs panel */
+.admin-last-run-info,
+.admin-sources-summary,
+.admin-source-issues {
+  font: 400 0.82rem/1.55 var(--sans);
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.admin-source-issues {
+  color: #b45309;
+}
+
+:root[data-theme="dark"] .admin-source-issues {
+  color: #fbbf24;
+}
+
+/* Job cards: tidy header row and badges */
+.admin-job-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.admin-job-title {
+  font-size: 1.05rem;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.admin-job-badges,
+.admin-pipeline-badges,
+.admin-draft-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.admin-job-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-job-actions,
+.admin-pipeline-actions,
+.admin-jobs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-job-summary {
+  font: 400 0.92rem/1.6 var(--sans);
+  color: var(--text-2, var(--muted));
+}
+
+@media (max-width: 640px) {
+  .admin-job-top {
+    flex-direction: column;
+  }
+
+  .admin-job-badges {
+    justify-content: flex-start;
+  }
+
+  .admin-select,
+  .admin-search-input {
+    width: 100%;
+  }
+}
+
+.admin-filter-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+/* Footer icon links */
+.footer-links {
+  gap: 4px;
+}
+
+.footer-links a.footer-icon {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.footer-links a.footer-icon:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  transform: translateY(-1px);
+}
+
+.footer-links a.footer-owner {
+  opacity: 0.6;
+}
+
+.footer-links a.footer-owner:hover {
+  opacity: 1;
+}
+
+/* Admin icons and small meta */
+.admin-ico {
+  flex: none;
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
+.admin-draft-card-actions .btn,
+.admin-draft-card-actions a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.admin-job-source-tag a,
+.admin-draft-job-meta a {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  text-decoration: none;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.admin-draft-job-meta a .admin-ico {
+  margin: 0 0 0 4px;
+  width: 13px;
+  height: 13px;
+}
+
+.badge-visit-count,
+.badge-visit-zero {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font: 600 0.74rem var(--sans);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: #48484a;
+}
+
+:root[data-theme="dark"] .badge-visit-zero {
+  color: #a1a1a6;
+}
+
+.badge-visit-count {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+/* Fixes after e2e: no horizontal scroll on narrow screens, AA contrast for green badges */
+.admin-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-brand {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .admin-view-site {
+    display: none;
+  }
+
+  .admin-brand h1 {
+    font-size: 1rem;
+  }
+
+  .admin-head-actions {
+    gap: 6px;
+  }
+
+  .admin-logout-btn {
+    padding: 8px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-status-badge {
+    display: none;
+  }
+}
+
+.admin-status-badge,
+.badge-visit-count {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent);
+  color: var(--ok);
+}
+
+/* Let flex and grid children shrink instead of pushing the page wider than the screen */
+.admin-dashboard-container,
+.admin-content,
+.admin-tab-panel,
+.admin-draft-group,
+.admin-drafts-grid,
+.admin-draft-card,
+.admin-draft-field,
+.admin-job-card,
+.admin-pipeline-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-draft-card,
+.admin-job-card,
+.admin-pipeline-card,
+.admin-notice-banner,
+.admin-error-box {
+  overflow-wrap: anywhere;
+}
+
+.admin-input,
+.admin-textarea,
+.admin-select,
+.admin-search-input {
+  max-width: 100%;
+}
+
+.admin-draft-card-actions > * {
+  max-width: 100%;
+}

@@ -238,6 +238,26 @@ export function removeSentencesWithPhrases(text: string, bannedPhrases: string[]
   return cleanedParagraphs.filter(Boolean).join("\n\n").trim();
 }
 
+// A number that is not on the approved list (for example a figure copied from the job post) must never reach a draft.
+// Instead of failing the whole draft, drop only the sentences that contain such a number.
+export function removeSentencesWithDisallowedNumbers(text: string): string {
+  if (!text) return text;
+  const hasDisallowed = (sentence: string) =>
+    (sentence.match(/\b\d+(?:[.,]\d+)?\b/g) || []).some((num) => !ALLOWED_CANDIDATE_NUMBERS.has(num));
+  if (!hasDisallowed(text)) return text;
+
+  const paragraphs = text.split(/\r?\n+/);
+  const cleaned = paragraphs.map((para) => {
+    const sentences = para.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    return sentences
+      .filter((sentence) => !hasDisallowed(sentence))
+      .join(" ")
+      .replace(/[^\S\r\n]+/g, " ")
+      .trim();
+  });
+  return cleaned.filter(Boolean).join("\n\n").trim();
+}
+
 export function stripHtml(input: string): string {
   return input
     .replace(/<[^>]+>/g, " ")
@@ -744,6 +764,10 @@ export async function generateOutreachDrafts(
       currentDrafts.linkedin_dm.body = removeSentencesWithPhrases(currentDrafts.linkedin_dm.body, dmRemaining);
     }
   }
+
+  currentDrafts.email.body = removeSentencesWithDisallowedNumbers(currentDrafts.email.body);
+  currentDrafts.linkedin_note.body = removeSentencesWithDisallowedNumbers(currentDrafts.linkedin_note.body);
+  currentDrafts.linkedin_dm.body = removeSentencesWithDisallowedNumbers(currentDrafts.linkedin_dm.body);
 
   // Final evaluation: ONLY HARD ERRORS FAIL THE DRAFT
   const finalEmailErrors = validateEmailHardRules(currentDrafts.email.subject, currentDrafts.email.body);

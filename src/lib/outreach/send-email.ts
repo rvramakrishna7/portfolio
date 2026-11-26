@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import type { JobsRepository, OutreachDraft } from "../jobs/repository";
+import { buildEmailParts } from "./email-format";
 
 // Sending outreach email from the owner's own Gmail, one draft at a time, only when the owner clicks.
 // Safety rules, all enforced here and covered by tests:
@@ -15,6 +16,8 @@ export interface MailMessage {
   to: string;
   subject: string;
   text: string;
+  html?: string;
+  replyTo?: string;
 }
 
 export interface MailTransport {
@@ -24,6 +27,7 @@ export interface MailTransport {
 export interface MailSetup {
   transport: MailTransport;
   from: string;
+  fromName?: string;
 }
 
 export type SendCode =
@@ -95,7 +99,7 @@ export function getMailSetup(): MailSetup | null {
     greetingTimeout: 10_000,
     socketTimeout: 20_000,
   });
-  return { transport, from: user };
+  return { transport, from: user, fromName: "Ramakrishna" };
 }
 
 function wasDefinitelyNotSent(error: unknown): boolean {
@@ -161,11 +165,14 @@ export async function sendDraftEmail(repo: JobsRepository, draftId: string, opti
   if (!claimed) return { ok: false, code: "already_sent", message: "This draft was already sent." };
 
   try {
+    const parts = buildEmailParts(draft.body);
     await setup.transport.sendMail({
-      from: setup.from,
+      from: setup.fromName ? `"${setup.fromName}" <${setup.from}>` : setup.from,
+      replyTo: setup.from,
       to: (draft.recipient ?? "").trim(),
       subject: (draft.subject ?? "").trim(),
-      text: draft.body,
+      text: parts.text,
+      html: parts.html,
     });
   } catch (error) {
     if (wasDefinitelyNotSent(error)) {

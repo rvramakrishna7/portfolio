@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -95,6 +96,37 @@ const PRESET_QUESTIONS = [
 // A "possible reply" is only open while the job is still before the reply stage.
 // Once the owner confirms it (status "replied") or moves the job on, the badge goes away.
 const REPLY_STAGE_REACHED = ["replied", "interview", "offer", "rejected"];
+type IconName = "copy" | "mail" | "gmail" | "check" | "send" | "external";
+
+const ICON_PATHS: Record<IconName, string> = {
+  copy: "M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",
+  mail: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6",
+  gmail: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6M14 3h7v7",
+  check: "M5 12.5l4.5 4.5L19 7.5",
+  send: "M21 3L10 14M21 3l-7 18-4-7-7-4 18-7z",
+  external: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+};
+
+function Ico({ name }: { name: IconName }) {
+  return (
+    <svg
+      className="admin-ico"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  );
+}
+
 function hasOpenPossibleReply(job: { status: string; possibleReply?: unknown }): boolean {
   return Boolean(job.possibleReply) && !REPLY_STAGE_REACHED.includes(job.status);
 }
@@ -900,10 +932,36 @@ export function AdminDashboard() {
     setTimeout(() => setSendToast(null), 7000);
   };
 
-  const handleSendDraft = async (draft: OutreachDraft) => {
+  const handleSendDraft = async (
+    draft: OutreachDraft,
+    pending?: { subject: string; body: string; recipient: string }
+  ) => {
     setConfirmSendId(null);
     setSendingDraftId(draft.id);
     try {
+      if (pending) {
+        // Save edits and approve first. If this fails, nothing is sent.
+        const saveRes = await fetch(`/api/admin/drafts/${draft.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "approved",
+            subject: pending.subject,
+            body: pending.body,
+            recipient: pending.recipient,
+          }),
+        });
+        const saveData = await saveRes.json();
+        if (!saveRes.ok) {
+          showSendToast(saveData.error || "Could not save the draft, nothing was sent");
+          return;
+        }
+        setEditingDrafts((prev) => {
+          const next = { ...prev };
+          delete next[draft.id];
+          return next;
+        });
+      }
       const res = await fetch(`/api/admin/drafts/${draft.id}/send`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
@@ -1068,6 +1126,9 @@ export function AdminDashboard() {
           <span className="admin-status-badge">Private</span>
         </div>
         <div className="admin-head-actions">
+          <Link className="admin-view-site" href="/">
+            View site
+          </Link>
           <ThemeToggle />
           <button
             className="btn ghost admin-logout-btn"
@@ -1860,7 +1921,7 @@ export function AdminDashboard() {
             {activeTab === "messages" && (
               <div className="admin-drafts-section" aria-label="Messages review queue">
                 <div className="admin-notice-banner" role="note">
-                  Nothing is sent from here. Copy the text and send it yourself.
+                  Approve a draft, then use Send email to send it from Gmail. Copy and Open in Gmail are there if you prefer to send it yourself.
                 </div>
 
                 <div className="admin-drafts-header-bar">
@@ -1987,7 +2048,7 @@ export function AdminDashboard() {
                                 <>
                                   <span>•</span>
                                   <a href={group.jobUrl} target="_blank" rel="noopener noreferrer">
-                                    Source listing ↗
+                                    Source listing <Ico name="external" />
                                   </a>
                                 </>
                               )}
@@ -2174,6 +2235,7 @@ export function AdminDashboard() {
                                     className="btn ghost btn-sm admin-copy-btn"
                                     onClick={() => handleCopyDraft(draft)}
                                   >
+                                    <Ico name="copy" />
                                     Copy
                                   </button>
                                   {isEmail && (
@@ -2181,7 +2243,19 @@ export function AdminDashboard() {
                                       href={`mailto:${encodeURIComponent(currentRecipient || "")}?subject=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}
                                       className="btn ghost btn-sm admin-mailto-btn"
                                     >
+                                      <Ico name="mail" />
                                       Open in mail app
+                                    </a>
+                                  )}
+                                  {isEmail && (currentRecipient || "").trim() !== "" && (
+                                    <a
+                                      href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(currentRecipient || "")}&su=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="btn ghost btn-sm admin-gmail-btn"
+                                    >
+                                      <Ico name="gmail" />
+                                      Open in Gmail
                                     </a>
                                   )}
                                   {!draft.sent_at && (
@@ -2190,20 +2264,27 @@ export function AdminDashboard() {
                                       className="btn ghost btn-sm admin-mark-sent-btn"
                                       onClick={() => handleMarkSent(draft)}
                                     >
+                                      <Ico name="check" />
                                       Mark sent
                                     </button>
                                   )}
                                   {isEmail &&
-                                    draft.status === "approved" &&
+                                    draft.status !== "discarded" &&
                                     !draft.sent_at &&
-                                    !editingDrafts[draft.id] &&
                                     (currentRecipient || "").trim() !== "" &&
                                     (confirmSendId === draft.id ? (
                                       <>
                                         <button
                                           type="button"
                                           className="btn primary btn-sm admin-send-confirm-btn"
-                                          onClick={() => handleSendDraft(draft)}
+                                          onClick={() =>
+                                            handleSendDraft(
+                                              draft,
+                                              draft.status !== "approved" || hasEdits
+                                                ? { subject: currentSubject || "", body: currentBody, recipient: currentRecipient || "" }
+                                                : undefined
+                                            )
+                                          }
                                         >
                                           Confirm send to {currentRecipient}
                                         </button>
@@ -2218,7 +2299,12 @@ export function AdminDashboard() {
                                         onClick={() => setConfirmSendId(draft.id)}
                                         disabled={sendingDraftId === draft.id}
                                       >
-                                        {sendingDraftId === draft.id ? "Sending..." : "Send email"}
+                                        <Ico name="send" />
+                                        {sendingDraftId === draft.id
+                                          ? "Sending..."
+                                          : draft.status !== "approved" || hasEdits
+                                            ? "Approve and send email"
+                                            : "Send email"}
                                       </button>
                                     ))}
                                   <button

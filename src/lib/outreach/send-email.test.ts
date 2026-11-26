@@ -275,3 +275,23 @@ describe("Send approved email drafts from Gmail (src/lib/outreach/send-email.ts)
     expect(source).toContain("WHERE id = ${id}::uuid AND sent_channel = 'email'");
   });
 });
+
+describe("email formatting", async () => {
+  const { buildEmailParts } = await import("./email-format");
+
+  it("keeps the approved body and adds work links and a signature", () => {
+    const parts = buildEmailParts("Hi Asha,\n\nI built a thing. See https://example.test/r/abc23456.\n\nThanks");
+    expect(parts.text).toContain("I built a thing. See https://example.test/r/abc23456.");
+    expect(parts.text).toContain("Selected work:");
+    expect(parts.text).toContain("https://github.com/rvramakrishna7/vouch");
+    expect(parts.html).toContain('href="https://example.test/r/abc23456"');
+    expect(parts.html).toContain("Selected work");
+    expect(parts.html).not.toContain("<img");
+  });
+
+  it("escapes html in the body", () => {
+    const parts = buildEmailParts('Hi <script>alert("x")</script>');
+    expect(parts.html).not.toContain("<script>");
+    expect(parts.html).toContain("&lt;script&gt;");
+  });
+});
