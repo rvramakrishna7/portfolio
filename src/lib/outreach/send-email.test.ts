@@ -267,7 +267,7 @@ describe("Send approved email drafts from Gmail (src/lib/outreach/send-email.ts)
   });
 
   it("the database claim is one conditional statement (unsent, email, approved) and the release only touches email claims", () => {
-    const source = readFileSync("src/lib/jobs/repository.ts", "utf8");
+    const source = readFileSync("src/lib/jobs/repository.ts", "utf8").replace(/\r\n/g, "\n");
     const claim = source.slice(source.indexOf("async claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null> {\n    const sql"));
     expect(claim).toContain("AND sent_at IS NULL");
     expect(claim).toContain("AND kind = 'email'");
