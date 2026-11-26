@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { startJobSearch, stepJobSearch } from "@/lib/jobs/pipeline";
 import { getJobsRepository } from "@/lib/jobs/repository";
 import { safeCompare } from "@/lib/admin/safe-compare";
+import { checkRepliesAndAlert } from "@/lib/inbound/reply-detect";
 
 export const maxDuration = 60;
 
@@ -54,6 +55,20 @@ export async function GET(req: Request) {
       if (done) break;
     }
 
+    // Check replies and alert if budget permits
+    let repliesChecked = 0;
+    if (Date.now() - startTime < maxExecutionMs) {
+      try {
+        const replyRes = await checkRepliesAndAlert({
+          repo,
+          maxDurationMs: Math.max(1000, maxExecutionMs - (Date.now() - startTime)),
+        });
+        repliesChecked = replyRes.checked;
+      } catch {
+        // Silently tolerate reply check error in cron search
+      }
+    }
+
     return NextResponse.json({
       success: true,
       runId,
@@ -61,6 +76,7 @@ export async function GET(req: Request) {
       stepsRun,
       remainingBoards,
       pendingTriage,
+      repliesChecked,
     });
   } catch (err: unknown) {
     return NextResponse.json(

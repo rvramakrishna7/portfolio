@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { StoredJob, JobsRepository, CreateDraftInput } from "../jobs/repository";
+import { StoredJob, JobsRepository, CreateDraftInput, generateTrackCode } from "../jobs/repository";
 import {
   LlmProvider,
   DEFAULT_OUTREACH_MODEL,
@@ -236,6 +236,26 @@ export function removeSentencesWithPhrases(text: string, bannedPhrases: string[]
   });
 
   return cleanedParagraphs.filter(Boolean).join("\n\n").trim();
+}
+
+// A number that is not on the approved list (for example a figure copied from the job post) must never reach a draft.
+// Instead of failing the whole draft, drop only the sentences that contain such a number.
+export function removeSentencesWithDisallowedNumbers(text: string): string {
+  if (!text) return text;
+  const hasDisallowed = (sentence: string) =>
+    (sentence.match(/\b\d+(?:[.,]\d+)?\b/g) || []).some((num) => !ALLOWED_CANDIDATE_NUMBERS.has(num));
+  if (!hasDisallowed(text)) return text;
+
+  const paragraphs = text.split(/\r?\n+/);
+  const cleaned = paragraphs.map((para) => {
+    const sentences = para.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    return sentences
+      .filter((sentence) => !hasDisallowed(sentence))
+      .join(" ")
+      .replace(/[^\S\r\n]+/g, " ")
+      .trim();
+  });
+  return cleaned.filter(Boolean).join("\n\n").trim();
 }
 
 export function stripHtml(input: string): string {
@@ -745,6 +765,10 @@ export async function generateOutreachDrafts(
     }
   }
 
+  currentDrafts.email.body = removeSentencesWithDisallowedNumbers(currentDrafts.email.body);
+  currentDrafts.linkedin_note.body = removeSentencesWithDisallowedNumbers(currentDrafts.linkedin_note.body);
+  currentDrafts.linkedin_dm.body = removeSentencesWithDisallowedNumbers(currentDrafts.linkedin_dm.body);
+
   // Final evaluation: ONLY HARD ERRORS FAIL THE DRAFT
   const finalEmailErrors = validateEmailHardRules(currentDrafts.email.subject, currentDrafts.email.body);
   const finalNoteErrors = validateNoteHardRules(currentDrafts.linkedin_note.body);
@@ -753,11 +777,19 @@ export async function generateOutreachDrafts(
   const validDrafts: CreateDraftInput[] = [];
   const failures: GenerateOutreachFailure[] = [];
 
+  const substituteTrackedUrl = (text: string, code: string): string => {
+    const trackedUrl = `https://rramakrishna.vercel.app/r/${code}`;
+    const plainPortfolioRegex = new RegExp(profile.portfolioUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:/)?", "g");
+    return text.replace(plainPortfolioRegex, trackedUrl);
+  };
+
   if (finalEmailErrors.length === 0) {
+    const code = generateTrackCode();
     validDrafts.push({
       kind: "email",
       subject: currentDrafts.email.subject.trim(),
-      body: currentDrafts.email.body.trim(),
+      body: substituteTrackedUrl(currentDrafts.email.body.trim(), code),
+      track_code: code,
       model,
     });
   } else {
@@ -768,9 +800,11 @@ export async function generateOutreachDrafts(
   }
 
   if (finalNoteErrors.length === 0) {
+    const code = generateTrackCode();
     validDrafts.push({
       kind: "linkedin_note",
-      body: currentDrafts.linkedin_note.body.trim(),
+      body: substituteTrackedUrl(currentDrafts.linkedin_note.body.trim(), code),
+      track_code: code,
       model,
     });
   } else {
@@ -781,9 +815,11 @@ export async function generateOutreachDrafts(
   }
 
   if (finalDmErrors.length === 0) {
+    const code = generateTrackCode();
     validDrafts.push({
       kind: "linkedin_dm",
-      body: currentDrafts.linkedin_dm.body.trim(),
+      body: substituteTrackedUrl(currentDrafts.linkedin_dm.body.trim(), code),
+      track_code: code,
       model,
     });
   } else {

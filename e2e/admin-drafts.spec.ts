@@ -167,7 +167,7 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
     // 3. Verifies redirect to Messages tab
     await expect(page.locator(".admin-drafts-section")).toBeVisible();
     const notice = page.locator(".admin-notice-banner");
-    await expect(notice).toContainText("Nothing is sent from here. Copy the text and send it yourself.");
+    await expect(notice).toContainText("Approve a draft, then use Send email to send it from Gmail.");
 
     // 4. Verifies 3 drafts appear
     const draftCards = page.locator(".admin-draft-card");
@@ -244,10 +244,17 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.waitForTimeout(100);
 
-      const noScroll = await page.evaluate(
-        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
-      );
-      expect(noScroll).toBe(true);
+      const overflowing = await page.evaluate(() => {
+        const root = document.documentElement;
+        if (root.scrollWidth <= root.clientWidth) return [];
+        // Name the elements that stick out, so a failure says what to fix
+        return Array.from(document.body.querySelectorAll("*"))
+          .map((el) => ({ el, right: Math.round(el.getBoundingClientRect().right) }))
+          .filter((x) => x.right > root.clientWidth + 1)
+          .slice(0, 6)
+          .map((x) => `${x.el.tagName.toLowerCase()}.${String(x.el.className).split(" ").join(".")} right=${x.right} viewport=${root.clientWidth}`);
+      });
+      expect(overflowing, `horizontal overflow at ${width}px`).toEqual([]);
 
       const screenshotPath = path.join(
         screenshotsDir,
@@ -563,10 +570,17 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.waitForTimeout(100);
 
-      const noScroll = await page.evaluate(
-        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
-      );
-      expect(noScroll).toBe(true);
+      const overflowing = await page.evaluate(() => {
+        const root = document.documentElement;
+        if (root.scrollWidth <= root.clientWidth) return [];
+        // Name the elements that stick out, so a failure says what to fix
+        return Array.from(document.body.querySelectorAll("*"))
+          .map((el) => ({ el, right: Math.round(el.getBoundingClientRect().right) }))
+          .filter((x) => x.right > root.clientWidth + 1)
+          .slice(0, 6)
+          .map((x) => `${x.el.tagName.toLowerCase()}.${String(x.el.className).split(" ").join(".")} right=${x.right} viewport=${root.clientWidth}`);
+      });
+      expect(overflowing, `horizontal overflow at ${width}px`).toEqual([]);
 
       const screenshotPath = path.join(
         screenshotsDir,
@@ -699,5 +713,260 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
     const errorBanner = page.locator(".admin-drafts-section .admin-error-box");
     await expect(errorBanner).toBeVisible();
     await expect(errorBanner).toContainText("Saved 2 of 3 (LinkedIn DM failed: LinkedIn DM exceeds 500 characters (540 chars))");
+  });
+
+  test("tracked links, bot vs human visits, and reply check workflow (Bundle B3 & C)", async ({
+    page,
+    context,
+    request,
+  }) => {
+    // 1. Generate a tracked code on /r/[code]
+    const testCode = "abc23456";
+
+    // 2. Visit with human UA
+    const humanRes = await request.get(`/r/${testCode}`, {
+      headers: {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36",
+        "x-vercel-ip-country": "IN",
+      },
+      maxRedirects: 0,
+    });
+    expect(humanRes.status()).toBe(302);
+    expect(humanRes.headers()["location"]).toMatch(/\/(?:$|\?)/);
+    expect(humanRes.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+    expect(humanRes.headers()["set-cookie"]).toBeUndefined();
+
+    // 3. Visit with bot UA
+    const botRes = await request.get(`/r/${testCode}`, {
+      headers: {
+        "user-agent": "facebookexternalhit/1.1",
+      },
+      maxRedirects: 0,
+    });
+    expect(botRes.status()).toBe(302);
+    expect(botRes.headers()["location"]).toMatch(/\/(?:$|\?)/);
+
+    // 4. Set up admin session and route mocks for Pipeline and Replies
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    await context.addCookies([
+      {
+        name: "__Host-admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+        secure: true,
+      },
+      {
+        name: "admin",
+        value: token,
+        domain: "localhost",
+        path: "/",
+      },
+    ]);
+
+    let replyCheckCalled = false;
+    await page.route("**/api/admin/replies/check", async (route) => {
+      replyCheckCalled = true;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "X-Robots-Tag": "noindex, nofollow" },
+        body: JSON.stringify({
+          success: true,
+          checked: 3,
+          exactMatches: 1,
+          possibleMatches: 1,
+          alertsSent: 1,
+        }),
+      });
+    });
+
+    await page.route("**/api/admin/pipeline", async (route) => {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          pipeline: [
+            {
+              id: "seed-101",
+              title: "Junior Backend Developer",
+              company: "Alpha Cloud",
+              url: "https://remoteok.com/remote-jobs/seed-101",
+              status: "applied",
+              channels: ["email"],
+              sentAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+              daysSinceSent: 2,
+              visitCount: 1, // 1 human visit recorded, bot excluded
+              lastVisitAt: new Date().toISOString(),
+              possibleReply: {
+                id: "reply-1",
+                snippet: "Thanks for applying to Alpha Cloud",
+                receivedAt: new Date().toISOString(),
+              },
+            },
+          ],
+        }),
+      });
+    });
+
+    // 5. Open admin dashboard and navigate to Pipeline tab
+    await page.goto("/admin");
+    const pipelineTabBtn = page.locator('.admin-tab-btn:has-text("Pipeline")');
+    await expect(pipelineTabBtn).toBeVisible();
+    await pipelineTabBtn.click();
+
+    // 6. Verify pipeline card displays exactly 1 visit
+    const pipelineCard = page.locator('.admin-pipeline-card[data-pipeline-id="seed-101"]');
+    await expect(pipelineCard).toBeVisible();
+    await expect(pipelineCard).toContainText("Visited 1 time");
+
+    // 7. Verify Possible reply badge and confirm/dismiss buttons
+    const possibleReplyBadge = pipelineCard.locator(".badge-possible-reply");
+    await expect(possibleReplyBadge).toBeVisible();
+    await expect(possibleReplyBadge).toContainText("Possible reply, confirm");
+
+    // 8. Test Check replies button
+    const checkRepliesBtn = page.locator(".admin-check-replies-btn");
+    await expect(checkRepliesBtn).toBeVisible();
+    await checkRepliesBtn.click();
+    expect(replyCheckCalled).toBe(true);
+
+    // 9. Axe accessibility test on pipeline view
+    const axeResults = await new AxeBuilder({ page })
+      .include(".admin-pipeline-section")
+      .analyze();
+    expect(axeResults.violations).toEqual([]);
+  });
+
+  test("send approved email: two-step confirm, daily limit message, send all (Bundle B4)", async ({ page, context }) => {
+    const { createSessionToken } = await import("../src/lib/admin/session");
+    const secret = "test-admin-session-secret-at-least-32-chars-long-e2e-only";
+    const token = createSessionToken(secret);
+
+    await context.addCookies([
+      { name: "__Host-admin", value: token, domain: "localhost", path: "/", secure: true },
+      { name: "admin", value: token, domain: "localhost", path: "/" },
+    ]);
+
+    page.on("dialog", (dialog) => {
+      throw new Error(`Unexpected browser dialog: ${dialog.message()}`);
+    });
+
+    const baseDraft = {
+      id: "draft-send-1",
+      job_id: "seed-101",
+      kind: "email",
+      subject: "Full-Stack AI Engineering - Ramakrishna",
+      body: "Hi team, I noticed your opening at Global Tech Corp and would like to talk about it.",
+      status: "approved",
+      model: "openai/gpt-oss-120b",
+      edited: false,
+      recipient: "hr@example.com",
+      sent_at: null as string | null,
+      sent_channel: null as string | null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      job_title: "Full Stack Engineer (AI Platform)",
+      job_company: "Global Tech Corp",
+      job_url: "https://example.com/jobs/seed-101",
+    };
+
+    let draft = { ...baseDraft };
+    let sendCalls = 0;
+    let sendAllCalls = 0;
+    let sendMode: "ok" | "cap" = "cap";
+
+    const counts = () => ({ all: 1, draft: 0, approved: 1, discarded: 0 });
+
+    await page.route("**/api/admin/drafts**", async (route) => {
+      const url = new URL(route.request().url());
+      const method = route.request().method();
+
+      if (method === "POST" && url.pathname.endsWith("/send-all")) {
+        sendAllCalls++;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            sent: 2,
+            failed: 0,
+            skipped: [],
+            stoppedBecause: null,
+            remainingToday: 18,
+            eligibleLeft: 0,
+            counts: counts(),
+          }),
+        });
+      }
+
+      if (method === "POST" && url.pathname.endsWith("/send")) {
+        sendCalls++;
+        if (sendMode === "cap") {
+          return route.fulfill({
+            status: 429,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "Daily limit reached (20 of 20 sent today). Try again tomorrow.", code: "daily_cap" }),
+          });
+        }
+        draft = { ...draft, sent_at: new Date().toISOString(), sent_channel: "email" };
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ draft, counts: counts() }),
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/api/admin/drafts") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ drafts: [draft], counts: counts(), answersToday: 0 }),
+        });
+      }
+
+      return route.continue();
+    });
+
+    await page.goto("/admin");
+    await page.locator('.admin-tab-btn:has-text("Messages")').click();
+    await expect(page.locator(".admin-drafts-section")).toBeVisible();
+    await page.locator(".admin-filter-btn", { hasText: "Approved" }).click();
+
+    const card = page.locator(".admin-draft-card").first();
+    const sendBtn = card.locator(".admin-send-btn");
+    await expect(sendBtn).toBeVisible();
+
+    // Step 1: the first click only asks for confirmation. Nothing is sent. Cancel goes back.
+    await sendBtn.click();
+    await expect(card.locator(".admin-send-confirm-btn")).toContainText("hr@example.com");
+    expect(sendCalls).toBe(0);
+    await card.getByRole("button", { name: "Cancel" }).click();
+    await expect(sendBtn).toBeVisible();
+    expect(sendCalls).toBe(0);
+
+    // Step 2: daily limit error is shown and the draft stays sendable
+    await sendBtn.click();
+    await card.locator(".admin-send-confirm-btn").click();
+    await expect(page.locator(".admin-toast")).toContainText("Daily limit reached");
+    expect(sendCalls).toBe(1);
+    await expect(card.locator(".admin-send-btn")).toBeVisible();
+
+    // Step 3: success marks it sent and removes the send button
+    sendMode = "ok";
+    await card.locator(".admin-send-btn").click();
+    await card.locator(".admin-send-confirm-btn").click();
+    await expect(page.locator(".admin-toast")).toContainText("Sent to hr@example.com");
+    expect(sendCalls).toBe(2);
+    await expect(card.locator(".admin-send-btn")).toHaveCount(0);
+
+    // Send all: asks for confirmation first, then reports the result
+    await page.locator(".admin-send-all-btn").click();
+    expect(sendAllCalls).toBe(0);
+    await page.locator(".admin-send-all-confirm-btn").click();
+    await expect(page.locator(".admin-toast")).toContainText("Sent 2");
+    expect(sendAllCalls).toBe(1);
   });
 });

@@ -59,4 +59,18 @@ describe("SQL migration splitter (splitSql)", () => {
       expect(stmt.startsWith("CREATE")).toBe(true);
     }
   });
+
+  it("correctly splits 008_tracking.sql without '$$' blocks", () => {
+    const migrationPath = path.resolve(
+      __dirname,
+      "../../db/migrations/008_tracking.sql"
+    );
+    const content = fs.readFileSync(migrationPath, "utf8");
+    const statements = splitSql(content);
+
+    expect(statements.length).toBeGreaterThan(0);
+    for (const stmt of statements) {
+      expect(stmt.startsWith("ALTER") || stmt.startsWith("CREATE")).toBe(true);
+    }
+  });
 });

@@ -1,8 +1,22 @@
 # Status: Portfolio site
 
-Current step: Soft style cleanup and draft content rules completed on `fix/soft-style`. Ready for merge to `main`.
+Current step: Tracked links, visits logging, reply detection and alerts completed on `feat/b3c-bundle`. Ready for merge to `main`.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
+- Tracked links, visits logging, reply detection, and Telegram alerts (`feat/b3c-bundle`):
+  - Migration 008_tracking.sql: plain SQL (IF NOT EXISTS everywhere, zero `$$` tokens) adding `track_code TEXT UNIQUE` to `outreach_drafts`, `is_bot BOOLEAN` and `country TEXT` to `visits`, and creating `reply_events` table (id, job_id, draft_id nullable, match_kind exact/possible, subject_snippet max 120 chars, message_id TEXT UNIQUE, received_at, alerted_at nullable) with indexes.
+  - Data layer in `src/lib/jobs/repository.ts`: implemented `generateTrackCode()`, `recordVisit(code, isBot, country)`, `visitsForJob(jobId)`, `recordReplyEvent(event)` (idempotent on `message_id`), `listUnalertedReplies()`, `markReplyAlerted(id)`, `replyEventsForJob(jobId)`, `getDraftByTrackCode(code)`, and `listVisitsWithDrafts()`. Parity unit tests added across `InMemoryJobsRepository` and `NeonJobsRepository` in `src/lib/jobs/classify.test.ts`.
+  - Tracked links redirect route `GET /r/[code]`: validates 8-char code (`/^[a-z2-9]{8}$/`), detects bots via user agent pattern or empty header (`src/lib/tracking/bot-detect.ts`), extracts country from `x-vercel-ip-country`, logs visit without IP/user-agent/cookies, sets `X-Robots-Tag: noindex, nofollow`, and 302 redirects to `/`. Unknown codes safely redirect to `/` with no logging. Added `Disallow: /r/` to `robots.ts`.
+  - URL substitution in generated drafts: replaces plain portfolio URL with tracked link `https://rramakrishna.vercel.app/r/<code>` post-validation across emails, notes, DMs, and answers.
+  - Reply detection engine in `src/lib/inbound/reply-detect.ts`: inspects inbox emails against sent draft jobs. Exact match on stored recipient address sets job status to `replied` and records exact reply event. Possible match on LinkedIn messaging or invitation emails mentioning the company records possible reply event without changing job status. Capped at 120-char snippet, zero body storage.
+  - Alert dispatch in `src/lib/alerts/telegram.ts`: sends Telegram notifications for unalerted replies when configured, marking them alerted.
+  - UI in `src/app/admin/AdminDashboard.tsx`:
+    - Surfaced non-bot visit count and relative last visit time on Messages and Pipeline cards ("Visited N times, last X ago", "0 visits yet").
+    - Added Visits tab displaying visit log with relative timestamp, job title, and country badge.
+    - Added "Check replies now" trigger button on Pipeline tab with toast feedback.
+    - Added "Possible reply, confirm" banner on Pipeline cards with Confirm (sets status to replied) and Dismiss actions.
+    - Added unread badge on Pipeline tab header for pending possible replies and updated Replies KPI card.
+  - Playwright test in `e2e/admin-drafts.spec.ts` covering tracked links redirect, bot vs human detection, visit count UI, and reply detection workflow with axe accessibility scans across 5 viewports (375, 768, 1024, 1280, 1440 px).
 - Soft style cleanup and draft content rules (`fix/soft-style`):
   - Split validation in `src/lib/outreach/generate.ts` and `answer.ts` into HARD rules (word and character limits, empty text, numbers allow-list, email address, phone number, disallowed URLs) and SOFT rules (em/en dashes, symbols `>` and `<`, remaining banned phrases). Only HARD failures use the failure path.
   - Added deterministic cleanup function `cleanStyle(text)` that replaces 16 banned style phrases case-insensitively while preserving first letter casing ("aligns with" -> "fits", "align with" -> "fit", "excited about" -> "interested in", "excited to" -> "glad to", "sharpened" -> "built", "leverage" -> "use", "leveraging" -> "using", "passionate" -> "keen", "eager" -> "keen", "flawless" -> "clean", "flawlessly" -> "cleanly", "perfectly" -> "", "perfect" -> "clean", "unmatched" -> "", "world-class" -> "", "state-of-the-art" -> "modern", ">" -> "more than", "<" -> "under") with string-join trick for `check:copy`, collapsing double spaces.

@@ -203,6 +203,17 @@ export interface HiddenReasonsCounts {
   missing_desc: number;
 }
 
+const TRACK_CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
+
+export function generateTrackCode(): string {
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    const idx = Math.floor(Math.random() * TRACK_CODE_CHARS.length);
+    code += TRACK_CODE_CHARS[idx];
+  }
+  return code;
+}
+
 export interface ViewCounts {
   shortlist: number;
   maybe: number;
@@ -228,6 +239,7 @@ export interface OutreachDraft {
   recipient?: string | null;
   sent_at?: string | null;
   sent_channel?: string | null;
+  track_code?: string | null;
   created_at: string;
   updated_at: string;
   job_title?: string;
@@ -243,6 +255,7 @@ export interface CreateDraftInput {
   status?: OutreachDraftStatus;
   question?: string | null;
   recipient?: string | null;
+  track_code?: string | null;
 }
 
 export interface ListDraftsOptions {
@@ -276,6 +289,33 @@ export interface PipelineJob {
   channels: string[];
   sentAt: string;
   daysSinceSent: number;
+  visitCount?: number;
+  lastVisitAt?: string | null;
+  possibleReply?: {
+    id: string;
+    snippet: string;
+    receivedAt: string;
+  } | null;
+}
+
+export interface VisitRecord {
+  id: string;
+  code: string;
+  visited_at: string;
+  is_bot: boolean;
+  country: string | null;
+}
+
+export interface ReplyEvent {
+  id: string;
+  job_id: string;
+  draft_id: string | null;
+  match_kind: "exact" | "possible";
+  subject_snippet: string;
+  message_id: string;
+  received_at: string;
+  alerted_at: string | null;
+  created_at: string;
 }
 
 export interface JobsRepository {
@@ -317,10 +357,31 @@ export interface JobsRepository {
   listDrafts(opts?: ListDraftsOptions): Promise<OutreachDraft[]>;
   updateDraft(id: string, updates: UpdateDraftInput): Promise<OutreachDraft | null>;
   markDraftSent(id: string, channel: string): Promise<OutreachDraft | null>;
+  getDraftById(id: string): Promise<OutreachDraft | null>;
+  // Atomic: only an approved, unsent email draft can be claimed, and only once. Returns null otherwise.
+  claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null>;
+  // Undo a claim when the mail was definitely not sent.
+  releaseDraftSend(id: string): Promise<void>;
+  countEmailDraftsSentSince(sinceIso: string): Promise<number>;
   countDrafts(jobId?: string): Promise<DraftCountsByStatus>;
   countGenerationsToday(): Promise<number>;
   countAnswersToday(): Promise<number>;
   getPipelineJobs(): Promise<PipelineJob[]>;
+  recordVisit(code: string, isBot: boolean, country: string | null): Promise<void>;
+  visitsForJob(jobId: string): Promise<{ count: number; lastVisitAt: string | null }>;
+  recordReplyEvent(event: {
+    job_id: string;
+    draft_id?: string | null;
+    match_kind: "exact" | "possible";
+    subject_snippet: string;
+    message_id: string;
+    received_at: string;
+  }): Promise<ReplyEvent | null>;
+  listUnalertedReplies(): Promise<ReplyEvent[]>;
+  markReplyAlerted(id: string): Promise<boolean>;
+  replyEventsForJob(jobId: string): Promise<ReplyEvent[]>;
+  getDraftByTrackCode?(code: string): Promise<OutreachDraft | null>;
+  listVisitsWithDrafts?(): Promise<Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }>>;
 }
 
 // Helper to determine whether a job matches a specific hidden reason filter
@@ -396,6 +457,8 @@ export class InMemoryJobsRepository implements JobsRepository {
   private runs = new Map<string, SearchRun>();
   private customBoards = new Map<string, CustomBoard>();
   private drafts = new Map<string, OutreachDraft>();
+  private visits: Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null }> = [];
+  private replyEvents: ReplyEvent[] = [];
 
   async upsertJob(
     job: NormalizedJob,
@@ -510,7 +573,7 @@ export class InMemoryJobsRepository implements JobsRepository {
 
   async getJobById(id: string): Promise<StoredJob | null> {
     for (const j of this.jobs.values()) {
-      if (j.id === id) return j;
+      if (j.id === id || j.source_id === id) return j;
     }
     return null;
   }
@@ -1042,9 +1105,7 @@ export class InMemoryJobsRepository implements JobsRepository {
     const applied = list.filter((j) =>
       ["applied", "replied", "interview", "offer", "rejected"].includes(j.status)
     ).length;
-    const replies = list.filter((j) =>
-      ["replied", "interview", "offer"].includes(j.status)
-    ).length;
+    const replies = list.filter((j) => j.status === "replied").length;
 
     return {
       jobsFound,
@@ -1094,6 +1155,18 @@ export class InMemoryJobsRepository implements JobsRepository {
         ? 0
         : Math.max(0, Math.floor((now - sentTime) / (1000 * 60 * 60 * 24)));
 
+      const visitsInfo = await this.visitsForJob(job.id);
+      const possibleReplies = (await this.replyEventsForJob(job.id)).filter(
+        (r) => r.match_kind === "possible"
+      );
+      const latestPossibleReply = possibleReplies.length > 0
+        ? {
+            id: possibleReplies[possibleReplies.length - 1].id,
+            snippet: possibleReplies[possibleReplies.length - 1].subject_snippet,
+            receivedAt: possibleReplies[possibleReplies.length - 1].received_at,
+          }
+        : null;
+
       result.push({
         id: job.id,
         title: job.title,
@@ -1103,6 +1176,9 @@ export class InMemoryJobsRepository implements JobsRepository {
         channels,
         sentAt,
         daysSinceSent,
+        visitCount: visitsInfo.count,
+        lastVisitAt: visitsInfo.lastVisitAt,
+        possibleReply: latestPossibleReply,
       });
     }
 
@@ -1117,7 +1193,7 @@ export class InMemoryJobsRepository implements JobsRepository {
     status: "new" | "shortlisted" | "skipped" | "applied" | "replied" | "interview" | "offer" | "rejected"
   ): Promise<boolean> {
     for (const job of this.jobs.values()) {
-      if (job.id === id) {
+      if (job.id === id || job.source_id === id) {
         job.status = status;
         return true;
       }
@@ -1216,6 +1292,7 @@ export class InMemoryJobsRepository implements JobsRepository {
       }
 
       const id = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const trackCode = d.track_code || generateTrackCode();
       const newDraft: OutreachDraft = {
         id,
         job_id: jobId,
@@ -1229,6 +1306,7 @@ export class InMemoryJobsRepository implements JobsRepository {
         recipient: d.recipient || null,
         sent_at: null,
         sent_channel: null,
+        track_code: trackCode,
         created_at: nowIso,
         updated_at: nowIso,
         job_title: job?.title,
@@ -1303,6 +1381,37 @@ export class InMemoryJobsRepository implements JobsRepository {
     return { ...draft };
   }
 
+  async getDraftById(id: string): Promise<OutreachDraft | null> {
+    const draft = this.drafts.get(id);
+    if (!draft) return null;
+    const job = Array.from(this.jobs.values()).find((j) => j.id === draft.job_id);
+    return { ...draft, job_title: draft.job_title || job?.title, job_company: draft.job_company || job?.company };
+  }
+
+  async claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null> {
+    const draft = this.drafts.get(id);
+    if (!draft || draft.sent_at || draft.kind !== "email" || draft.status !== "approved") return null;
+    draft.sent_at = new Date().toISOString();
+    draft.sent_channel = channel;
+    draft.updated_at = new Date().toISOString();
+    return { ...draft };
+  }
+
+  async releaseDraftSend(id: string): Promise<void> {
+    const draft = this.drafts.get(id);
+    if (!draft || draft.sent_channel !== "email") return;
+    draft.sent_at = null;
+    draft.sent_channel = null;
+    draft.updated_at = new Date().toISOString();
+  }
+
+  async countEmailDraftsSentSince(sinceIso: string): Promise<number> {
+    const since = new Date(sinceIso).getTime();
+    return Array.from(this.drafts.values()).filter(
+      (d) => d.sent_channel === "email" && d.sent_at && new Date(d.sent_at).getTime() >= since
+    ).length;
+  }
+
   async countDrafts(jobId?: string): Promise<DraftCountsByStatus> {
     let list = Array.from(this.drafts.values());
     if (jobId) list = list.filter((d) => d.job_id === jobId);
@@ -1330,6 +1439,99 @@ export class InMemoryJobsRepository implements JobsRepository {
     return Array.from(this.drafts.values()).filter(
       (d) => d.created_at.slice(0, 10) === today && d.kind === "application_answer"
     ).length;
+  }
+
+  async recordVisit(code: string, isBot: boolean, country: string | null): Promise<void> {
+    this.visits.push({
+      code,
+      visited_at: new Date().toISOString(),
+      is_bot: isBot,
+      country: country ? country.slice(0, 2).toUpperCase() : null,
+    });
+  }
+
+  async visitsForJob(jobId: string): Promise<{ count: number; lastVisitAt: string | null }> {
+    const jobCodes = new Set(
+      Array.from(this.drafts.values())
+        .filter((d) => d.job_id === jobId && Boolean(d.track_code))
+        .map((d) => d.track_code!)
+    );
+    const nonBotVisits = this.visits.filter((v) => jobCodes.has(v.code) && !v.is_bot);
+    if (nonBotVisits.length === 0) {
+      return { count: 0, lastVisitAt: null };
+    }
+    const sorted = [...nonBotVisits].sort(
+      (a, b) => new Date(b.visited_at).getTime() - new Date(a.visited_at).getTime()
+    );
+    return {
+      count: nonBotVisits.length,
+      lastVisitAt: sorted[0].visited_at,
+    };
+  }
+
+  async recordReplyEvent(event: {
+    job_id: string;
+    draft_id?: string | null;
+    match_kind: "exact" | "possible";
+    subject_snippet: string;
+    message_id: string;
+    received_at: string;
+  }): Promise<ReplyEvent | null> {
+    // Idempotent on message_id: a message that is already recorded is not a new event (null)
+    const existing = this.replyEvents.find((e) => e.message_id === event.message_id);
+    if (existing) {
+      return null;
+    }
+    const newEvent: ReplyEvent = {
+      id: `reply-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      job_id: event.job_id,
+      draft_id: event.draft_id || null,
+      match_kind: event.match_kind,
+      subject_snippet: event.subject_snippet.slice(0, 120),
+      message_id: event.message_id,
+      received_at: event.received_at,
+      alerted_at: null,
+      created_at: new Date().toISOString(),
+    };
+    this.replyEvents.push(newEvent);
+    return newEvent;
+  }
+
+  async listUnalertedReplies(): Promise<ReplyEvent[]> {
+    return this.replyEvents.filter((e) => e.alerted_at === null);
+  }
+
+  async markReplyAlerted(id: string): Promise<boolean> {
+    const event = this.replyEvents.find((e) => e.id === id);
+    if (!event) return false;
+    event.alerted_at = new Date().toISOString();
+    return true;
+  }
+
+  async replyEventsForJob(jobId: string): Promise<ReplyEvent[]> {
+    return this.replyEvents.filter((e) => e.job_id === jobId);
+  }
+
+  async getDraftByTrackCode(code: string): Promise<OutreachDraft | null> {
+    const draft = Array.from(this.drafts.values()).find((d) => d.track_code === code);
+    return draft || null;
+  }
+
+  async listVisitsWithDrafts(): Promise<Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }>> {
+    const result: Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }> = [];
+    for (const v of [...this.visits].reverse()) {
+      const draft = Array.from(this.drafts.values()).find((d) => d.track_code === v.code);
+      const job = draft ? Array.from(this.jobs.values()).find((j) => j.id === draft.job_id) : undefined;
+      result.push({
+        code: v.code,
+        visited_at: v.visited_at,
+        is_bot: v.is_bot,
+        country: v.country,
+        job_title: job?.title,
+        job_company: job?.company,
+      });
+    }
+    return result;
   }
 }
 
@@ -2761,7 +2963,7 @@ export class NeonJobsRepository implements JobsRepository {
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE fetched_at >= NOW() - INTERVAL '24 hours')::int AS new_today,
         COUNT(*) FILTER (WHERE status IN ('applied', 'replied', 'interview', 'offer', 'rejected'))::int AS applied,
-        COUNT(*) FILTER (WHERE status IN ('replied', 'interview', 'offer'))::int AS replies
+        COUNT(*) FILTER (WHERE status = 'replied')::int AS replies
       FROM jobs
     `;
 
@@ -2913,9 +3115,10 @@ export class NeonJobsRepository implements JobsRepository {
         `;
       }
 
+      const trackCode = d.track_code || generateTrackCode();
       const rows = (await sql`
         INSERT INTO outreach_drafts (
-          job_id, kind, subject, body, status, model, edited, question, recipient, created_at, updated_at
+          job_id, kind, subject, body, status, model, edited, question, recipient, track_code, created_at, updated_at
         ) VALUES (
           ${jobId}::uuid,
           ${d.kind},
@@ -2926,6 +3129,7 @@ export class NeonJobsRepository implements JobsRepository {
           false,
           ${d.question || null},
           ${d.recipient || null},
+          ${trackCode},
           NOW(),
           NOW()
         )
@@ -3017,6 +3221,53 @@ export class NeonJobsRepository implements JobsRepository {
     } catch {
       return null;
     }
+  }
+
+  async getDraftById(id: string): Promise<OutreachDraft | null> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      SELECT d.*, j.title AS job_title, j.company AS job_company, j.url AS job_url
+      FROM outreach_drafts d
+      LEFT JOIN jobs j ON d.job_id = j.id
+      WHERE d.id = ${id}::uuid
+      LIMIT 1
+    `) as OutreachDraft[];
+    return rows[0] || null;
+  }
+
+  // One statement, so two clicks or two requests cannot both claim the same draft.
+  // Errors are NOT swallowed here: the caller must know the claim did not happen because of the database.
+  async claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      UPDATE outreach_drafts
+      SET sent_at = NOW(), sent_channel = ${channel}, updated_at = NOW()
+      WHERE id = ${id}::uuid
+        AND sent_at IS NULL
+        AND kind = 'email'
+        AND status = 'approved'
+      RETURNING *
+    `) as OutreachDraft[];
+    return rows[0] || null;
+  }
+
+  async releaseDraftSend(id: string): Promise<void> {
+    const sql = this.resolveSql();
+    await sql`
+      UPDATE outreach_drafts
+      SET sent_at = NULL, sent_channel = NULL, updated_at = NOW()
+      WHERE id = ${id}::uuid AND sent_channel = 'email'
+    `;
+  }
+
+  async countEmailDraftsSentSince(sinceIso: string): Promise<number> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      SELECT COUNT(*)::int AS count
+      FROM outreach_drafts
+      WHERE sent_channel = 'email' AND sent_at >= ${sinceIso}::timestamptz
+    `) as Array<{ count: number }>;
+    return rows[0]?.count ?? 0;
   }
 
   async countDrafts(jobId?: string): Promise<DraftCountsByStatus> {
@@ -3130,6 +3381,177 @@ export class NeonJobsRepository implements JobsRepository {
         daysSinceSent,
       };
     });
+  }
+
+  async recordVisit(code: string, isBot: boolean, country: string | null): Promise<void> {
+    const sql = this.resolveSql();
+    const cleanCountry = country ? country.slice(0, 2).toUpperCase() : null;
+    await sql`
+      INSERT INTO visits (
+        tracking_code, path, is_bot, country, at
+      ) VALUES (
+        ${code},
+        ${`/r/${code}`},
+        ${isBot},
+        ${cleanCountry},
+        NOW()
+      )
+    `;
+  }
+
+  async visitsForJob(jobId: string): Promise<{ count: number; lastVisitAt: string | null }> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT
+          COUNT(v.id)::int AS count,
+          MAX(v.at) AS last_visit_at
+        FROM visits v
+        JOIN outreach_drafts d ON d.track_code = v.tracking_code
+        WHERE d.job_id = ${jobId}::uuid
+          AND v.is_bot = false
+      `) as Array<{ count: number; last_visit_at: string | Date | null }>;
+
+      const first = rows[0];
+      if (!first) return { count: 0, lastVisitAt: null };
+      const lastVisitIso = first.last_visit_at
+        ? first.last_visit_at instanceof Date
+          ? first.last_visit_at.toISOString()
+          : String(first.last_visit_at)
+        : null;
+
+      return {
+        count: first.count || 0,
+        lastVisitAt: lastVisitIso,
+      };
+    } catch {
+      return { count: 0, lastVisitAt: null };
+    }
+  }
+
+  async recordReplyEvent(event: {
+    job_id: string;
+    draft_id?: string | null;
+    match_kind: "exact" | "possible";
+    subject_snippet: string;
+    message_id: string;
+    received_at: string;
+  }): Promise<ReplyEvent | null> {
+    const sql = this.resolveSql();
+    try {
+      const draftIdVal = event.draft_id ? event.draft_id : null;
+      const snippet = event.subject_snippet.slice(0, 120);
+      const rows = (await sql`
+        INSERT INTO reply_events (
+          job_id, draft_id, match_kind, subject_snippet, message_id, received_at, alerted_at, created_at
+        ) VALUES (
+          ${event.job_id}::uuid,
+          ${draftIdVal}::uuid,
+          ${event.match_kind},
+          ${snippet},
+          ${event.message_id},
+          ${event.received_at}::timestamptz,
+          NULL,
+          NOW()
+        )
+        ON CONFLICT (message_id) DO NOTHING
+        RETURNING *
+      `) as ReplyEvent[];
+
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async listUnalertedReplies(): Promise<ReplyEvent[]> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT *
+        FROM reply_events
+        WHERE alerted_at IS NULL
+        ORDER BY received_at ASC
+      `) as ReplyEvent[];
+      return rows;
+    } catch {
+      return [];
+    }
+  }
+
+  async markReplyAlerted(id: string): Promise<boolean> {
+    const sql = this.resolveSql();
+    try {
+      await sql`
+        UPDATE reply_events
+        SET alerted_at = NOW()
+        WHERE id = ${id}::uuid
+      `;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async replyEventsForJob(jobId: string): Promise<ReplyEvent[]> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT *
+        FROM reply_events
+        WHERE job_id = ${jobId}::uuid
+        ORDER BY received_at DESC
+      `) as ReplyEvent[];
+      return rows;
+    } catch {
+      return [];
+    }
+  }
+
+  async getDraftByTrackCode(code: string): Promise<OutreachDraft | null> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT *
+        FROM outreach_drafts
+        WHERE track_code = ${code}
+        LIMIT 1
+      `) as OutreachDraft[];
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async listVisitsWithDrafts(): Promise<Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }>> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        SELECT
+          v.tracking_code AS code,
+          v.at AS visited_at,
+          v.is_bot,
+          v.country,
+          j.title AS job_title,
+          j.company AS job_company
+        FROM visits v
+        LEFT JOIN outreach_drafts d ON d.track_code = v.tracking_code
+        LEFT JOIN jobs j ON d.job_id = j.id
+        ORDER BY v.at DESC
+        LIMIT 100
+      `) as Array<{ code: string; visited_at: string | Date; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }>;
+
+      return rows.map((r) => ({
+        code: r.code,
+        visited_at: r.visited_at instanceof Date ? r.visited_at.toISOString() : String(r.visited_at),
+        is_bot: r.is_bot,
+        country: r.country,
+        job_title: r.job_title,
+        job_company: r.job_company,
+      }));
+    } catch {
+      return [];
+    }
   }
 }
 

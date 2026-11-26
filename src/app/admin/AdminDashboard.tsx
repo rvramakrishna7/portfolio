@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -91,6 +92,60 @@ const PRESET_QUESTIONS = [
   "Tell us about a project you are proud of",
   "What is your biggest strength for this role?",
 ] as const;
+
+// A "possible reply" is only open while the job is still before the reply stage.
+// Once the owner confirms it (status "replied") or moves the job on, the badge goes away.
+const REPLY_STAGE_REACHED = ["replied", "interview", "offer", "rejected"];
+type IconName = "copy" | "mail" | "gmail" | "check" | "send" | "external";
+
+const ICON_PATHS: Record<IconName, string> = {
+  copy: "M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1",
+  mail: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6",
+  gmail: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6M14 3h7v7",
+  check: "M5 12.5l4.5 4.5L19 7.5",
+  send: "M21 3L10 14M21 3l-7 18-4-7-7-4 18-7z",
+  external: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+};
+
+function Ico({ name }: { name: IconName }) {
+  return (
+    <svg
+      className="admin-ico"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  );
+}
+
+function hasOpenPossibleReply(job: { status: string; possibleReply?: unknown }): boolean {
+  return Boolean(job.possibleReply) && !REPLY_STAGE_REACHED.includes(job.status);
+}
+
+function formatRelativeTime(isoString: string): string {
+  try {
+    const diffMs = Date.now() - new Date(isoString).getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  } catch {
+    return "recently";
+  }
+}
 
 export function AdminDashboard() {
   const router = useRouter();
@@ -184,6 +239,22 @@ export function AdminDashboard() {
   const [pipelineJobs, setPipelineJobs] = useState<PipelineJob[]>([]);
   const [isLoadingPipeline, setIsLoadingPipeline] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [isCheckingReplies, setIsCheckingReplies] = useState(false);
+  const [replyCheckToast, setReplyCheckToast] = useState<string | null>(null);
+
+  // Sending approved email drafts from Gmail (owner clicks, two steps)
+  const [sendToast, setSendToast] = useState<string | null>(null);
+  const [confirmSendId, setConfirmSendId] = useState<string | null>(null);
+  const [sendingDraftId, setSendingDraftId] = useState<string | null>(null);
+  const [confirmSendAll, setConfirmSendAll] = useState(false);
+  const [isSendingAll, setIsSendingAll] = useState(false);
+
+  // Visits tab state (Step 2)
+  const [visitsList, setVisitsList] = useState<
+    Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null; job_title?: string; job_company?: string }>
+  >([]);
+  const [isLoadingVisits, setIsLoadingVisits] = useState(false);
+  const [draftVisitsByJob, setDraftVisitsByJob] = useState<Record<string, { count: number; lastVisitAt: string | null }>>({});
 
   // Application answers state (Step 3)
   const [answeringJobId, setAnsweringJobId] = useState<string | null>(null);
@@ -546,6 +617,7 @@ export function AdminDashboard() {
       setDrafts(data.drafts || []);
       if (data.counts) setDraftCounts(data.counts);
       if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
+      if (data.visitsByJob) setDraftVisitsByJob(data.visitsByJob);
     } catch {
       // Ignore
     } finally {
@@ -599,6 +671,31 @@ export function AdminDashboard() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab === "visits") {
+      let ignore = false;
+      const load = async () => {
+        setIsLoadingVisits(true);
+        try {
+          const res = await fetch("/api/admin/visits");
+          if (res.ok) {
+            const data = await res.json();
+            if (!ignore) {
+              setVisitsList(data.visits || []);
+            }
+          }
+        } catch {
+          // Ignore
+        } finally {
+          if (!ignore) setIsLoadingVisits(false);
+        }
+      };
+      load();
+      return () => {
+        ignore = true;
+      };
+    }
+  }, [activeTab]);
+  useEffect(() => {
     if (activeTab === "messages") {
       let ignore = false;
       const load = async () => {
@@ -613,6 +710,7 @@ export function AdminDashboard() {
               setDrafts(data.drafts || []);
               if (data.counts) setDraftCounts(data.counts);
               if (typeof data.answersToday === "number") setAnswersToday(data.answersToday);
+              if (data.visitsByJob) setDraftVisitsByJob(data.visitsByJob);
             }
           }
         } catch {
@@ -829,6 +927,86 @@ export function AdminDashboard() {
     }
   };
 
+  const showSendToast = (message: string) => {
+    setSendToast(message);
+    setTimeout(() => setSendToast(null), 7000);
+  };
+
+  const handleSendDraft = async (
+    draft: OutreachDraft,
+    pending?: { subject: string; body: string; recipient: string }
+  ) => {
+    setConfirmSendId(null);
+    setSendingDraftId(draft.id);
+    try {
+      if (pending) {
+        // Save edits and approve first. If this fails, nothing is sent.
+        const saveRes = await fetch(`/api/admin/drafts/${draft.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "approved",
+            subject: pending.subject,
+            body: pending.body,
+            recipient: pending.recipient,
+          }),
+        });
+        const saveData = await saveRes.json();
+        if (!saveRes.ok) {
+          showSendToast(saveData.error || "Could not save the draft, nothing was sent");
+          return;
+        }
+        setEditingDrafts((prev) => {
+          const next = { ...prev };
+          delete next[draft.id];
+          return next;
+        });
+      }
+      const res = await fetch(`/api/admin/drafts/${draft.id}/send`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        showSendToast(data.error || "Sending failed");
+        // The draft may have changed on the server (already sent, or marked sent after an unknown result)
+        await fetchDrafts(draftFilter, focusedJobId || undefined);
+        return;
+      }
+      setDrafts((prev) => prev.map((d) => (d.id === draft.id ? { ...d, ...data.draft } : d)));
+      if (data.counts) setDraftCounts(data.counts);
+      showSendToast(`Sent to ${data.draft.recipient || "the recipient"}`);
+      fetchJobs();
+    } catch {
+      showSendToast("Sending failed. Check the draft before trying again.");
+      await fetchDrafts(draftFilter, focusedJobId || undefined);
+    } finally {
+      setSendingDraftId(null);
+    }
+  };
+
+  const handleSendAll = async () => {
+    setConfirmSendAll(false);
+    setIsSendingAll(true);
+    try {
+      const res = await fetch("/api/admin/drafts/send-all", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Send all failed");
+      }
+      const parts = [`Sent ${data.sent}`];
+      if (data.failed) parts.push(`${data.failed} failed`);
+      if (data.eligibleLeft) parts.push(`${data.eligibleLeft} still waiting`);
+      if (data.stoppedBecause === "daily_cap") parts.push("daily limit reached");
+      else if (data.stoppedBecause === "not_configured") parts.push("email sending is not configured");
+      else if (data.stoppedBecause) parts.push("stopped early, check the drafts");
+      showSendToast(parts.join(", "));
+    } catch (err: unknown) {
+      showSendToast(err instanceof Error ? err.message : "Send all failed");
+    } finally {
+      await fetchDrafts(draftFilter, focusedJobId || undefined);
+      fetchJobs();
+      setIsSendingAll(false);
+    }
+  };
+
   const handlePipelineStatus = async (
     jobId: string,
     newStatus: "replied" | "interview" | "offer" | "rejected"
@@ -849,6 +1027,38 @@ export function AdminDashboard() {
     } catch {
       // Ignore
     }
+  };
+
+  const handleCheckRepliesNow = async () => {
+    setIsCheckingReplies(true);
+    setReplyCheckToast(null);
+    try {
+      const res = await fetch("/api/admin/replies/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Reply check failed");
+      }
+      setReplyCheckToast(
+        `Checked ${data.checked || 0} messages (${data.exactMatches || 0} exact, ${data.possibleMatches || 0} possible)`
+      );
+      setTimeout(() => setReplyCheckToast(null), 4000);
+      await fetchPipeline();
+      await fetchJobs();
+    } catch (err: unknown) {
+      setReplyCheckToast(err instanceof Error ? err.message : "Reply check failed");
+      setTimeout(() => setReplyCheckToast(null), 4000);
+    } finally {
+      setIsCheckingReplies(false);
+    }
+  };
+
+  const handleDismissPossibleReply = (jobId: string) => {
+    setPipelineJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, possibleReply: null } : j))
+    );
   };
 
   const handleCopyDraft = async (draft: OutreachDraft) => {
@@ -916,6 +1126,9 @@ export function AdminDashboard() {
           <span className="admin-status-badge">Private</span>
         </div>
         <div className="admin-head-actions">
+          <Link className="admin-view-site" href="/">
+            View site
+          </Link>
           <ThemeToggle />
           <button
             className="btn ghost admin-logout-btn"
@@ -945,18 +1158,30 @@ export function AdminDashboard() {
 
         <section className="admin-tabs-section" aria-label="Job Desk views">
           <div className="admin-tabs-nav" role="tablist" aria-label="Dashboard sections">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={`admin-tab-btn${activeTab === tab.key ? " active" : ""}`}
-                onClick={() => setActiveTab(tab.key)}
-                aria-selected={activeTab === tab.key}
-                role="tab"
-              >
-                {tab.label}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const unreadRepliesCount =
+                tab.key === "pipeline"
+                  ? pipelineJobs.filter((p) => hasOpenPossibleReply(p)).length
+                  : 0;
+
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`admin-tab-btn${activeTab === tab.key ? " active" : ""}`}
+                  onClick={() => setActiveTab(tab.key)}
+                  aria-selected={activeTab === tab.key}
+                  role="tab"
+                >
+                  {tab.label}
+                  {unreadRepliesCount > 0 && (
+                    <span className="badge-unread-count" aria-label={`${unreadRepliesCount} unread replies`}>
+                      {unreadRepliesCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           <div className="admin-tab-panel" role="tabpanel" aria-label={currentTab.label}>
@@ -1696,7 +1921,7 @@ export function AdminDashboard() {
             {activeTab === "messages" && (
               <div className="admin-drafts-section" aria-label="Messages review queue">
                 <div className="admin-notice-banner" role="note">
-                  Nothing is sent from here. Copy the text and send it yourself.
+                  Approve a draft, then use Send email to send it from Gmail. Copy and Open in Gmail are there if you prefer to send it yourself.
                 </div>
 
                 <div className="admin-drafts-header-bar">
@@ -1733,6 +1958,27 @@ export function AdminDashboard() {
                   <div className="admin-budget-pill">
                     Drafts: {draftCounts.draft} &middot; Answers today: {answersToday}/20
                   </div>
+                  {draftCounts.approved > 0 &&
+                    (confirmSendAll ? (
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "0.85rem" }}>Send up to 10 approved emails now? The daily limit applies.</span>
+                        <button type="button" className="btn primary btn-sm admin-send-all-confirm-btn" onClick={handleSendAll}>
+                          Confirm
+                        </button>
+                        <button type="button" className="btn ghost btn-sm" onClick={() => setConfirmSendAll(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn ghost btn-sm admin-send-all-btn"
+                        onClick={() => setConfirmSendAll(true)}
+                        disabled={isSendingAll}
+                      >
+                        {isSendingAll ? "Sending..." : "Send all approved"}
+                      </button>
+                    ))}
                 </div>
 
                 {focusedJobId && (
@@ -1745,6 +1991,12 @@ export function AdminDashboard() {
                     >
                       Show all jobs
                     </button>
+                  </div>
+                )}
+
+                {sendToast && (
+                  <div className="admin-toast" role="status" style={{ marginBottom: "16px" }}>
+                    {sendToast}
                   </div>
                 )}
 
@@ -1796,7 +2048,7 @@ export function AdminDashboard() {
                                 <>
                                   <span>•</span>
                                   <a href={group.jobUrl} target="_blank" rel="noopener noreferrer">
-                                    Source listing ↗
+                                    Source listing <Ico name="external" />
                                   </a>
                                 </>
                               )}
@@ -1867,6 +2119,15 @@ export function AdminDashboard() {
                                       <span className="badge-sent">
                                         Sent {new Date(draft.sent_at).toLocaleDateString()}
                                       </span>
+                                    )}
+                                  </div>
+                                  <div className="admin-draft-visits-meta">
+                                    {draftVisitsByJob[draft.job_id]?.count ? (
+                                      <span className="badge-visit-count">
+                                        Visited {draftVisitsByJob[draft.job_id].count} time{draftVisitsByJob[draft.job_id].count === 1 ? "" : "s"}{draftVisitsByJob[draft.job_id].lastVisitAt ? `, last ${formatRelativeTime(draftVisitsByJob[draft.job_id].lastVisitAt!)}` : ""}
+                                      </span>
+                                    ) : (
+                                      <span className="badge-visit-zero">0 visits yet</span>
                                     )}
                                   </div>
                                 </div>
@@ -1974,6 +2235,7 @@ export function AdminDashboard() {
                                     className="btn ghost btn-sm admin-copy-btn"
                                     onClick={() => handleCopyDraft(draft)}
                                   >
+                                    <Ico name="copy" />
                                     Copy
                                   </button>
                                   {isEmail && (
@@ -1981,7 +2243,19 @@ export function AdminDashboard() {
                                       href={`mailto:${encodeURIComponent(currentRecipient || "")}?subject=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}
                                       className="btn ghost btn-sm admin-mailto-btn"
                                     >
+                                      <Ico name="mail" />
                                       Open in mail app
+                                    </a>
+                                  )}
+                                  {isEmail && (currentRecipient || "").trim() !== "" && (
+                                    <a
+                                      href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(currentRecipient || "")}&su=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="btn ghost btn-sm admin-gmail-btn"
+                                    >
+                                      <Ico name="gmail" />
+                                      Open in Gmail
                                     </a>
                                   )}
                                   {!draft.sent_at && (
@@ -1990,9 +2264,49 @@ export function AdminDashboard() {
                                       className="btn ghost btn-sm admin-mark-sent-btn"
                                       onClick={() => handleMarkSent(draft)}
                                     >
+                                      <Ico name="check" />
                                       Mark sent
                                     </button>
                                   )}
+                                  {isEmail &&
+                                    draft.status !== "discarded" &&
+                                    !draft.sent_at &&
+                                    (currentRecipient || "").trim() !== "" &&
+                                    (confirmSendId === draft.id ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="btn primary btn-sm admin-send-confirm-btn"
+                                          onClick={() =>
+                                            handleSendDraft(
+                                              draft,
+                                              draft.status !== "approved" || hasEdits
+                                                ? { subject: currentSubject || "", body: currentBody, recipient: currentRecipient || "" }
+                                                : undefined
+                                            )
+                                          }
+                                        >
+                                          Confirm send to {currentRecipient}
+                                        </button>
+                                        <button type="button" className="btn ghost btn-sm" onClick={() => setConfirmSendId(null)}>
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="btn primary btn-sm admin-send-btn"
+                                        onClick={() => setConfirmSendId(draft.id)}
+                                        disabled={sendingDraftId === draft.id}
+                                      >
+                                        <Ico name="send" />
+                                        {sendingDraftId === draft.id
+                                          ? "Sending..."
+                                          : draft.status !== "approved" || hasEdits
+                                            ? "Approve and send email"
+                                            : "Send email"}
+                                      </button>
+                                    ))}
                                   <button
                                     type="button"
                                     className="btn primary btn-sm admin-approve-btn"
@@ -2058,9 +2372,25 @@ export function AdminDashboard() {
 
             {activeTab === "pipeline" && (
               <div className="admin-pipeline-section" aria-label="Pipeline stages">
-                <div className="admin-notice-banner" role="note">
-                  Nothing is sent from here. Track your applications and outreach manually.
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
+                  <div className="admin-notice-banner" role="note" style={{ flex: 1, margin: 0 }}>
+                    Nothing is sent from here. Track your applications and outreach manually.
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost btn-sm admin-check-replies-btn"
+                    onClick={handleCheckRepliesNow}
+                    disabled={isCheckingReplies}
+                  >
+                    {isCheckingReplies ? "Checking replies..." : "Check replies now"}
+                  </button>
                 </div>
+
+                {replyCheckToast && (
+                  <div className="admin-toast" role="status" style={{ marginBottom: "16px" }}>
+                    {replyCheckToast}
+                  </div>
+                )}
 
                 {isLoadingPipeline && (
                   <div className="admin-loading-indicator">
@@ -2124,10 +2454,39 @@ export function AdminDashboard() {
                                 <span>Sent: {new Date(item.sentAt).toLocaleDateString()}</span>
                                 <span>•</span>
                                 <span>{item.daysSinceSent}d since sent</span>
+                                <span>•</span>
+                                {item.visitCount ? (
+                                  <span className="badge-visit-count">
+                                    Visited {item.visitCount} time{item.visitCount === 1 ? "" : "s"}{item.lastVisitAt ? `, last ${formatRelativeTime(item.lastVisitAt)}` : ""}
+                                  </span>
+                                ) : (
+                                  <span className="badge-visit-zero">0 visits yet</span>
+                                )}
                               </div>
                             </div>
 
                             <div className="admin-pipeline-badges">
+                              {hasOpenPossibleReply(item) && (
+                                <div className="badge-possible-reply" style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "4px" }}>
+                                  <span>Possible reply, confirm</span>
+                                  <button
+                                    type="button"
+                                    className="btn primary btn-sm"
+                                    style={{ padding: "2px 8px", fontSize: "0.75rem" }}
+                                    onClick={() => handlePipelineStatus(item.id, "replied")}
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn ghost btn-sm"
+                                    style={{ padding: "2px 8px", fontSize: "0.75rem" }}
+                                    onClick={() => handleDismissPossibleReply(item.id)}
+                                  >
+                                    Dismiss
+                                  </button>
+                                </div>
+                              )}
                               <span className={`badge-status ${item.status}`}>{item.status}</span>
                               {isFollowUp && <span className="badge-followup">Follow up</span>}
                             </div>
@@ -2174,7 +2533,55 @@ export function AdminDashboard() {
               </div>
             )}
 
-            {activeTab !== "jobs" && activeTab !== "settings" && activeTab !== "messages" && activeTab !== "pipeline" && (
+            {activeTab === "visits" && (
+              <div className="admin-visits-section" aria-label="Privacy-preserving visits">
+                {isLoadingVisits && (
+                  <div className="admin-loading-indicator">
+                    <p>Loading visits...</p>
+                  </div>
+                )}
+
+                {!isLoadingVisits && visitsList.length === 0 && (
+                  <div className="admin-empty-card">
+                    <h3>No visits recorded</h3>
+                    <p>Visits with referral tags and device types will show here with zero cookies or tracking.</p>
+                  </div>
+                )}
+
+                {!isLoadingVisits && visitsList.length > 0 && (
+                  <div className="admin-visits-table-wrapper" style={{ overflowX: "auto" }}>
+                    <table className="admin-visits-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--border)", textAlign: "left" }}>
+                          <th style={{ padding: "8px 12px" }}>Code</th>
+                          <th style={{ padding: "8px 12px" }}>Job / Company</th>
+                          <th style={{ padding: "8px 12px" }}>Time</th>
+                          <th style={{ padding: "8px 12px" }}>Type</th>
+                          <th style={{ padding: "8px 12px" }}>Country</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visitsList.map((v, idx) => (
+                          <tr key={`${v.code}-${v.visited_at}-${idx}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                            <td style={{ padding: "8px 12px", fontFamily: "monospace" }}>/r/{v.code}</td>
+                            <td style={{ padding: "8px 12px" }}>{v.job_title ? `${v.job_title} (${v.job_company || "Unknown"})` : "Unknown draft"}</td>
+                            <td style={{ padding: "8px 12px" }}>{new Date(v.visited_at).toLocaleString()}</td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <span className={`badge-visit-type ${v.is_bot ? "bot" : "human"}`} style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "0.75rem", background: v.is_bot ? "var(--muted)" : "var(--accent)", color: "var(--background)" }}>
+                                {v.is_bot ? "Crawler / Bot" : "Human"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>{v.country || "n/a"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab !== "jobs" && activeTab !== "settings" && activeTab !== "messages" && activeTab !== "pipeline" && activeTab !== "visits" && (
               <div className="admin-empty-card">
                 <h3>{currentTab.emptyHeading}</h3>
                 <p>{currentTab.emptyText}</p>

@@ -115,8 +115,17 @@ export async function GET(req: Request) {
     repo.countAnswersToday(),
   ]);
 
+  const uniqueJobIds = Array.from(new Set(drafts.map((d) => d.job_id)));
+  const jobVisitsList = await Promise.all(
+    uniqueJobIds.map(async (jId) => {
+      const v = await repo.visitsForJob(jId);
+      return [jId, v] as const;
+    })
+  );
+  const visitsByJob = Object.fromEntries(jobVisitsList);
+
   return NextResponse.json(
-    { drafts, counts, answersToday },
+    { drafts, counts, answersToday, visitsByJob },
     { headers: { "X-Robots-Tag": "noindex, nofollow" } }
   );
 }

@@ -2511,10 +2511,13 @@ describe("Rule Engine - 45 Labelled Table-Driven Tests", () => {
 describe("Outreach Drafts repository operations parity", () => {
     it("creates, lists, updates, and counts outreach drafts with parity across repositories", async () => {
       const { InMemoryJobsRepository, NeonJobsRepository } = await import("./repository");
+      type ReplyEvent = import("./repository").ReplyEvent;
       const inMemRepo = new InMemoryJobsRepository();
 
       // Backing store for Neon mock SQL
       const neonDrafts = new Map<string, OutreachDraft>();
+      const neonVisits: Array<{ code: string; visited_at: string; is_bot: boolean; country: string | null }> = [];
+      const neonReplyEvents: ReplyEvent[] = [];
       const mockSql = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
         const sqlText = strings.join("$param");
 
@@ -2536,6 +2539,7 @@ describe("Outreach Drafts repository operations parity", () => {
         if (sqlText.includes("INSERT INTO outreach_drafts")) {
           const id = `neon-draft-${neonDrafts.size + 1}-${Math.random().toString(36).slice(2, 7)}`;
           const nowIso = new Date().toISOString();
+          const trackCode = values[8] ? String(values[8]) : null;
           const draft: OutreachDraft = {
             id,
             job_id: String(values[0]),
@@ -2547,6 +2551,7 @@ describe("Outreach Drafts repository operations parity", () => {
             edited: false,
             question: values[6] ? String(values[6]) : null,
             recipient: values[7] ? String(values[7]) : null,
+            track_code: trackCode,
             sent_at: null,
             sent_channel: null,
             created_at: nowIso,
@@ -2635,6 +2640,72 @@ describe("Outreach Drafts repository operations parity", () => {
               .map((d) => d.job_id)
           );
           return [{ count: todayJobs.size }];
+        }
+
+        if (sqlText.includes("INSERT INTO visits")) {
+          const code = String(values[0]);
+          const isBot = Boolean(values[2]);
+          const country = values[3] ? String(values[3]) : null;
+          neonVisits.push({
+            code,
+            visited_at: new Date().toISOString(),
+            is_bot: isBot,
+            country,
+          });
+          return [];
+        }
+
+        if (sqlText.includes("FROM visits v") && sqlText.includes("COUNT(v.id)::int")) {
+          const jobId = String(values[0]);
+          const jobCodes = new Set(
+            Array.from(neonDrafts.values())
+              .filter((d) => d.job_id === jobId && Boolean(d.track_code))
+              .map((d) => d.track_code!)
+          );
+          const nonBot = neonVisits.filter((v) => jobCodes.has(v.code) && !v.is_bot);
+          const lastVisitAt = nonBot.length > 0 ? nonBot[nonBot.length - 1].visited_at : null;
+          return [{ count: nonBot.length, last_visit_at: lastVisitAt }];
+        }
+
+        if (sqlText.includes("INSERT INTO reply_events")) {
+          const messageId = String(values[4]);
+          const existing = neonReplyEvents.find((e) => e.message_id === messageId);
+          if (existing) return []; // ON CONFLICT DO NOTHING returns no row for a repeated message
+          const newEvent: ReplyEvent = {
+            id: `neon-reply-${neonReplyEvents.length + 1}`,
+            job_id: String(values[0]),
+            draft_id: values[1] ? String(values[1]) : null,
+            match_kind: values[2] as "exact" | "possible",
+            subject_snippet: String(values[3]),
+            message_id: messageId,
+            received_at: String(values[5]),
+            alerted_at: null,
+            created_at: new Date().toISOString(),
+          };
+          neonReplyEvents.push(newEvent);
+          return [newEvent];
+        }
+
+        if (sqlText.includes("FROM reply_events") && sqlText.includes("WHERE alerted_at IS NULL")) {
+          return neonReplyEvents.filter((e) => e.alerted_at === null);
+        }
+
+        if (sqlText.includes("UPDATE reply_events") && sqlText.includes("SET alerted_at = NOW()")) {
+          const id = String(values[0]);
+          const ev = neonReplyEvents.find((e) => e.id === id);
+          if (ev) ev.alerted_at = new Date().toISOString();
+          return [];
+        }
+
+        if (sqlText.includes("FROM reply_events") && sqlText.includes("WHERE job_id = $param::uuid")) {
+          const jobId = String(values[0]);
+          return neonReplyEvents.filter((e) => e.job_id === jobId);
+        }
+
+        if (sqlText.includes("FROM outreach_drafts") && sqlText.includes("WHERE track_code = $param")) {
+          const code = String(values[0]);
+          const draft = Array.from(neonDrafts.values()).find((d) => d.track_code === code);
+          return draft ? [draft] : [];
         }
 
         if (sqlText.includes("FROM jobs j") && sqlText.includes("ORDER BY sent_at DESC")) {
@@ -2772,6 +2843,55 @@ describe("Outreach Drafts repository operations parity", () => {
         const pipeline = await repo.getPipelineJobs();
         expect(pipeline.length).toBeGreaterThanOrEqual(1);
         expect(pipeline.some((p) => p.channels.includes("application_answer"))).toBe(true);
+
+        // 9. Track code and visit logging parity
+        const finalDraftsList = await repo.listDrafts({ jobId: testJobId });
+        expect(finalDraftsList.every((d) => typeof d.track_code === "string" && d.track_code.length === 8)).toBe(true);
+        const testCode = finalDraftsList[0].track_code!;
+        await repo.recordVisit(testCode, false, "US");
+        await repo.recordVisit(testCode, true, "IN"); // bot visit
+
+        const visitsInfo = await repo.visitsForJob(testJobId);
+        expect(visitsInfo.count).toBe(1); // bot excluded
+        expect(visitsInfo.lastVisitAt).toBeTruthy();
+
+        // 10. Reply events parity and idempotency
+        const msgId = `msg-${testJobId}-xyz-123`;
+        const reply1 = await repo.recordReplyEvent({
+          job_id: testJobId,
+          draft_id: finalDraftsList[0].id,
+          match_kind: "exact",
+          subject_snippet: "Thanks for applying, let's talk",
+          message_id: msgId,
+          received_at: new Date().toISOString(),
+        });
+        expect(reply1).not.toBeNull();
+        expect(reply1?.match_kind).toBe("exact");
+
+        // Duplicate message_id is idempotent: nothing new is recorded, so null
+        const reply2 = await repo.recordReplyEvent({
+          job_id: testJobId,
+          match_kind: "exact",
+          subject_snippet: "Duplicate message",
+          message_id: msgId,
+          received_at: new Date().toISOString(),
+        });
+        expect(reply2).toBeNull();
+
+        // listUnalertedReplies
+        const unalerted = await repo.listUnalertedReplies();
+        expect(unalerted.some((u) => u.id === reply1?.id)).toBe(true);
+
+        // markReplyAlerted
+        const alertedOk = await repo.markReplyAlerted(reply1!.id);
+        expect(alertedOk).toBe(true);
+        const unalertedAfter = await repo.listUnalertedReplies();
+        expect(unalertedAfter.some((u) => u.id === reply1?.id)).toBe(false);
+
+        // replyEventsForJob
+        const jobReplies = await repo.replyEventsForJob(testJobId);
+        expect(jobReplies).toHaveLength(1);
+        expect(jobReplies[0].message_id).toBe(msgId);
       }
     });
   });
