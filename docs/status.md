@@ -1,6 +1,6 @@
 # Status: Portfolio site
 
-Current step: Tracked links, visits logging, reply detection and alerts completed on `feat/b3c-bundle`. Ready for merge to `main`.
+Current step: Tracked links, visits logging, reply detection and alerts completed and merged into `main`. Ready for migration and push.
 Locked decisions: see `docs/decision-log.md` (DEC-001 to DEC-016).
 Done since last update:
 - Tracked links, visits logging, reply detection, and Telegram alerts (`feat/b3c-bundle`):
