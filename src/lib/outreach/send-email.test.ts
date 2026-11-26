@@ -282,10 +282,13 @@ describe("email formatting", async () => {
   it("keeps the approved body and adds work links and a signature", () => {
     const parts = buildEmailParts("Hi Asha,\n\nI built a thing. See https://example.test/r/abc23456.\n\nThanks");
     expect(parts.text).toContain("I built a thing. See https://example.test/r/abc23456.");
-    expect(parts.text).toContain("Selected work:");
+    expect(parts.text).toContain("Projects:");
+    expect(parts.text).toContain("Experience:");
+    expect(parts.text).toContain("SonicVocal");
     expect(parts.text).toContain("https://github.com/rvramakrishna7/vouch");
     expect(parts.html).toContain('href="https://example.test/r/abc23456"');
-    expect(parts.html).toContain("Selected work");
+    expect(parts.html).toContain("Projects");
+    expect(parts.html).toContain("Experience");
     expect(parts.html).not.toContain("<img");
   });
 

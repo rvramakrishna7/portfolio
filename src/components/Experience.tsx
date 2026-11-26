@@ -18,10 +18,14 @@ export function Experience() {
             A business shouldn&apos;t lose a customer just because nobody can
             answer the phone.
           </h2>
-          <p className="company-tag">
-            AI and Automation Engineer Intern, Luxecurio Pvt Ltd (SonicVocal).
-            Remote. August 2026 to November 2026.
-          </p>
+          <div className="exp-card">
+            <p className="exp-role">AI and Automation Engineer Intern</p>
+            <p className="exp-company">Luxecurio Pvt Ltd (SonicVocal)</p>
+            <p className="exp-meta">
+              <span className="exp-chip">Remote</span>
+              <span className="exp-chip">August 2026 to November 2026</span>
+            </p>
+          </div>
           <p className="intro">
             Businesses lose opportunities when calls go unanswered because the
             owner or staff are busy. Someone has to pick up, understand the

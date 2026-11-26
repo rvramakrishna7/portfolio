@@ -3882,3 +3882,121 @@ body:has(.admin-login-layout) .totop {
 .admin-draft-card-actions > * {
   max-width: 100%;
 }
+
+/* Colourful footer icons; the owner login lock is clearly visible */
+.footer-links a.footer-icon svg {
+  transition: transform 160ms ease;
+}
+
+.footer-links a.footer-icon:hover svg {
+  transform: scale(1.12);
+}
+
+.footer-links a.footer-github {
+  color: #7c3aed;
+}
+
+.footer-links a.footer-linkedin {
+  color: #0a66c2;
+}
+
+.footer-links a.footer-top {
+  color: #059669;
+}
+
+.footer-links a.footer-owner {
+  color: #d97706;
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .footer-links a.footer-github {
+  color: #a78bfa;
+}
+
+:root[data-theme="dark"] .footer-links a.footer-linkedin {
+  color: #5aa9ff;
+}
+
+:root[data-theme="dark"] .footer-links a.footer-top {
+  color: #34d399;
+}
+
+:root[data-theme="dark"] .footer-links a.footer-owner {
+  color: #fbbf24;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .footer-links a.footer-github {
+    color: #a78bfa;
+  }
+
+  :root:not([data-theme="light"]) .footer-links a.footer-linkedin {
+    color: #5aa9ff;
+  }
+
+  :root:not([data-theme="light"]) .footer-links a.footer-top {
+    color: #34d399;
+  }
+
+  :root:not([data-theme="light"]) .footer-links a.footer-owner {
+    color: #fbbf24;
+  }
+}
+
+/* Visits table type badge */
+.badge-visit-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font: 600 0.74rem var(--sans);
+}
+
+.badge-visit-type.human {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.badge-visit-type.bot {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+/* Experience role card */
+.exp .exp-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 16px 0 20px;
+}
+
+.exp .exp-role {
+  font: 650 1.05rem/1.35 var(--sans);
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0;
+}
+
+.exp .exp-company {
+  font: 600 0.95rem/1.4 var(--sans);
+  color: var(--accent);
+  margin: 4px 0 0;
+}
+
+.exp .exp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.exp .exp-chip {
+  font: 500 0.8rem/1 var(--sans);
+  color: var(--text-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+}

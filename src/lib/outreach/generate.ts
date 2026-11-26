@@ -1,3 +1,4 @@
+import { structureEmailBody } from "./email-structure";
 import { z } from "zod";
 import { StoredJob, JobsRepository, CreateDraftInput, generateTrackCode } from "../jobs/repository";
 import {
@@ -788,7 +789,7 @@ export async function generateOutreachDrafts(
     validDrafts.push({
       kind: "email",
       subject: currentDrafts.email.subject.trim(),
-      body: substituteTrackedUrl(currentDrafts.email.body.trim(), code),
+      body: structureEmailBody(substituteTrackedUrl(currentDrafts.email.body.trim(), code)),
       track_code: code,
       model,
     });

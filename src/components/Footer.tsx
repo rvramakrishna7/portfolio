@@ -9,7 +9,7 @@ export function Footer() {
         </span>
         <span className="footer-links">
           <a
-            className="footer-icon"
+            className="footer-icon footer-github"
             href="https://github.com/rvramakrishna7"
             target="_blank"
             rel="noopener noreferrer"
@@ -24,7 +24,7 @@ export function Footer() {
             </svg>
           </a>
           <a
-            className="footer-icon"
+            className="footer-icon footer-linkedin"
             href="https://www.linkedin.com/in/rvramakrishna"
             target="_blank"
             rel="noopener noreferrer"
@@ -38,7 +38,7 @@ export function Footer() {
               />
             </svg>
           </a>
-          <a className="footer-icon" href="#main" aria-label="Back to top" title="Back to top">
+          <a className="footer-icon footer-top" href="#main" aria-label="Back to top" title="Back to top">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
               <path
                 fill="none"
@@ -47,6 +47,24 @@ export function Footer() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 d="M12 19V5M5 12l7-7 7 7"
+              />
+            </svg>
+          </a>
+          <a
+            className="footer-icon footer-owner"
+            href="/admin/login"
+            rel="nofollow"
+            aria-label="Owner login"
+            title="Owner login"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1zM8 11V8a4 4 0 0 1 8 0v3"
               />
             </svg>
           </a>

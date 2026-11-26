@@ -547,7 +547,7 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
     await expect(page.locator(".admin-pipeline-section")).toBeVisible();
 
     const pipelineNotice = page.locator(".admin-pipeline-section .admin-notice-banner");
-    await expect(pipelineNotice).toContainText("Nothing is sent from here. Track your applications and outreach manually.");
+    await expect(pipelineNotice).toContainText("Track applications and replies here. Use Check replies now after you send outreach.");
 
     const pipelineCard = page.locator(".admin-pipeline-card").first();
     await expect(pipelineCard).toBeVisible();

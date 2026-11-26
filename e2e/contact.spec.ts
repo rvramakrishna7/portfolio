@@ -63,9 +63,10 @@ test.describe("Experience, Skills, and Contact (S5)", () => {
     await expect(exp.locator("#exp-title")).toHaveText(
       "A business shouldn't lose a customer just because nobody can answer the phone."
     );
-    await expect(exp.locator(".company-tag")).toHaveText(
-      "AI and Automation Engineer Intern, Luxecurio Pvt Ltd (SonicVocal). Remote. August 2026 to November 2026."
-    );
+    await expect(exp.locator(".exp-role")).toHaveText("AI and Automation Engineer Intern");
+    await expect(exp.locator(".exp-company")).toHaveText("Luxecurio Pvt Ltd (SonicVocal)");
+    await expect(exp.locator(".exp-chip").nth(0)).toHaveText("Remote");
+    await expect(exp.locator(".exp-chip").nth(1)).toHaveText("August 2026 to November 2026");
     await expect(exp.locator(".intro")).toHaveText(
       "Businesses lose opportunities when calls go unanswered because the owner or staff are busy. Someone has to pick up, understand the request, check the calendar and book the appointment manually."
     );

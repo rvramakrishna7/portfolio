@@ -2374,7 +2374,7 @@ export function AdminDashboard() {
               <div className="admin-pipeline-section" aria-label="Pipeline stages">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
                   <div className="admin-notice-banner" role="note" style={{ flex: 1, margin: 0 }}>
-                    Nothing is sent from here. Track your applications and outreach manually.
+                    Track applications and replies here. Use Check replies now after you send outreach.
                   </div>
                   <button
                     type="button"
@@ -2567,7 +2567,7 @@ export function AdminDashboard() {
                             <td style={{ padding: "8px 12px" }}>{v.job_title ? `${v.job_title} (${v.job_company || "Unknown"})` : "Unknown draft"}</td>
                             <td style={{ padding: "8px 12px" }}>{new Date(v.visited_at).toLocaleString()}</td>
                             <td style={{ padding: "8px 12px" }}>
-                              <span className={`badge-visit-type ${v.is_bot ? "bot" : "human"}`} style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "0.75rem", background: v.is_bot ? "var(--muted)" : "var(--accent)", color: "var(--background)" }}>
+                              <span className={`badge-visit-type ${v.is_bot ? "bot" : "human"}`}>
                                 {v.is_bot ? "Crawler / Bot" : "Human"}
                               </span>
                             </td>

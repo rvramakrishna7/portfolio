@@ -1,7 +1,9 @@
 import { getCandidateProfile } from "../../config/candidate-profile";
+import { structureEmailBody } from "./email-structure";
 
 // Builds the plain text and HTML versions of an outreach email.
-// The draft body stays exactly as approved. Around it we add a short "selected work" block and a signature,
+// The draft body keeps its words; if it is one long block it is split into short paragraphs first.
+// Around it we add an Experience block, a Projects block and a signature,
 // all taken from the candidate profile, so nothing here is invented.
 // The HTML is deliberately simple (no images, no tracking pixel, no buttons): plain looking mail lands in inboxes more often.
 
@@ -11,6 +13,14 @@ const PROJECT_LINKS: Record<string, string> = {
   "restart-options": "https://github.com/rvramakrishna7/restart",
   "mcp-gateway": "https://github.com/rvramakrishna7/urumi-mcp-gateway",
   vouch: "https://github.com/rvramakrishna7/vouch",
+};
+
+const EXPERIENCE = {
+  role: "AI and Automation Engineer Intern",
+  company: "Luxecurio Pvt Ltd (SonicVocal)",
+  period: "Remote, August 2026 to November 2026",
+  summary: "SonicVocal is an AI voice platform for businesses. Its agent answers real phone calls and books appointments.",
+  note: "Some implementation details are confidential. I am happy to walk through my contributions in an interview.",
 };
 
 const OPT_OUT = "If this is not relevant, just reply and I will not write again.";
@@ -46,15 +56,16 @@ function bodyToHtml(body: string): string {
 }
 
 // A small round badge with a symbol, followed by the label. Plain HTML, so it works in every mail client (no images, no SVG).
-function iconLink(url: string, symbol: string, label: string): string {
+function iconLink(url: string, symbol: string, label: string, color: string): string {
   return (
     `<a href="${url}" style="display:inline-block;margin:0 14px 6px 0;color:#374151;font-size:13px;text-decoration:none">` +
-    `<span style="display:inline-block;width:22px;height:22px;line-height:22px;margin-right:6px;border-radius:11px;background:#111827;color:#ffffff;text-align:center;font-size:11px;font-weight:700;font-family:Arial,Helvetica,sans-serif;vertical-align:middle">${symbol}</span>` +
+    `<span style="display:inline-block;width:22px;height:22px;line-height:22px;margin-right:6px;border-radius:11px;background:${color};color:#ffffff;text-align:center;font-size:11px;font-weight:700;font-family:Arial,Helvetica,sans-serif;vertical-align:middle">${symbol}</span>` +
     `<span style="vertical-align:middle">${label}</span></a>`
   );
 }
 
-export function buildEmailParts(body: string): EmailParts {
+export function buildEmailParts(rawBody: string): EmailParts {
+  const body = structureEmailBody(rawBody);
   const profile = getCandidateProfile();
   // Never put a localhost address in a real email (it is broken for the reader and looks suspicious).
   const configured = profile.portfolioUrl.replace(/\/+$/, "");
@@ -64,8 +75,9 @@ export function buildEmailParts(body: string): EmailParts {
     .map((p) => ({ name: p.name, summary: p.summary, metrics: p.metrics, url: PROJECT_LINKS[p.id] }));
 
   const textLines = [body.trim(), ""];
+  textLines.push("Experience:", `- ${EXPERIENCE.role}, ${EXPERIENCE.company}. ${EXPERIENCE.period}.`, `  ${EXPERIENCE.summary}`, "");
   if (projects.length) {
-    textLines.push("Selected work:");
+    textLines.push("Projects:");
     for (const p of projects) textLines.push(`- ${p.name}: ${p.summary} ${p.url}`);
     textLines.push("");
   }
@@ -75,12 +87,25 @@ export function buildEmailParts(body: string): EmailParts {
   const chip = (m: string) =>
     `<span style="display:inline-block;margin:6px 6px 0 0;padding:3px 9px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:12px;line-height:18px">${escapeHtml(m)}</span>`;
 
+  const sectionTitle = (label: string, color: string) =>
+    `<tr><td style="padding:14px 32px 0"><div style="font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:${color};font-weight:700;margin:6px 0 10px">${label}</div></td></tr>`;
+
+  const experienceHtml =
+    sectionTitle("Experience", "#0f766e") +
+    `<tr><td style="padding:0 32px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-left:4px solid #0f766e;border-radius:10px"><tr><td style="padding:14px 16px">` +
+    `<div style="color:#111827;font-weight:700;font-size:15px">${escapeHtml(EXPERIENCE.role)}</div>` +
+    `<div style="color:#0f766e;font-size:13px;font-weight:600;margin-top:2px">${escapeHtml(EXPERIENCE.company)}</div>` +
+    `<div style="color:#6b7280;font-size:12px;margin-top:2px">${escapeHtml(EXPERIENCE.period)}</div>` +
+    `<div style="color:#4b5563;font-size:14px;line-height:21px;margin-top:8px">${escapeHtml(EXPERIENCE.summary)}</div>` +
+    `<div style="color:#6b7280;font-size:12px;line-height:18px;margin-top:6px">${escapeHtml(EXPERIENCE.note)}</div>` +
+    `</td></tr></table></td></tr>`;
+
   const workHtml = projects.length
-    ? `<tr><td style="padding:8px 32px 0"><div style="font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#6b7280;font-weight:700;margin:6px 0 10px">Selected work</div></td></tr>` +
+    ? sectionTitle("Projects", "#2563eb") +
       projects
         .map(
           (p) =>
-            `<tr><td style="padding:0 32px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:10px"><tr><td style="padding:14px 16px">` +
+            `<tr><td style="padding:0 32px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-left:4px solid #2563eb;border-radius:10px"><tr><td style="padding:14px 16px">` +
             `<a href="${p.url}" style="color:#111827;font-weight:700;font-size:15px;text-decoration:none">${escapeHtml(p.name)} <span style="color:#2563eb">&rarr;</span></a>` +
             `<div style="color:#4b5563;font-size:14px;line-height:21px;margin-top:4px">${escapeHtml(p.summary)}</div>` +
             `<div>${p.metrics.slice(0, 2).map(chip).join("")}</div>` +
@@ -96,11 +121,12 @@ export function buildEmailParts(body: string): EmailParts {
     `<div style="font-size:13px;color:#6b7280;margin-top:2px">${escapeHtml(profile.degree)}</div>` +
     `<div style="height:3px;width:44px;background:#2563eb;border-radius:2px;margin-top:14px"></div></td></tr>` +
     `<tr><td style="padding:18px 32px 8px;font-size:15px;line-height:24px;color:#1f2937">${bodyToHtml(body)}</td></tr>` +
+    experienceHtml +
     workHtml +
     `<tr><td style="padding:10px 32px 6px"><a href="${portfolio}" style="display:inline-block;background:#2563eb;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:10px 20px;border-radius:8px">View my portfolio</a></td></tr>` +
     `<tr><td style="padding:16px 32px 24px;font-size:13px;line-height:20px;color:#6b7280">` +
     `${escapeHtml(OPT_OUT)}<br><br>` +
-    `${iconLink(portfolio, "&#8599;", "Portfolio")}${iconLink(profile.linkedinUrl, "in", "LinkedIn")}${iconLink(GITHUB_PROFILE, "&lt;/&gt;", "GitHub")}` +
+    `${iconLink(portfolio, "&#8599;", "Portfolio", "#2563eb")}${iconLink(profile.linkedinUrl, "in", "LinkedIn", "#0a66c2")}${iconLink(GITHUB_PROFILE, "&lt;/&gt;", "GitHub", "#7c3aed")}` +
     `</td></tr>` +
     `</table></div>`;
 
