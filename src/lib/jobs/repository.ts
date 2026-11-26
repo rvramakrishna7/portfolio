@@ -330,7 +330,23 @@ export interface ReplyEvent {
   created_at: string;
 }
 
+export interface ExperienceVerdictInput {
+  forFresher: "yes" | "no" | "unclear";
+  minYears: number | null;
+  filterReason: string | null;
+}
+
+export interface JobToJudge {
+  id: string;
+  title: string;
+  company: string;
+  description: string | null;
+}
+
 export interface JobsRepository {
+  listJobsToJudge?(limit: number): Promise<JobToJudge[]>;
+  countJobsToJudge?(): Promise<number>;
+  applyExperienceVerdict?(id: string, verdict: ExperienceVerdictInput): Promise<boolean>;
   upsertJob(job: NormalizedJob, triaged: TriagedJobResult): Promise<"new" | "existing">;
   hasJobWithUrl?(url: string): Promise<boolean>;
   getJob(source: string, sourceId: string): Promise<StoredJob | null>;
@@ -1220,6 +1236,47 @@ export class InMemoryJobsRepository implements JobsRepository {
         job.status = status;
         return true;
       }
+    }
+    return false;
+  }
+
+  private judgeCandidates(): StoredJob[] {
+    const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+    return Array.from(this.jobs.values()).filter((j) => {
+      const raw = (typeof j.raw === "object" && j.raw !== null ? j.raw : {}) as Record<string, unknown>;
+      const when = new Date(j.posted_at || j.fetched_at).getTime();
+      return (
+        !j.filter_reason &&
+        ["new", "shortlisted"].includes(j.status) &&
+        j.exp_class !== "senior" &&
+        !raw.expJudge &&
+        (j.description || "").length >= 200 &&
+        when >= cutoff
+      );
+    });
+  }
+
+  async listJobsToJudge(limit: number): Promise<JobToJudge[]> {
+    return this.judgeCandidates()
+      .slice(0, limit)
+      .map((j) => ({ id: j.id, title: j.title, company: j.company, description: j.description }));
+  }
+
+  async countJobsToJudge(): Promise<number> {
+    return this.judgeCandidates().length;
+  }
+
+  async applyExperienceVerdict(id: string, verdict: ExperienceVerdictInput): Promise<boolean> {
+    for (const j of this.jobs.values()) {
+      if (j.id !== id) continue;
+      const raw = (typeof j.raw === "object" && j.raw !== null ? j.raw : {}) as Record<string, unknown>;
+      j.raw = { ...raw, expJudge: { verdict: verdict.forFresher, at: new Date().toISOString() } };
+      if (verdict.filterReason) {
+        j.exp_class = "senior";
+        j.exp_min_years = verdict.minYears ?? j.exp_min_years;
+        j.filter_reason = verdict.filterReason;
+      }
+      return true;
     }
     return false;
   }
@@ -3035,6 +3092,54 @@ export class NeonJobsRepository implements JobsRepository {
     const sql = getSql();
     const res = await sql`
       UPDATE jobs SET status = ${status} WHERE id = ${id} RETURNING id
+    `;
+    return res.length > 0;
+  }
+
+  async listJobsToJudge(limit: number): Promise<JobToJudge[]> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      SELECT id, title, company, description
+      FROM jobs
+      WHERE filter_reason IS NULL
+        AND status IN ('new', 'shortlisted')
+        AND exp_class <> 'senior'
+        AND COALESCE(raw->>'expJudge', '') = ''
+        AND LENGTH(COALESCE(description, '')) >= 200
+        AND COALESCE(posted_at, fetched_at) >= NOW() - INTERVAL '14 days'
+      ORDER BY CASE WHEN COALESCE(inbound_source, '') <> '' THEN 0 ELSE 1 END, match_score DESC NULLS LAST, fetched_at DESC
+      LIMIT ${limit}
+    `) as JobToJudge[];
+    return rows;
+  }
+
+  async countJobsToJudge(): Promise<number> {
+    const sql = this.resolveSql();
+    const rows = (await sql`
+      SELECT COUNT(*)::int AS n
+      FROM jobs
+      WHERE filter_reason IS NULL
+        AND status IN ('new', 'shortlisted')
+        AND exp_class <> 'senior'
+        AND COALESCE(raw->>'expJudge', '') = ''
+        AND LENGTH(COALESCE(description, '')) >= 200
+        AND COALESCE(posted_at, fetched_at) >= NOW() - INTERVAL '14 days'
+    `) as Array<{ n: number }>;
+    return Number(rows[0]?.n || 0);
+  }
+
+  async applyExperienceVerdict(id: string, verdict: ExperienceVerdictInput): Promise<boolean> {
+    const sql = this.resolveSql();
+    const marker = JSON.stringify({ expJudge: { verdict: verdict.forFresher, at: new Date().toISOString() } });
+    const hide = verdict.filterReason ? 1 : 0;
+    const res = await sql`
+      UPDATE jobs
+      SET raw = COALESCE(raw, '{}'::jsonb) || ${marker}::jsonb,
+          exp_class = CASE WHEN ${hide} = 1 THEN 'senior' ELSE exp_class END,
+          exp_min_years = CASE WHEN ${hide} = 1 THEN COALESCE(${verdict.minYears}::int, exp_min_years) ELSE exp_min_years END,
+          filter_reason = CASE WHEN ${hide} = 1 THEN ${verdict.filterReason} ELSE filter_reason END
+      WHERE id = ${id}::uuid
+      RETURNING id
     `;
     return res.length > 0;
   }

@@ -241,6 +241,7 @@ export function AdminDashboard() {
   const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
   const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [isRechecking, setIsRechecking] = useState(false);
   const [outreachError, setOutreachError] = useState<string | null>(null);
   const [editingDrafts, setEditingDrafts] = useState<
     Record<string, { subject?: string; body: string; recipient?: string }>
@@ -375,6 +376,29 @@ export function AdminDashboard() {
       ignore = true;
     };
   }, [viewFilter, sourceFilter, searchQuery, maxAgeDays, reasonFilter]);
+
+  // The AI reads saved jobs that are still visible and hides the ones that need experience
+  const handleRecheckExperience = async () => {
+    setIsRechecking(true);
+    try {
+      const res = await fetch("/api/admin/jobs/recheck-experience", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "AI check failed");
+      setCopyToast(
+        data.error && data.checked === 0
+          ? `AI check problem: ${data.error}`
+          : `AI read ${data.checked} jobs and hid ${data.hidden} that need experience. ${
+              data.remaining > 0 ? `${data.remaining} left, click again.` : "All done."
+            }`
+      );
+      await fetchJobs();
+    } catch (err: unknown) {
+      setCopyToast(err instanceof Error ? err.message : "AI check failed");
+    } finally {
+      setIsRechecking(false);
+      setTimeout(() => setCopyToast(null), 8000);
+    }
+  };
 
   const handleRunSearch = async () => {
     if (isSearching) return;
@@ -1320,6 +1344,14 @@ export function AdminDashboard() {
                     disabled={isSearching}
                   >
                     {isSearching ? "Searching..." : "Run search now"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={handleRecheckExperience}
+                    disabled={isRechecking}
+                  >
+                    {isRechecking ? "AI is reading..." : "Re-check experience with AI"}
                   </button>
                 </div>
               )}

@@ -10,6 +10,7 @@ import {
   hasRealDescription,
   getMissingDescriptionNote,
 } from "../jobs/classify";
+import { judgeExperience, experienceFilterReason } from "./experience-judge";
 import {
   LlmProvider,
   LlmTriageOutput,
@@ -61,7 +62,8 @@ export async function triageJobWithLlm(
   ruleScore: ScoreMatchResult,
   provider: LlmProvider,
   llmCallsMade: { count: number },
-  existingData?: ExistingJobTriageData | null
+  existingData?: ExistingJobTriageData | null,
+  opts?: { judgeExperience?: boolean }
 ): Promise<TriagedJobResult> {
   let expClass = ruleExp.expClass;
   let expMinYears = ruleExp.minYears;
@@ -174,6 +176,32 @@ ${job.description.slice(0, 1500)}`;
     triagedAt = triagedAt || new Date().toISOString();
   }
 
+  // Second opinion on experience: the LLM reads the whole description and may only move a job to "senior".
+  let aiExperienceReason: string | undefined;
+  const needsJudge =
+    Boolean(opts?.judgeExperience) &&
+    !isNonEnglish &&
+    !alreadyTriaged &&
+    !isNonEngineering &&
+    !isAlreadyFiltered &&
+    !isStale &&
+    expClass !== "senior" &&
+    hasRealDescription(job.description, job.title, job.company) &&
+    llmCallsMade.count < MAX_LLM_CALLS_PER_RUN;
+  if (needsJudge) {
+    llmCallsMade.count++;
+    triagedAt = new Date().toISOString();
+    const verdict = await judgeExperience(
+      { title: job.title, company: job.company, description: job.description },
+      provider
+    );
+    if (verdict && verdict.forFresher === "no") {
+      expClass = "senior";
+      expMinYears = verdict.minYears ?? expMinYears;
+      aiExperienceReason = experienceFilterReason(verdict);
+    }
+  }
+
   // Recalculate match score with refined attributes
   const finalScoreResult = scoreMatch({
     title: job.title,
@@ -192,7 +220,7 @@ ${job.description.slice(0, 1500)}`;
   } else if (jobAge > MAX_AGE_DAYS_DEFAULT) {
     filterReason = `posted ${jobAge} days ago`;
   } else if (expClass === "senior") {
-    filterReason = ruleExp.reason || "Senior experience required";
+    filterReason = aiExperienceReason || ruleExp.reason || "Senior experience required";
   } else if (geoEligibility === "restricted") {
     filterReason = geoReason || "Geographically restricted";
   } else if (geoEligibility === "unclear") {

@@ -240,6 +240,32 @@ Rendez-vous sur https://moncompte.fr pour régler la facture.
       expect(res.jobs[0].filter_reason).toMatch(/^Experience too high/);
     });
 
+    it("lets the AI hide an inbox post the rules called entry level", async () => {
+      const provider = {
+        async completeJson(_opts: unknown, schema: { parse: (v: unknown) => unknown }) {
+          return schema.parse({ forFresher: "no", minYears: 3, reason: "Wants 3 years of Java" });
+        },
+      } as never;
+      const res = await processAndIngestInboundCandidates(
+        [
+          {
+            title: "Associate Software Engineer",
+            company: "Acme Corp",
+            location: "Remote",
+            url: "https://acme.com/jobs/assoc",
+            description:
+              "Associate Software Engineer role. You will build Java services with the platform team. Strong Java knowledge and delivery of production systems is expected.",
+            source: "telegram",
+            isRemote: true,
+          },
+        ],
+        repo,
+        { provider }
+      );
+      expect(res.filtered).toBe(1);
+      expect(res.jobs[0].filter_reason).toBe("Experience too high (AI): Wants 3 years of Java");
+    });
+
     it("keeps an entry level inbox post", async () => {
       const res = await processAndIngestInboundCandidates(
         [

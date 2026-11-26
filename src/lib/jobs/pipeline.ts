@@ -728,7 +728,9 @@ export async function stepJobSearch(
               ? getMissingDescriptionNote(job.source)
               : `${job.title} at ${job.company}`;
 
-          const isAmbiguous = ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear";
+          // Jobs that would reach Inbox or Shortlist also go to the LLM, which reads the description for experience
+          const isAmbiguous =
+            ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear" || (!filterReason && ruleExp.expClass !== "senior");
 
           const triaged: TriagedJobResult = {
             expClass: ruleExp.expClass,
@@ -852,7 +854,9 @@ export async function stepJobSearch(
                 ? getMissingDescriptionNote(job.source)
                 : job.title;
 
-            const isAmbiguous = ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear";
+            // Jobs that would reach Inbox or Shortlist also go to the LLM, which reads the description for experience
+            const isAmbiguous =
+              ruleExp.expClass === "unclear" || ruleGeo.geo === "unclear" || (!filterReason && ruleExp.expClass !== "senior");
 
             const triaged: TriagedJobResult = {
               expClass: ruleExp.expClass,
@@ -931,7 +935,8 @@ export async function stepJobSearch(
         item.ruleScore,
         llmProvider,
         llmCallsMade,
-        existingData
+        existingData,
+        { judgeExperience: true }
       );
       if (llmCallsMade.count > beforeCount && llmProvider.lastError) {
         state.stats.llmErrors++;

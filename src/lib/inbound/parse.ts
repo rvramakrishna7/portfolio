@@ -7,6 +7,9 @@ import { isExcludedTitle, OWNER_PROFILE, MAX_AGE_DAYS_DEFAULT } from "../../conf
 import { NormalizedJob } from "../jobs/types";
 import { JobsRepository, StoredJob } from "../jobs/repository";
 import { TriagedJobResult } from "../llm/triage";
+import type { LlmProvider } from "../llm/types";
+import { GroqProvider } from "../llm/groq";
+import { judgeExperience, experienceFilterReason } from "../llm/experience-judge";
 
 export interface InboundCandidate {
   title: string;
@@ -830,7 +833,7 @@ function extractSingleCandidate(
 export async function processAndIngestInboundCandidates(
   candidates: InboundCandidate[],
   repo: JobsRepository,
-  options?: { maxAgeDays?: number }
+  options?: { maxAgeDays?: number; provider?: LlmProvider }
 ): Promise<IngestResult> {
   const result: IngestResult = {
     added: 0,
@@ -840,6 +843,8 @@ export async function processAndIngestInboundCandidates(
   };
 
   const maxAgeDays = options?.maxAgeDays ?? MAX_AGE_DAYS_DEFAULT;
+  // The LLM reads every inbox post for experience. Without a key (tests, local) the rules decide alone.
+  const judge: LlmProvider | null = options?.provider ?? (process.env.GROQ_API_KEY ? new GroqProvider() : null);
   const seenUrls = new Set<string>();
 
   for (const candidate of candidates) {
@@ -927,8 +932,25 @@ export async function processAndIngestInboundCandidates(
     // Non-inbox jobs undergo full experience, geo, and score filtering
     // Inbox jobs skip the geo/onsite filter and low match score filter
     // An experienced role is not for a fresher, in the inbox as well. Say why, so the reply names the reason.
-    if (isInbox && !filterReason && ruleExp.expClass === "senior") {
+    let expClass = ruleExp.expClass;
+    let expMinYears = ruleExp.minYears;
+    if (isInbox && !filterReason && expClass === "senior") {
       filterReason = `Experience too high: ${ruleExp.reason || "senior experience required"}`;
+    }
+    if (isInbox && !filterReason && judge && normalizedJob.description.trim().length >= 80) {
+      try {
+        const verdict = await judgeExperience(
+          { title: normalizedJob.title, company: normalizedJob.company, description: normalizedJob.description },
+          judge
+        );
+        if (verdict && verdict.forFresher === "no") {
+          expClass = "senior";
+          expMinYears = verdict.minYears ?? expMinYears;
+          filterReason = experienceFilterReason(verdict);
+        }
+      } catch {
+        // A failed AI call keeps the rule result
+      }
     }
 
     if (!isInbox) {
@@ -946,8 +968,8 @@ export async function processAndIngestInboundCandidates(
     }
 
     const triaged: TriagedJobResult = {
-      expClass: ruleExp.expClass,
-      expMinYears: ruleExp.minYears,
+      expClass,
+      expMinYears,
       geoEligibility: ruleGeo.geo,
       geoReason: ruleGeo.reason,
       summaryLine: `${normalizedJob.title} at ${normalizedJob.company}`,
