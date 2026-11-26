@@ -926,6 +926,11 @@ export async function processAndIngestInboundCandidates(
 
     // Non-inbox jobs undergo full experience, geo, and score filtering
     // Inbox jobs skip the geo/onsite filter and low match score filter
+    // An experienced role is not for a fresher, in the inbox as well. Say why, so the reply names the reason.
+    if (isInbox && !filterReason && ruleExp.expClass === "senior") {
+      filterReason = `Experience too high: ${ruleExp.reason || "senior experience required"}`;
+    }
+
     if (!isInbox) {
       if (!filterReason && ruleExp.expClass === "senior") {
         filterReason = ruleExp.reason || "Senior experience required";

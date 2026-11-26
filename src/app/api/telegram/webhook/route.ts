@@ -127,8 +127,15 @@ export async function POST(req: NextRequest) {
   if (botToken && chatId) {
     if (ingestRes.added > 0) {
       for (const job of ingestRes.jobs) {
-        const statusLabel = job.filter_reason
-          ? `filtered: ${job.filter_reason}`
+        const reason = job.filter_reason || "";
+        const statusLabel = reason.startsWith("Experience too high")
+          ? `NOT FOR YOU, hidden from Inbox. ${reason}`
+          : reason
+          ? `filtered: ${reason}`
+          : job.exp_class === "fresher" || job.exp_class === "junior"
+          ? "Fits you: entry level"
+          : job.exp_class === "unclear"
+          ? "Check the experience needed, the post does not say"
           : job.status;
         await sendTelegramReply(
           botToken,

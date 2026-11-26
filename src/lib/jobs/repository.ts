@@ -847,6 +847,13 @@ export class InMemoryJobsRepository implements JobsRepository {
 
       const job = candidates[i];
       let newFilterReason: string | null = null;
+      if (job.filter_reason && job.filter_reason.startsWith("Experience too high")) continue;
+      if (!job.filter_reason && job.exp_class === "senior") {
+        job.filter_reason = `Experience too high: ${job.exp_min_years ? `${job.exp_min_years}+ years required` : "senior experience required"}`;
+        this.jobs.set(`${job.source}:${job.source_id}`, job);
+        updated++;
+        continue;
+      }
 
       // Import detectLanguage & isExcludedTitle dynamically or pass
       const { detectLanguage } = await import("./language");
@@ -2613,6 +2620,14 @@ export class NeonJobsRepository implements JobsRepository {
 
     const sql = getSql();
     try {
+      // Saved inbox posts that need experience: hide them and say why
+      await sql`
+        UPDATE jobs
+        SET filter_reason = 'Experience too high: ' || COALESCE(exp_min_years::text || '+ years required', 'senior experience required')
+        WHERE (COALESCE(inbound_source, '') IN ('telegram', 'whatsapp', 'pasted', 'paste') OR source IN ('telegram', 'whatsapp', 'pasted', 'paste'))
+          AND exp_class = 'senior'
+          AND filter_reason IS NULL
+      `;
       const rows = (await sql`
         SELECT id, title, description, filter_reason
         FROM jobs
@@ -2621,6 +2636,7 @@ export class NeonJobsRepository implements JobsRepository {
           AND filter_reason NOT LIKE 'Non-English%'
           AND filter_reason NOT LIKE 'Excluded title%'
           AND filter_reason NOT LIKE 'Stale posting%'
+          AND filter_reason NOT LIKE 'Experience too high%'
       `) as Array<{
         id: string;
         title: string;

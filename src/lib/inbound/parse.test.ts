@@ -221,6 +221,44 @@ Rendez-vous sur https://moncompte.fr pour régler la facture.
       expect(res.jobs[0].company).toBe("Acme Corp");
     });
 
+    it("hides an inbox post that asks for experience and names the reason", async () => {
+      const res = await processAndIngestInboundCandidates(
+        [
+          {
+            title: "Java Developer",
+            company: "Acme Corp",
+            location: "Remote",
+            url: "https://acme.com/jobs/exp",
+            description: "We need 2+ - 5 years of experience building Java services.",
+            source: "telegram",
+            isRemote: true,
+          },
+        ],
+        repo
+      );
+      expect(res.filtered).toBe(1);
+      expect(res.jobs[0].filter_reason).toMatch(/^Experience too high/);
+    });
+
+    it("keeps an entry level inbox post", async () => {
+      const res = await processAndIngestInboundCandidates(
+        [
+          {
+            title: "Software Engineer Intern",
+            company: "Acme Corp",
+            location: "Remote",
+            url: "https://acme.com/jobs/intern",
+            description: "Freshers welcome. 0-1 years experience. React and Node.js.",
+            source: "telegram",
+            isRemote: true,
+          },
+        ],
+        repo
+      );
+      expect(res.filtered).toBe(0);
+      expect(res.jobs[0].filter_reason).toBeNull();
+    });
+
     it("filters out senior roles per pipeline rules", async () => {
       const candidates = [
         {
