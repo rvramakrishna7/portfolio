@@ -21,12 +21,15 @@ export async function POST(req: Request) {
 
   const repo = getJobsRepository();
   let mode: unknown;
+  let track = true;
   try {
-    mode = ((await req.json()) as { mode?: unknown })?.mode;
+    const sent = (await req.json()) as { mode?: unknown; track?: unknown };
+    mode = sent?.mode;
+    track = sent?.track !== false;
   } catch {
     mode = undefined;
   }
-  const summary = await sendAllApproved(repo, { mode: parseEmailMode(mode) });
+  const summary = await sendAllApproved(repo, { mode: parseEmailMode(mode), track });
   const counts = await repo.countDrafts();
   return NextResponse.json({ ...summary, counts }, { headers: HEADERS });
 }

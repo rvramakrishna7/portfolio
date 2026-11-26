@@ -12,7 +12,7 @@ describe("Email modes (src/lib/outreach/email-format.ts)", () => {
   });
 
   it("plain mode is text only, with a direct portfolio link and no tracked redirect", () => {
-    const parts = buildEmailParts(BODY, "plain");
+    const parts = buildEmailParts(BODY, "plain", { track: false });
     expect(parts.html).toBeUndefined();
     expect(parts.text).not.toMatch(/\/r\/abc23456/);
     expect(parts.text).toContain("https://rramakrishna.vercel.app");
@@ -22,7 +22,7 @@ describe("Email modes (src/lib/outreach/email-format.ts)", () => {
   });
 
   it("light mode adds a signature with icon links but no card sections", () => {
-    const parts = buildEmailParts(BODY, "light");
+    const parts = buildEmailParts(BODY, "light", { track: false });
     expect(parts.html).toBeDefined();
     expect(parts.html).toContain("LinkedIn");
     expect(parts.html).toContain("GitHub");
@@ -30,6 +30,11 @@ describe("Email modes (src/lib/outreach/email-format.ts)", () => {
     expect(parts.html).not.toContain("View my portfolio");
     expect(parts.html).not.toContain("Projects");
     expect(parts.html).not.toMatch(/\/r\/abc23456/);
+  });
+
+  it("keeps the tracked link in plain and light mode by default so visits can be counted", () => {
+    expect(buildEmailParts(BODY, "plain").text).toMatch(/\/r\/abc23456/);
+    expect(buildEmailParts(BODY, "light").html).toMatch(/\/r\/abc23456/);
   });
 
   it("full mode keeps the tracked link, Experience and Projects", () => {

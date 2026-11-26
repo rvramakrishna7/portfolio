@@ -323,6 +323,20 @@ https://www.linkedin.com/posts/someone-bmw-hiring?utm_source=share`;
       expect(candidates[0].url).toBe("https://forms.cloud.microsoft/r/xyz123");
     });
 
+    it("keeps each job with its own link when jobs follow each other with no blank line", () => {
+      const text = `Aixel is Hiring SDE Intern 📍
+Fill this form :
+https://docs.google.com/forms/d/e/AAA/viewform?usp=sf_link
+BMW is Hiring Software Engineers (6 months - 1yr )
+Application form:
+https://forms.cloud.microsoft/r/BBB?utm_source=share`;
+      const candidates = parseInboundCandidates(text, { source: "telegram" });
+      expect(candidates.map((c) => [c.company, c.url])).toEqual([
+        ["Aixel", "https://docs.google.com/forms/d/e/AAA/viewform?usp=sf_link"],
+        ["BMW", "https://forms.cloud.microsoft/r/BBB"],
+      ]);
+    });
+
     it("Sample d: Aixel SDE Intern with docs.google.com/forms", () => {
       const text = `Aixel is Hiring SDE Intern 📍
 

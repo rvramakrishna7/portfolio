@@ -75,15 +75,20 @@ function iconLink(url: string, symbol: string, label: string, color: string): st
   );
 }
 
-export function buildEmailParts(rawBody: string, mode: EmailMode = "full"): EmailParts {
+export interface EmailBuildOptions {
+  // Keep the tracked /r/ link so the owner can see who opened the portfolio (default). Off: use the direct link, which is slightly less likely to look like a redirect to a filter.
+  track?: boolean;
+}
+
+export function buildEmailParts(rawBody: string, mode: EmailMode = "full", options: EmailBuildOptions = {}): EmailParts {
   const profile = getCandidateProfile();
   // Never put a localhost address in a real email (it is broken for the reader and looks suspicious).
   const configured = profile.portfolioUrl.replace(/\/+$/, "");
   const portfolio = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(configured) ? "https://rramakrishna.vercel.app" : configured;
 
   if (mode !== "full") {
-    // First-contact modes use the direct portfolio link instead of the tracked redirect (a redirect from an unknown domain looks like a spam signal).
-    const direct = structureEmailBody(rawBody).replace(/https?:\/\/[^\s]+\/r\/[A-Za-z0-9_-]+/g, portfolio);
+    const structured = structureEmailBody(rawBody);
+    const direct = options.track === false ? structured.replace(/https?:\/\/[^\s]+\/r\/[A-Za-z0-9_-]+/g, portfolio) : structured;
     const roleLine = `${EXPERIENCE.role}, ${EXPERIENCE.company}`;
     const text = [direct.trim(), "", OPT_OUT, "", profile.name, roleLine, `Portfolio: ${portfolio}`, `LinkedIn: ${profile.linkedinUrl}`, `GitHub: ${GITHUB_PROFILE}`].join("\n");
     if (mode === "plain") return { text };

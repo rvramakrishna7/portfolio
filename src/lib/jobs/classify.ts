@@ -247,7 +247,7 @@ export function classifyExperience(
   // Check ranges first: e.g. "3-5 years", "2 to 4 years", "0-1 years", "0-2 years"
   // The lower bound represents the minimum required experience.
   const rangeRegex =
-    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:-|to)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:years?|yrs?)['\u2019]?(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering|hands-on|prior|practical|direct|related|commercial))*\s*(?:experience|exp)?/gi;
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:-|\u2013|\u2014|to)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*\+?\s*(?:years?|yrs?)['\u2019]?(?:\s+of)?(?:\s+(?:relevant|professional|industry|working|software|engineering|hands-on|prior|practical|direct|related|commercial))*\s*(?:experience|exp)?/gi;
 
   let rangeMatch: RegExpExecArray | null;
   while ((rangeMatch = rangeRegex.exec(descLower)) !== null) {

@@ -42,6 +42,12 @@ export interface StoredJob {
   inbound_source?: string | null;
 }
 
+export interface JobContactInput {
+  email: string;
+  name?: string | null;
+  linkedinUrl?: string | null;
+}
+
 export interface SourceStatusInfo {
   status: "ok" | "pending" | "error" | "skipped" | string;
   count: number;
@@ -239,6 +245,7 @@ export interface OutreachDraft {
   recipient?: string | null;
   sent_at?: string | null;
   sent_channel?: string | null;
+  bounced_at?: string | null;
   track_code?: string | null;
   created_at: string;
   updated_at: string;
@@ -291,6 +298,11 @@ export interface PipelineJob {
   daysSinceSent: number;
   visitCount?: number;
   lastVisitAt?: string | null;
+  // Filled in by the pipeline API from the job and its latest sent email draft
+  contactName?: string | null;
+  recipient?: string | null;
+  subject?: string | null;
+  bouncedAt?: string | null;
   possibleReply?: {
     id: string;
     snippet: string;
@@ -342,6 +354,8 @@ export interface JobsRepository {
     id: string,
     status: "new" | "shortlisted" | "skipped" | "applied" | "replied" | "interview" | "offer" | "rejected"
   ): Promise<boolean>;
+  // Remembers the person chosen for a job: email, optional LinkedIn link, and name (stored in raw.contactName so drafts can greet them).
+  setJobContact(id: string, contact: JobContactInput): Promise<boolean>;
   createSearchRun(): Promise<string>;
   updateSearchRun(
     id: string,
@@ -356,7 +370,9 @@ export interface JobsRepository {
   createDrafts(jobId: string, drafts: CreateDraftInput[]): Promise<OutreachDraft[]>;
   listDrafts(opts?: ListDraftsOptions): Promise<OutreachDraft[]>;
   updateDraft(id: string, updates: UpdateDraftInput): Promise<OutreachDraft | null>;
-  markDraftSent(id: string, channel: string): Promise<OutreachDraft | null>;
+  // sentAt: the real send time when it is known (for example from the Gmail Sent folder). Default is now.
+  markDraftSent(id: string, channel: string, sentAt?: string): Promise<OutreachDraft | null>;
+  markDraftBounced(id: string): Promise<boolean>;
   getDraftById(id: string): Promise<OutreachDraft | null>;
   // Atomic: only an approved, unsent email draft can be claimed, and only once. Returns null otherwise.
   claimDraftForSend(id: string, channel: string): Promise<OutreachDraft | null>;
@@ -1201,6 +1217,19 @@ export class InMemoryJobsRepository implements JobsRepository {
     return false;
   }
 
+  async setJobContact(id: string, contact: JobContactInput): Promise<boolean> {
+    for (const job of this.jobs.values()) {
+      if (job.id === id || job.source_id === id) {
+        job.contact_email = contact.email;
+        if (contact.linkedinUrl) job.contact_url = contact.linkedinUrl;
+        const raw = (typeof job.raw === "object" && job.raw !== null ? job.raw : {}) as Record<string, unknown>;
+        job.raw = { ...raw, contactName: contact.name || null };
+        return true;
+      }
+    }
+    return false;
+  }
+
   async createSearchRun(): Promise<string> {
     const id = `run-${this.runs.size + 1}`;
     this.runs.set(id, {
@@ -1368,17 +1397,24 @@ export class InMemoryJobsRepository implements JobsRepository {
     return { ...draft };
   }
 
-  async markDraftSent(id: string, channel: string): Promise<OutreachDraft | null> {
+  async markDraftSent(id: string, channel: string, sentAt?: string): Promise<OutreachDraft | null> {
     const draft = this.drafts.get(id);
     if (!draft) return null;
 
-    draft.sent_at = new Date().toISOString();
+    draft.sent_at = sentAt || new Date().toISOString();
     draft.sent_channel = channel;
     if (draft.status === "draft") {
       draft.status = "approved";
     }
     draft.updated_at = new Date().toISOString();
     return { ...draft };
+  }
+
+  async markDraftBounced(id: string): Promise<boolean> {
+    const draft = this.drafts.get(id);
+    if (!draft || draft.bounced_at) return false;
+    draft.bounced_at = new Date().toISOString();
+    return true;
   }
 
   async getDraftById(id: string): Promise<OutreachDraft | null> {
@@ -2987,6 +3023,20 @@ export class NeonJobsRepository implements JobsRepository {
     return res.length > 0;
   }
 
+  async setJobContact(id: string, contact: JobContactInput): Promise<boolean> {
+    const sql = this.resolveSql();
+    const patch = JSON.stringify({ contactName: contact.name || null });
+    const res = await sql`
+      UPDATE jobs
+      SET contact_email = ${contact.email},
+          contact_url = COALESCE(${contact.linkedinUrl || null}, contact_url),
+          raw = COALESCE(raw, '{}'::jsonb) || ${patch}::jsonb
+      WHERE id = ${id}::uuid
+      RETURNING id
+    `;
+    return res.length > 0;
+  }
+
   async createSearchRun(): Promise<string> {
     const sql = getSql();
     const rows = await sql`
@@ -3203,13 +3253,28 @@ export class NeonJobsRepository implements JobsRepository {
     }
   }
 
-  async markDraftSent(id: string, channel: string): Promise<OutreachDraft | null> {
+  async markDraftBounced(id: string): Promise<boolean> {
+    const sql = this.resolveSql();
+    try {
+      const rows = (await sql`
+        UPDATE outreach_drafts
+        SET bounced_at = NOW(), updated_at = NOW()
+        WHERE id = ${id}::uuid AND bounced_at IS NULL
+        RETURNING id
+      `) as { id: string }[];
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async markDraftSent(id: string, channel: string, sentAt?: string): Promise<OutreachDraft | null> {
     const sql = this.resolveSql();
     try {
       const rows = (await sql`
         UPDATE outreach_drafts
         SET
-          sent_at = NOW(),
+          sent_at = COALESCE(${sentAt || null}::timestamptz, NOW()),
           sent_channel = ${channel},
           status = CASE WHEN status = 'draft' THEN 'approved' ELSE status END,
           updated_at = NOW()

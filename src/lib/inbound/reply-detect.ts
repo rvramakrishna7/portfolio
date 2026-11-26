@@ -3,12 +3,14 @@ import { simpleParser, ParsedMail } from "mailparser";
 import { JobsRepository, getJobsRepository, OutreachDraft } from "../jobs/repository";
 import { sendTelegramAlert } from "../alerts/telegram";
 import { sanitizeErrorMessage } from "../jobs/sources/linkedin-apify";
+import { bounceCandidates, isBounceMessage } from "./bounce";
 
 export interface CheckRepliesResult {
   checked: number;
   exactMatches: number;
   possibleMatches: number;
   alertsSent: number;
+  bounces?: number;
   error?: string;
 }
 
@@ -18,6 +20,8 @@ export interface InboundReplyMessage {
   subject: string;
   textSnippet: string;
   receivedAt: string;
+  // Longer text, only kept for mail server notices so the failed address can be found
+  bounceText?: string;
 }
 
 const LINKEDIN_SENDER_PATTERN = /^[^@\s]+@(?:[a-z0-9-]+\.)*linkedin\.com$/i;
@@ -46,16 +50,17 @@ export async function matchRepliesAndAlert(
   options?: {
     telegramFetchFn?: typeof fetch;
   }
-): Promise<{ exactMatches: number; possibleMatches: number; alertsSent: number }> {
+): Promise<{ exactMatches: number; possibleMatches: number; alertsSent: number; bounces: number }> {
   let exactMatches = 0;
   let possibleMatches = 0;
+  let bounces = 0;
 
   // 1. Fetch all sent drafts
   // The Neon repository returns only the newest 100 drafts by default, which would hide replies to older mail
   const allDrafts = await repo.listDrafts({ limit: 1000 });
   const sentDrafts = allDrafts.filter((d) => Boolean(d.sent_at));
   if (sentDrafts.length === 0) {
-    return { exactMatches: 0, possibleMatches: 0, alertsSent: 0 };
+    return { exactMatches: 0, possibleMatches: 0, alertsSent: 0, bounces: 0 };
   }
 
   // Map of recipient address (lowercased) -> sentDraft
@@ -83,6 +88,15 @@ export async function matchRepliesAndAlert(
   for (const msg of messages) {
     const cleanFrom = msg.fromAddress.trim().toLowerCase();
     const snippet = (msg.subject || "").trim().slice(0, 120);
+
+    // (0) A delivery failure notice: mark the draft that went to the failed address
+    if (isBounceMessage(cleanFrom, msg.subject)) {
+      for (const address of bounceCandidates(`${msg.subject} ${msg.bounceText || msg.textSnippet}`)) {
+        const failed = sentByRecipient.get(address);
+        if (failed && (await repo.markDraftBounced(failed.id))) bounces++;
+      }
+      continue;
+    }
 
     // (a) Exact match: sender address equals a stored drafts.recipient
     const exactDraft = sentByRecipient.get(cleanFrom);
@@ -150,7 +164,7 @@ export async function matchRepliesAndAlert(
     }
   }
 
-  return { exactMatches, possibleMatches, alertsSent };
+  return { exactMatches, possibleMatches, alertsSent, bounces };
 }
 
 /**
@@ -227,6 +241,17 @@ export async function checkRepliesAndAlert(
         }
       }
 
+      // Delivery failure notices from the mail server
+      for (const daemon of ["mailer-daemon", "postmaster"]) {
+        if (Date.now() >= deadline - 800) break;
+        try {
+          const found = await client.search({ since: fourteenDaysAgo, from: daemon }, { uid: true });
+          for (const uid of found || []) targeted.add(uid);
+        } catch {
+          // Ignore
+        }
+      }
+
       // 2. The newest messages overall, for LinkedIn message notifications
       const recent = (await client.search({ since: fourteenDaysAgo }, { uid: true })) || [];
       const newestFirst = recent.slice(-maxMessages).reverse().filter((uid) => !targeted.has(uid));
@@ -252,7 +277,9 @@ export async function checkRepliesAndAlert(
           const parsed: ParsedMail = await simpleParser(download.content);
           const fromAddress = parsed.from?.value?.[0]?.address || "";
           const subject = parsed.subject || "";
-          const textSnippet = (parsed.text || "").slice(0, 500);
+          const fullText = parsed.text || "";
+          const textSnippet = fullText.slice(0, 500);
+          const bounceText = isBounceMessage(fromAddress, subject) ? fullText.slice(0, 6000) : undefined;
           const messageId = parsed.messageId || `imap-msg-${uid}`;
           const receivedAt = parsed.date ? parsed.date.toISOString() : new Date().toISOString();
 
@@ -262,6 +289,7 @@ export async function checkRepliesAndAlert(
             subject,
             textSnippet,
             receivedAt,
+            bounceText,
           });
         } catch {
           // Skip unparsable email
@@ -287,6 +315,7 @@ export async function checkRepliesAndAlert(
         exactMatches: matchRes.exactMatches,
         possibleMatches: matchRes.possibleMatches,
         alertsSent: matchRes.alertsSent,
+        bounces: matchRes.bounces,
       };
     } finally {
       lock.release();

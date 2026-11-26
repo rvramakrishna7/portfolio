@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import ContactFinder from "./ContactFinder";
+import AnswerStudio from "./AnswerStudio";
 import { buildEmailParts, type EmailMode } from "@/lib/outreach/email-format";
 import {
   StoredJob,
@@ -26,7 +27,7 @@ interface StatItem {
   hint: string;
 }
 
-type TabKey = "jobs" | "pipeline" | "messages" | "visits" | "settings";
+type TabKey = "jobs" | "pipeline" | "messages" | "answers" | "visits" | "settings";
 type ViewFilter = "shortlist" | "maybe" | "inbox" | "hidden" | "all";
 
 interface TabConfig {
@@ -58,6 +59,13 @@ const TABS: TabConfig[] = [
     description: "Recruiter contacts and correspondence drafts",
     emptyHeading: "No messages to review",
     emptyText: "Owner-approved email drafts and correspondence logs will be managed here.",
+  },
+  {
+    key: "answers",
+    label: "Answers",
+    description: "Paste a job description and questions, get human-sounding answers",
+    emptyHeading: "No answers yet",
+    emptyText: "Paste a job description and your questions to get answers.",
   },
   {
     key: "visits",
@@ -247,6 +255,7 @@ export function AdminDashboard() {
   // Sending approved email drafts from Gmail (owner clicks, two steps)
   const [sendToast, setSendToast] = useState<string | null>(null);
   const [emailMode, setEmailMode] = useState<EmailMode>("plain");
+  const [trackVisits, setTrackVisits] = useState(true);
   const [confirmSendId, setConfirmSendId] = useState<string | null>(null);
   const [sendingDraftId, setSendingDraftId] = useState<string | null>(null);
   const [confirmSendAll, setConfirmSendAll] = useState(false);
@@ -804,7 +813,38 @@ export function AdminDashboard() {
   };
 
   // Puts a checked contact email on this job's open email draft. With no draft yet, copies it so it can be pasted later.
-  const handleUseContact = async (jobId: string, email: string): Promise<string> => {
+  const handleUseContact = async (
+    jobId: string,
+    contact: { email: string; name: string | null; linkedinUrl: string | null }
+  ): Promise<string> => {
+    const { email, name } = contact;
+    // Remember the person on the job so every new draft greets them and fills the recipient.
+    try {
+      const saved = await fetch(`/api/admin/jobs/${jobId}/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, name, linkedinUrl: contact.linkedinUrl }),
+      });
+      if (!saved.ok) {
+        const err = await saved.json().catch(() => ({}));
+        return err.error || "Could not save the contact";
+      }
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? {
+                ...j,
+                contact_email: email,
+                contact_url: contact.linkedinUrl || j.contact_url,
+                raw: { ...((j.raw as Record<string, unknown> | null) || {}), contactName: name },
+              }
+            : j
+        )
+      );
+    } catch {
+      return "Could not save the contact";
+    }
+    const who = name ? `${name} (${email})` : email;
     const draft = drafts.find(
       (d) => d.job_id === jobId && d.kind === "email" && !d.sent_at && d.status !== "discarded"
     );
@@ -814,7 +854,7 @@ export function AdminDashboard() {
       } catch {
         // clipboard may be blocked; the message below still names the address
       }
-      return `${email} copied. Click Draft outreach for this job, then paste it into Recipient.`;
+      return `Saved ${who}. Click Draft outreach: the email will greet ${name ? name.split(" ")[0] : "them"} and use this address.`;
     }
     try {
       const res = await fetch(`/api/admin/drafts/${draft.id}`, {
@@ -830,7 +870,7 @@ export function AdminDashboard() {
         delete next[draft.id];
         return next;
       });
-      return `${email} added as the recipient. Open the Messages tab to review and send.`;
+      return `Saved ${who} and set it as the recipient. Click Draft outreach again to greet ${name ? name.split(" ")[0] : "them"} by name.`;
     } catch (err: unknown) {
       return err instanceof Error ? err.message : "Could not save the recipient";
     }
@@ -1001,7 +1041,7 @@ export function AdminDashboard() {
       const res = await fetch(`/api/admin/drafts/${draft.id}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: emailMode }),
+        body: JSON.stringify({ mode: emailMode, track: trackVisits }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1029,7 +1069,7 @@ export function AdminDashboard() {
       const res = await fetch("/api/admin/drafts/send-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: emailMode }),
+        body: JSON.stringify({ mode: emailMode, track: trackVisits }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1088,7 +1128,9 @@ export function AdminDashboard() {
       setReplyCheckToast(
         data.error
           ? `Reply check problem: ${data.error}`
-          : `Checked ${data.checked || 0} messages (${data.exactMatches || 0} exact, ${data.possibleMatches || 0} possible)`
+          : `Checked ${data.checked || 0} messages (${data.exactMatches || 0} exact, ${data.possibleMatches || 0} possible)${
+              data.sentMarked ? `. Found ${data.sentMarked} sent from Gmail` : ""
+            }${data.bounces ? `. ${data.bounces} email${data.bounces === 1 ? "" : "s"} bounced (address not found)` : ""}${data.sentError ? `. Sent folder problem: ${data.sentError}` : ""}`
       );
       setTimeout(() => setReplyCheckToast(null), data.error ? 10000 : 5000);
       await fetchPipeline();
@@ -1134,7 +1176,7 @@ export function AdminDashboard() {
   // Copies the email the way it will look in the chosen mode, so it can be pasted into Gmail compose.
   const handleCopyFormatted = async (draft: OutreachDraft) => {
     const body = editingDrafts[draft.id]?.body !== undefined ? editingDrafts[draft.id].body : draft.body;
-    const parts = buildEmailParts(body, emailMode);
+    const parts = buildEmailParts(body, emailMode, { track: trackVisits });
     try {
       if (parts.html && typeof ClipboardItem !== "undefined") {
         await navigator.clipboard.write([
@@ -1618,6 +1660,25 @@ export function AdminDashboard() {
                             </p>
                           )}
 
+                          <details className="admin-job-details">
+                            <summary>Read full description</summary>
+                            <div className="admin-job-details-body">
+                              <p className="admin-job-details-link">
+                                Apply link:{" "}
+                                <a href={job.apply_url || job.url} target="_blank" rel="noopener noreferrer">
+                                  {job.apply_url || job.url}
+                                </a>
+                              </p>
+                              <div className="admin-job-description">{job.description || "No description was saved for this job."}</div>
+                              {job.inbound_raw && job.inbound_raw.trim() !== (job.description || "").trim() && (
+                                <details className="admin-job-details-raw">
+                                  <summary>Original message</summary>
+                                  <div className="admin-job-description">{job.inbound_raw}</div>
+                                </details>
+                              )}
+                            </div>
+                          </details>
+
                           {job.skills && job.skills.length > 0 && (
                             <div className="admin-job-skills">
                               {job.skills.map((s) => (
@@ -2012,10 +2073,14 @@ export function AdminDashboard() {
                     <option value="full">Full: card with Experience and Projects</option>
                   </select>
                   <span className="admin-mode-hint">
-                    {emailMode === "plain" && "Plain text with one direct portfolio link. Least likely to reach spam."}
+                    {emailMode === "plain" && "Plain text, no styling. Least likely to reach spam."}
                     {emailMode === "light" && "Plain text style, plus a signature with icon links."}
                     {emailMode === "full" && "The complete card. Better after someone has replied."}
                   </span>
+                  <label className="admin-mode-check">
+                    <input type="checkbox" checked={trackVisits} onChange={(e) => setTrackVisits(e.target.checked)} />
+                    Track portfolio visits
+                  </label>
                 </div>
 
                 <div className="admin-drafts-header-bar">
@@ -2342,15 +2407,6 @@ export function AdminDashboard() {
                                       Copy formatted
                                     </button>
                                   )}
-                                  {isEmail && (
-                                    <a
-                                      href={`mailto:${encodeURIComponent(currentRecipient || "")}?subject=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}
-                                      className="btn ghost btn-sm admin-mailto-btn"
-                                    >
-                                      <Ico name="mail" />
-                                      Open in mail app
-                                    </a>
-                                  )}
                                   {isEmail && (currentRecipient || "").trim() !== "" && (
                                     <a
                                       href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(currentRecipient || "")}&su=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}
@@ -2550,6 +2606,18 @@ export function AdminDashboard() {
                                   {item.title} ↗
                                 </a>
                               </h3>
+                              {(item.recipient || item.contactName) && (
+                                <p className="admin-pipeline-to">
+                                  To: {item.contactName ? `${item.contactName} ` : ""}
+                                  {item.recipient ? `<${item.recipient}>` : ""}
+                                  {item.subject ? ` · ${item.subject}` : ""}
+                                </p>
+                              )}
+                              {item.bouncedAt && (
+                                <p className="admin-pipeline-bounce" role="status">
+                                  Bounced: this address does not exist. Find another contact for this job.
+                                </p>
+                              )}
                               <div className="admin-pipeline-meta">
                                 <span>{item.company}</span>
                                 <span>•</span>
@@ -2636,6 +2704,8 @@ export function AdminDashboard() {
                 )}
               </div>
             )}
+
+            {activeTab === "answers" && <AnswerStudio />}
 
             {activeTab === "visits" && (
               <div className="admin-visits-section" aria-label="Privacy-preserving visits">

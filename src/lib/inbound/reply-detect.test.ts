@@ -43,6 +43,40 @@ describe("Reply Detection and Alerts (src/lib/inbound/reply-detect.ts)", () => {
     await repo.markDraftSent(drafts[0].id, "email");
   });
 
+  it("marks the draft as bounced when the mail server reports the address missing", async () => {
+    const res = await matchRepliesAndAlert(
+      [
+        {
+          messageId: "bounce-1",
+          fromAddress: "mailer-daemon@googlemail.com",
+          subject: "Delivery Status Notification (Failure)",
+          textSnippet: "",
+          bounceText: "Address not found. Your message wasn't delivered to recruiter@acmecorp.com",
+          receivedAt: new Date().toISOString(),
+        },
+      ],
+      repo
+    );
+    expect(res.bounces).toBe(1);
+    expect(res.exactMatches).toBe(0);
+    const drafts = await repo.listDrafts({ limit: 10 });
+    expect(drafts[0].bounced_at).toBeTruthy();
+    // A second notice for the same draft is not counted again
+    const again = await matchRepliesAndAlert(
+      [
+        {
+          messageId: "bounce-2",
+          fromAddress: "mailer-daemon@googlemail.com",
+          subject: "Undeliverable",
+          textSnippet: "recruiter@acmecorp.com",
+          receivedAt: new Date().toISOString(),
+        },
+      ],
+      repo
+    );
+    expect(again.bounces).toBe(0);
+  });
+
   it("isLinkedInMessagingOrAccepted correctly identifies messaging notification and excludes job alerts", () => {
     expect(
       isLinkedInMessagingOrAccepted(

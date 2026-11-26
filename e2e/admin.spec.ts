@@ -119,7 +119,7 @@ test.describe("Admin Area & Job Desk Foundation (J1)", () => {
 
     // Tabs work and switch views
     const tabs = page.locator(".admin-tab-btn");
-    await expect(tabs).toHaveCount(5);
+    await expect(tabs).toHaveCount(6);
     await expect(page.locator(".admin-panel-header h2")).toHaveText("Jobs");
 
     // Click Pipeline tab

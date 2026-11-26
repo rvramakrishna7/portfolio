@@ -528,11 +528,13 @@ test.describe("Admin Outreach Drafts Review Queue (Bundle B1)", () => {
     await expect(recipientInput).toBeVisible();
     await expect(recipientInput).toHaveValue("recruiter@globaltech.com");
 
-    const mailtoBtn = emailCard.locator("a.admin-mailto-btn");
-    await expect(mailtoBtn).toBeVisible();
-    const href = await mailtoBtn.getAttribute("href");
-    expect(href).toContain("mailto:recruiter%40globaltech.com");
-    expect(href).toContain("subject=");
+    // The mail-app link was removed (it did nothing without a mail app). Gmail compose is the way to send by hand.
+    await expect(emailCard.locator("a.admin-mailto-btn")).toHaveCount(0);
+    const gmailBtn = emailCard.locator("a.admin-gmail-btn");
+    await expect(gmailBtn).toBeVisible();
+    const href = await gmailBtn.getAttribute("href");
+    expect(href).toContain("to=recruiter%40globaltech.com");
+    expect(href).toContain("su=");
 
     // 6. Mark sent button
     const markSentBtn = emailCard.locator("button.admin-mark-sent-btn");

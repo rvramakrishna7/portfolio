@@ -59,7 +59,11 @@ export async function POST(req: Request) {
 
   try {
     const generated = await generateOutreachDrafts(job, repo);
-    const drafts = await repo.createDrafts(job.id, generated.drafts);
+    // A contact chosen with Find contact becomes the email recipient automatically.
+    const withRecipient = generated.drafts.map((d) =>
+      d.kind === "email" && !d.recipient && job.contact_email ? { ...d, recipient: job.contact_email } : d
+    );
+    const drafts = await repo.createDrafts(job.id, withRecipient);
     const [counts, answersToday] = await Promise.all([
       repo.countDrafts(),
       repo.countAnswersToday(),

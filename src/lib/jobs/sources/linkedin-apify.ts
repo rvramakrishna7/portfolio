@@ -74,6 +74,27 @@ export interface ApifyLinkedInItem {
 }
 
 /**
+ * Decides whether an Apify LinkedIn item is remote.
+ * true: the item says remote. false: it says hybrid or on-site. undefined: nothing says either way.
+ */
+export function inferRemote(
+  raw: { isRemote?: boolean; workplaceType?: string },
+  title: string,
+  location: string,
+  description: string
+): boolean | undefined {
+  const wt = String(raw.workplaceType || "").toLowerCase();
+  if (/hybrid|on-?site|in-?office|office/.test(wt) && !/remote/.test(wt)) return false;
+  if (raw.isRemote === true || /remote/.test(wt)) return true;
+  if (/\b(hybrid|on-?site)\b/i.test(`${title} ${location}`)) return false;
+  if (/remote/i.test(location)) return true;
+  const strongRemote = /\b(fully\s+remote|100%\s+remote|remote[-\s]first|work\s+from\s+home|remote\s+position|this\s+is\s+a\s+remote)\b/i;
+  if (strongRemote.test(description)) return true;
+  if (/\b(hybrid|on-?site|work\s+from\s+office|in[-\s]office|office[-\s]based)\b/i.test(description)) return false;
+  return undefined;
+}
+
+/**
  * Parses raw items returned by Apify LinkedIn actor dataset into NormalizedJob array.
  */
 export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
@@ -148,15 +169,9 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
 
     const jobUrl = url || (raw.urn ? `https://www.linkedin.com/feed/update/${raw.urn}` : `https://www.linkedin.com/jobs/view/${sourceId}`);
 
-    // The Apify LinkedIn search is configured as remote-only (workplaceType: "remote"),
-    // so items default to remote unless explicitly overridden.
-    const isRemote =
-      raw.isRemote === true ||
-      raw.workplaceType === "remote" ||
-      /remote/i.test(String(raw.workplaceType || "")) ||
-      /remote/i.test(location) ||
-      /remote/i.test(description) ||
-      true;
+    // Remote only on positive evidence. The actor is asked for remote jobs but still returns hybrid and on-site ones
+    // (LinkedIn shows "(Hybrid)" next to the city). When nothing says remote, the job stays unconfirmed so it goes to Maybe.
+    const isRemote = inferRemote(raw, title, location, description);
 
     jobs.push({
       source: "linkedin",
@@ -170,7 +185,7 @@ export function parseApifyLinkedInItems(data: unknown): NormalizedJob[] {
       postedAt,
       tags: ["linkedin"],
       isRemote,
-      workplaceType: raw.workplaceType || (isRemote ? "remote" : undefined),
+      workplaceType: raw.workplaceType || (isRemote ? "remote" : isRemote === false ? "on-site" : undefined),
     });
   }
 

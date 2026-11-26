@@ -79,7 +79,8 @@ describe("LinkedIn Apify Adapter (src/lib/jobs/sources/linkedin-apify.ts)", () =
       "https://in.linkedin.com/jobs/view/software-engineer-iii-java-springboot-aws-at-jpmorganchase-4493288054"
     );
     expect(jobs[0].postedAt).toBe(new Date("2026-11-21").toISOString());
-    expect(jobs[0].isRemote).toBe(true);
+    // Nothing in this item says remote, so it stays unconfirmed (goes to Maybe) instead of being assumed remote.
+    expect(jobs[0].isRemote).toBeUndefined();
   });
 
   it("fails open when APIFY_API_TOKEN is missing", async () => {

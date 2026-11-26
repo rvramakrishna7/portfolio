@@ -2583,12 +2583,13 @@ describe("Outreach Drafts repository operations parity", () => {
           return list;
         }
 
-        if (sqlText.includes("UPDATE outreach_drafts") && sqlText.includes("sent_at = NOW()")) {
-          const channel = String(values[0]);
+        if (sqlText.includes("UPDATE outreach_drafts") && sqlText.includes("sent_at = COALESCE(")) {
+          // values: [sentAt or null, channel, id]
+          const channel = String(values[1]);
           const id = String(values[values.length - 1]);
           const draft = neonDrafts.get(id);
           if (!draft) return [];
-          draft.sent_at = new Date().toISOString();
+          draft.sent_at = values[0] ? String(values[0]) : new Date().toISOString();
           draft.sent_channel = channel;
           if (draft.status === "draft") {
             draft.status = "approved";

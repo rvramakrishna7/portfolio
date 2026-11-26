@@ -13,6 +13,10 @@ export interface HunterContact {
   department: string | null;
   confidence: number | null;
   linkedin: string | null;
+  // What Hunter already knows: its own check of the address, and how many public web pages show it.
+  // sources 0 means the address is a pattern guess, not something seen on the web.
+  verification: VerifyStatus | null;
+  sources: number;
 }
 
 export type VerifyStatus = "valid" | "invalid" | "accept_all" | "webmail" | "disposable" | "unknown";
@@ -81,6 +85,12 @@ async function call<T>(
   }
 }
 
+const KNOWN_STATUSES: VerifyStatus[] = ["valid", "invalid", "accept_all", "webmail", "disposable", "unknown"];
+
+function toVerifyStatus(value: unknown): VerifyStatus | null {
+  return KNOWN_STATUSES.includes(value as VerifyStatus) ? (value as VerifyStatus) : null;
+}
+
 function toContact(e: Record<string, unknown>): HunterContact | null {
   const email = typeof e.value === "string" ? e.value : typeof e.email === "string" ? e.email : null;
   if (!email) return null;
@@ -91,8 +101,10 @@ function toContact(e: Record<string, unknown>): HunterContact | null {
     lastName: str(e.last_name),
     position: str(e.position),
     department: str(e.department),
-    confidence: typeof e.confidence === "number" ? e.confidence : null,
+    confidence: typeof e.confidence === "number" ? e.confidence : typeof e.score === "number" ? e.score : null,
     linkedin: str(e.linkedin),
+    verification: toVerifyStatus((e.verification as { status?: unknown } | null | undefined)?.status),
+    sources: Array.isArray(e.sources) ? e.sources.length : 0,
   };
 }
 
@@ -160,8 +172,7 @@ export async function verifyEmail(
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) return { ok: false, error: "Invalid email format" };
   return call("/email-verifier", { email: addr }, opts.fetchImpl ?? fetch, opts.env ?? process.env, (json) => {
     const d = (json as { data?: { status?: string; score?: number } })?.data;
-    const known: VerifyStatus[] = ["valid", "invalid", "accept_all", "webmail", "disposable", "unknown"];
-    const status = known.includes(d?.status as VerifyStatus) ? (d?.status as VerifyStatus) : "unknown";
+    const status = toVerifyStatus(d?.status) ?? "unknown";
     return { status, score: typeof d?.score === "number" ? d.score : null };
   });
 }

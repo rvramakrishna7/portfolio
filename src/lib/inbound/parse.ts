@@ -480,7 +480,10 @@ export function splitIntoJobSegments(text: string): string[] {
   for (const line of lines) {
     const trimmed = line.trim();
     const isWaHeader = waHeaderRegex.test(trimmed);
-    const isNewHiringLine = prevLineWasBlank && isHiringRegex.test(trimmed);
+    // A new "X is hiring Y" line starts a new job after a blank line, or right after a link
+    // (so a job's own link can never be handed to the next job in the same message).
+    const currentHasUrl = currentBlock.some((l) => /https?:\/\//i.test(l));
+    const isNewHiringLine = (prevLineWasBlank || currentHasUrl) && isHiringRegex.test(trimmed);
 
     if ((isWaHeader || isNewHiringLine) && currentBlock.length > 0) {
       const blockStr = currentBlock.join("\n").trim();

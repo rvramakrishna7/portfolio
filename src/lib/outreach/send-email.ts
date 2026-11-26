@@ -125,6 +125,8 @@ export interface SendOptions {
   cap?: number;
   // How the email looks. Plain by default: the safest choice for a first message to a company.
   mode?: EmailMode;
+  // Keep the tracked portfolio link (default true).
+  track?: boolean;
 }
 
 export async function sendDraftEmail(repo: JobsRepository, draftId: string, options: SendOptions = {}): Promise<SendResult> {
@@ -167,7 +169,7 @@ export async function sendDraftEmail(repo: JobsRepository, draftId: string, opti
   if (!claimed) return { ok: false, code: "already_sent", message: "This draft was already sent." };
 
   try {
-    const parts = buildEmailParts(draft.body, options.mode ?? "plain");
+    const parts = buildEmailParts(draft.body, options.mode ?? "plain", { track: options.track !== false });
     await setup.transport.sendMail({
       from: setup.fromName ? `"${setup.fromName}" <${setup.from}>` : setup.from,
       replyTo: setup.from,
@@ -234,7 +236,7 @@ export async function sendAllApproved(
 
   for (const draft of queue) {
     if (summary.sent + summary.failed >= maxPerRequest) break;
-    const result = await sendDraftEmail(repo, draft.id, { setup, now, cap, mode: options.mode });
+    const result = await sendDraftEmail(repo, draft.id, { setup, now, cap, mode: options.mode, track: options.track });
     if (result.ok) {
       summary.sent++;
       summary.eligibleLeft--;

@@ -33,12 +33,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const repo = getJobsRepository();
   let mode: unknown;
+  let track = true;
   try {
-    mode = ((await req.json()) as { mode?: unknown })?.mode;
+    const sent = (await req.json()) as { mode?: unknown; track?: unknown };
+    mode = sent?.mode;
+    track = sent?.track !== false;
   } catch {
     mode = undefined;
   }
-  const result = await sendDraftEmail(repo, id, { mode: parseEmailMode(mode) });
+  const result = await sendDraftEmail(repo, id, { mode: parseEmailMode(mode), track });
 
   if (!result.ok) {
     return NextResponse.json({ error: result.message, code: result.code }, { status: STATUS_BY_CODE[result.code], headers: HEADERS });

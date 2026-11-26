@@ -8,6 +8,8 @@ interface Contact {
   lastName: string | null;
   position: string | null;
   confidence: number | null;
+  verification?: string | null;
+  sources?: number;
 }
 
 type Verification = { status: string; score: number | null };
@@ -16,8 +18,8 @@ interface Props {
   jobId: string;
   company: string;
   postingEmail?: string | null;
-  // Called with a checked email. Returns a message to show the owner (for example "Added to your draft").
-  onUse: (jobId: string, email: string) => Promise<string>;
+  // Called with a checked contact. Returns a message to show the owner (for example "Added to your draft").
+  onUse: (jobId: string, contact: { email: string; name: string | null; linkedinUrl: string | null }) => Promise<string>;
 }
 
 const LINKEDIN_PEOPLE =
@@ -25,7 +27,7 @@ const LINKEDIN_PEOPLE =
 
 const STATUS_TEXT: Record<string, string> = {
   valid: "Verified",
-  accept_all: "Company accepts all mail (cannot confirm this person)",
+  accept_all: "This company's mail server accepts any address, so nobody can confirm it",
   invalid: "Invalid, do not send",
   webmail: "Personal webmail address",
   disposable: "Disposable address, do not send",
@@ -53,6 +55,8 @@ export default function ContactFinder({ jobId, company, postingEmail, onUse }: P
   const [error, setError] = useState<string | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
   const [checked, setChecked] = useState<Record<string, Verification>>({});
+  // An address nobody can confirm. Needs a second, deliberate click.
+  const [risky, setRisky] = useState<{ email: string; name: string | null; why: string } | null>(null);
 
   const linkedinHref = `${LINKEDIN_PEOPLE}${encodeURIComponent(`recruiter ${company}`)}`;
 
@@ -87,25 +91,48 @@ export default function ContactFinder({ jobId, company, postingEmail, onUse }: P
   }
 
   // Checks the address first so a bad one never reaches the draft and hurts the Gmail sender reputation.
-  async function chooseContact(email: string, trusted = false) {
+  async function chooseContact(email: string, name: string | null, trusted = false, known?: Contact, force = false) {
     setBusy(email);
     setError(null);
     setMessage(null);
-    if (!trusted) {
-      const r = await post({ action: "verify", email });
-      if (!r.ok) {
-        setBusy(null);
-        return setError(String(r.data.error || "Could not verify this email"));
+    setRisky(null);
+    if (!trusted && !force) {
+      let status = known?.verification === "valid" ? "valid" : null;
+      if (!status) {
+        const r = await post({ action: "verify", email });
+        if (!r.ok) {
+          setBusy(null);
+          return setError(String(r.data.error || "Could not verify this email"));
+        }
+        noteCredits(r.data);
+        const v = r.data.verification as Verification;
+        setChecked((prev) => ({ ...prev, [email]: v }));
+        status = v.status;
       }
-      noteCredits(r.data);
-      const v = r.data.verification as Verification;
-      setChecked((prev) => ({ ...prev, [email]: v }));
-      if (v.status !== "valid" && v.status !== "accept_all") {
+      // Only a confirmed address goes into a draft. A catch-all or unknown result often means the mail bounces later.
+      if (status !== "valid") {
         setBusy(null);
-        return setError(`${email}: ${STATUS_TEXT[v.status] || "not safe to send"}. Not added.`);
+        if (status === "invalid" || status === "disposable") {
+          return setError(`${email}: ${STATUS_TEXT[status]}. Not added.`);
+        }
+        const seen = known?.sources ?? 0;
+        return setRisky({
+          email,
+          name,
+          why: `${STATUS_TEXT[status] || "Could not be confirmed"}. ${
+            seen > 0
+              ? `It was found on ${seen} public web page${seen === 1 ? "" : "s"}, which is a good sign.`
+              : "It was not found on any public web page, so it may be a pattern guess. Mail to it can bounce."
+          }`,
+        });
       }
     }
-    const note = await onUse(jobId, email);
+    const li = linkedinUrl.trim();
+    const note = await onUse(jobId, {
+      email,
+      name,
+      linkedinUrl: /^https:\/\/([a-z0-9-]+\.)?linkedin\.com\/in\//i.test(li) ? li : null,
+    });
     setBusy(null);
     setMessage(note);
   }
@@ -144,7 +171,7 @@ export default function ContactFinder({ jobId, company, postingEmail, onUse }: P
             type="button"
             className="btn primary btn-sm"
             disabled={busy !== null}
-            onClick={() => chooseContact(postingEmail, true)}
+            onClick={() => chooseContact(postingEmail, null, true)}
           >
             {busy === postingEmail ? "Adding..." : "Use for outreach"}
           </button>
@@ -230,6 +257,14 @@ export default function ContactFinder({ jobId, company, postingEmail, onUse }: P
                   {c.confidence !== null ? ` · confidence ${c.confidence}%` : ""}
                 </span>
                 <span className="admin-contact-email">{c.email}</span>
+                {c.sources !== undefined && (
+                  <span className="admin-contact-status">
+                    {c.sources > 0
+                      ? `Seen on ${c.sources} public web page${c.sources === 1 ? "" : "s"}`
+                      : "Not seen on the web (pattern guess)"}
+                    {c.verification === "valid" ? " · Hunter says valid" : ""}
+                  </span>
+                )}
                 {checked[c.email] && (
                   <span className={`admin-contact-status ${checked[c.email].status}`}>
                     {STATUS_TEXT[checked[c.email].status] || checked[c.email].status}
@@ -240,13 +275,34 @@ export default function ContactFinder({ jobId, company, postingEmail, onUse }: P
                 type="button"
                 className="btn primary btn-sm"
                 disabled={busy !== null}
-                onClick={() => chooseContact(c.email)}
+                onClick={() =>
+                  chooseContact(c.email, personLabel(c) === c.email ? fullName.trim() || null : personLabel(c), false, c)
+                }
               >
                 {busy === c.email ? "Checking..." : "Verify and use"}
               </button>
             </li>
           ))}
         </ul>
+      )}
+
+      {risky && (
+        <div className="admin-contact-risky" role="alert">
+          <p>
+            <strong>{risky.email}</strong> is not confirmed. {risky.why}
+          </p>
+          <button
+            type="button"
+            className="btn ghost btn-sm"
+            disabled={busy !== null}
+            onClick={() => chooseContact(risky.email, risky.name, false, undefined, true)}
+          >
+            Use anyway
+          </button>
+          <button type="button" className="btn ghost btn-sm" onClick={() => setRisky(null)}>
+            Do not use
+          </button>
+        </div>
       )}
 
       {error && (
