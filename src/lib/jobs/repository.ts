@@ -344,6 +344,7 @@ export interface JobToJudge {
 }
 
 export interface JobsRepository {
+  setJobDescription?(id: string, description: string): Promise<boolean>;
   listJobsToJudge?(limit: number): Promise<JobToJudge[]>;
   countJobsToJudge?(): Promise<number>;
   applyExperienceVerdict?(id: string, verdict: ExperienceVerdictInput): Promise<boolean>;
@@ -1276,6 +1277,19 @@ export class InMemoryJobsRepository implements JobsRepository {
         j.exp_min_years = verdict.minYears ?? j.exp_min_years;
         j.filter_reason = verdict.filterReason;
       }
+      return true;
+    }
+    return false;
+  }
+
+  async setJobDescription(id: string, description: string): Promise<boolean> {
+    for (const j of this.jobs.values()) {
+      if (j.id !== id) continue;
+      j.description = description;
+      const raw = (typeof j.raw === "object" && j.raw !== null ? j.raw : {}) as Record<string, unknown>;
+      const rest = { ...raw };
+      delete rest.expJudge;
+      j.raw = rest;
       return true;
     }
     return false;
@@ -3138,6 +3152,18 @@ export class NeonJobsRepository implements JobsRepository {
           exp_class = CASE WHEN ${hide} = 1 THEN 'senior' ELSE exp_class END,
           exp_min_years = CASE WHEN ${hide} = 1 THEN COALESCE(${verdict.minYears}::int, exp_min_years) ELSE exp_min_years END,
           filter_reason = CASE WHEN ${hide} = 1 THEN ${verdict.filterReason} ELSE filter_reason END
+      WHERE id = ${id}::uuid
+      RETURNING id
+    `;
+    return res.length > 0;
+  }
+
+  async setJobDescription(id: string, description: string): Promise<boolean> {
+    const sql = this.resolveSql();
+    const res = await sql`
+      UPDATE jobs
+      SET description = ${description},
+          raw = COALESCE(raw, '{}'::jsonb) - 'expJudge'
       WHERE id = ${id}::uuid
       RETURNING id
     `;

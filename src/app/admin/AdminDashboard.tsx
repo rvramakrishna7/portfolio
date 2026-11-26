@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import ContactFinder from "./ContactFinder";
 import AnswerStudio from "./AnswerStudio";
-import { readableDescription, shortLinkLabel } from "../../lib/jobs/description-text";
+import { readableDescription, shortLinkLabel, isThinDescription } from "../../lib/jobs/description-text";
 import { buildEmailParts, type EmailMode } from "@/lib/outreach/email-format";
 import {
   StoredJob,
@@ -242,6 +242,8 @@ export function AdminDashboard() {
   const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [isRechecking, setIsRechecking] = useState(false);
+  const [pastedDescriptions, setPastedDescriptions] = useState<Record<string, string>>({});
+  const [descriptionBusy, setDescriptionBusy] = useState<string | null>(null);
   const [outreachError, setOutreachError] = useState<string | null>(null);
   const [editingDrafts, setEditingDrafts] = useState<
     Record<string, { subject?: string; body: string; recipient?: string }>
@@ -376,6 +378,36 @@ export function AdminDashboard() {
       ignore = true;
     };
   }, [viewFilter, sourceFilter, searchQuery, maxAgeDays, reasonFilter]);
+
+  // Saves a full description (pasted or read from the job link) and checks the experience
+  const handleSaveDescription = async (jobId: string, fetchFromLink: boolean) => {
+    setDescriptionBusy(jobId);
+    try {
+      const res = await fetch(`/api/admin/jobs/${jobId}/description`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fetchFromLink ? { fetchFromLink: true } : { description: pastedDescriptions[jobId] || "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save the description");
+      setCopyToast(
+        data.hidden
+          ? `Saved. This job needs experience${data.minYears ? ` (${data.minYears}+ years)` : ""}, so it is hidden.`
+          : data.aiChecked
+          ? data.verdict === "yes"
+            ? "Saved. The AI read it: a fresher can apply."
+            : "Saved. The AI could not find an experience requirement, check it yourself."
+          : "Saved. The AI is not set up, so only the rules checked it."
+      );
+      setPastedDescriptions((prev) => ({ ...prev, [jobId]: "" }));
+      await fetchJobs();
+    } catch (err: unknown) {
+      setCopyToast(err instanceof Error ? err.message : "Could not save the description");
+    } finally {
+      setDescriptionBusy(null);
+      setTimeout(() => setCopyToast(null), 9000);
+    }
+  };
 
   // The AI reads saved jobs that are still visible and hides the ones that need experience
   const handleRecheckExperience = async () => {
@@ -1667,6 +1699,11 @@ export function AdminDashboard() {
                               <span className={`badge geo-badge ${job.geo_eligibility}`}>
                                 Geo: {job.geo_eligibility}
                               </span>
+                              {isThinDescription(job.description) && (
+                                <span className="badge exp-badge unclear" title="The post has no real description, so experience was not checked">
+                                  Experience not checked
+                                </span>
+                              )}
                               {job.contact_email && (
                                 <span className="badge email-badge" title={job.contact_email}>
                                   Email available
@@ -1696,6 +1733,39 @@ export function AdminDashboard() {
                           <details className="admin-job-details">
                             <summary>Read full description</summary>
                             <div className="admin-job-details-body">
+                              {isThinDescription(job.description) && (
+                                <div className="admin-desc-missing">
+                                  <p>
+                                    This post has no real description, only a link or a contact line. The experience could not be
+                                    checked. Open the link and paste the description here, or try reading it from the link.
+                                  </p>
+                                  <textarea
+                                    className="admin-studio-textarea"
+                                    rows={5}
+                                    placeholder="Paste the full job description here"
+                                    value={pastedDescriptions[job.id] || ""}
+                                    onChange={(e) => setPastedDescriptions((prev) => ({ ...prev, [job.id]: e.target.value }))}
+                                  />
+                                  <div className="admin-studio-row">
+                                    <button
+                                      type="button"
+                                      className="btn primary btn-sm"
+                                      disabled={descriptionBusy === job.id || (pastedDescriptions[job.id] || "").trim().length < 40}
+                                      onClick={() => handleSaveDescription(job.id, false)}
+                                    >
+                                      {descriptionBusy === job.id ? "Checking..." : "Save and check with AI"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn ghost btn-sm"
+                                      disabled={descriptionBusy === job.id}
+                                      onClick={() => handleSaveDescription(job.id, true)}
+                                    >
+                                      Read from link
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                               <p className="admin-job-details-link">
                                 Apply link:{" "}
                                 <a href={job.apply_url || job.url} target="_blank" rel="noopener noreferrer">

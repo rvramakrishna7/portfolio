@@ -75,3 +75,23 @@ export function shortLinkLabel(url: string): string {
     return url.slice(0, 60);
   }
 }
+
+/** True when a post has no real description: only a title, a link or a contact line. Experience cannot be read from it. */
+export function isThinDescription(text: string | null | undefined): boolean {
+  const bare = (text || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return bare.length < 160;
+}
+
+/** Sites that need a login. They cannot be read from the server and are not scraped. */
+export function needsLogin(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "linkedin.com" || host.endsWith(".linkedin.com") || host === "lnkd.in";
+  } catch {
+    return false;
+  }
+}

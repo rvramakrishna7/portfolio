@@ -4213,3 +4213,14 @@ body:has(.admin-login-layout) .totop {
 .admin-studio-result p { margin: 0 0 10px; white-space: pre-wrap; }
 
 .admin-studio-hint { margin: 0; font-size: 0.85rem; color: var(--text-2); }
+
+.admin-desc-missing {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+}
+.admin-desc-missing p { margin: 0; font-size: 0.9rem; }
