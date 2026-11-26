@@ -3,6 +3,7 @@ import { requireAdminApi } from "@/lib/admin/require-admin";
 import { verifyAdminOrigin } from "@/lib/admin/origin";
 import { getJobsRepository } from "@/lib/jobs/repository";
 import { sendDraftEmail, type SendCode } from "@/lib/outreach/send-email";
+import { parseEmailMode } from "@/lib/outreach/email-format";
 
 export const maxDuration = 30;
 
@@ -31,7 +32,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const repo = getJobsRepository();
-  const result = await sendDraftEmail(repo, id);
+  let mode: unknown;
+  try {
+    mode = ((await req.json()) as { mode?: unknown })?.mode;
+  } catch {
+    mode = undefined;
+  }
+  const result = await sendDraftEmail(repo, id, { mode: parseEmailMode(mode) });
 
   if (!result.ok) {
     return NextResponse.json({ error: result.message, code: result.code }, { status: STATUS_BY_CODE[result.code], headers: HEADERS });

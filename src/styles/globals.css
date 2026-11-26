@@ -4000,3 +4000,121 @@ body:has(.admin-login-layout) .totop {
   border-radius: 999px;
   padding: 6px 12px;
 }
+
+/* Find contact panel */
+.admin-contact-panel {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  margin-top: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.admin-contact-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--text);
+}
+.admin-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.admin-contact-actions {
+  display: flex;
+  align-items: flex-end;
+}
+.admin-contact-linkedin {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.admin-contact-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.admin-contact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.admin-contact-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.admin-contact-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.admin-contact-role,
+.admin-contact-email {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.admin-contact-status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.admin-contact-status.valid {
+  color: var(--ok);
+}
+.admin-contact-status.invalid,
+.admin-contact-status.disposable {
+  color: var(--error);
+}
+.admin-contact-error {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--error);
+}
+.admin-contact-ok {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ok);
+}
+
+/* Email look selector */
+.admin-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.admin-mode-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.admin-mode-hint {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}

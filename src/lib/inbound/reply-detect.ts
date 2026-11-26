@@ -186,8 +186,7 @@ export async function checkRepliesAndAlert(
   }
 
   const maxMessages = options?.maxMessages ?? 50;
-  const maxDurationMs = options?.maxDurationMs ?? 10000;
-  const deadline = Date.now() + maxDurationMs;
+  const maxDurationMs = options?.maxDurationMs ?? 25000;
 
   const client = options?.clientFactory
     ? options.clientFactory({
@@ -207,13 +206,33 @@ export async function checkRepliesAndAlert(
 
   try {
     await client.connect();
+    // The time budget starts after the connection, which can be slow from a serverless host
+    const deadline = Date.now() + maxDurationMs;
     const lock = await client.getMailboxLock("INBOX", { readOnly: true });
 
     try {
       const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-      const messages = await client.search({ since: fourteenDaysAgo }, { uid: true });
 
-      if (!messages || messages.length === 0) {
+      // 1. Mail from the people we wrote to. This finds a reply however busy the inbox is.
+      const sentDrafts = (await repo.listDrafts({ limit: 1000 })).filter((d) => d.sent_at && d.recipient);
+      const recipients = Array.from(new Set(sentDrafts.map((d) => (d.recipient as string).trim().toLowerCase()))).slice(0, 30);
+      const targeted = new Set<number>();
+      for (const recipient of recipients) {
+        if (Date.now() >= deadline - 800) break;
+        try {
+          const found = await client.search({ since: fourteenDaysAgo, from: recipient }, { uid: true });
+          for (const uid of found || []) targeted.add(uid);
+        } catch {
+          // A failed search for one recipient must not stop the others
+        }
+      }
+
+      // 2. The newest messages overall, for LinkedIn message notifications
+      const recent = (await client.search({ since: fourteenDaysAgo }, { uid: true })) || [];
+      const newestFirst = recent.slice(-maxMessages).reverse().filter((uid) => !targeted.has(uid));
+      const uidsToFetch = [...Array.from(targeted).sort((x, y) => y - x).slice(0, maxMessages), ...newestFirst];
+
+      if (uidsToFetch.length === 0) {
         return {
           checked: 0,
           exactMatches: 0,
@@ -222,7 +241,6 @@ export async function checkRepliesAndAlert(
         };
       }
 
-      const uidsToFetch = messages.slice(-maxMessages).reverse();
       const extracted: InboundReplyMessage[] = [];
 
       for (const uid of uidsToFetch) {
@@ -248,6 +266,16 @@ export async function checkRepliesAndAlert(
         } catch {
           // Skip unparsable email
         }
+      }
+
+      if (extracted.length === 0) {
+        return {
+          checked: 0,
+          exactMatches: 0,
+          possibleMatches: 0,
+          alertsSent: 0,
+          error: `Found ${uidsToFetch.length} messages but could not read any of them in time. Try again.`,
+        };
       }
 
       const matchRes = await matchRepliesAndAlert(extracted, repo, {

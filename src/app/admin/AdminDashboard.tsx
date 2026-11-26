@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import ContactFinder from "./ContactFinder";
+import { buildEmailParts, type EmailMode } from "@/lib/outreach/email-format";
 import {
   StoredJob,
   CustomBoard,
@@ -244,6 +246,7 @@ export function AdminDashboard() {
 
   // Sending approved email drafts from Gmail (owner clicks, two steps)
   const [sendToast, setSendToast] = useState<string | null>(null);
+  const [emailMode, setEmailMode] = useState<EmailMode>("plain");
   const [confirmSendId, setConfirmSendId] = useState<string | null>(null);
   const [sendingDraftId, setSendingDraftId] = useState<string | null>(null);
   const [confirmSendAll, setConfirmSendAll] = useState(false);
@@ -800,6 +803,39 @@ export function AdminDashboard() {
     }
   };
 
+  // Puts a checked contact email on this job's open email draft. With no draft yet, copies it so it can be pasted later.
+  const handleUseContact = async (jobId: string, email: string): Promise<string> => {
+    const draft = drafts.find(
+      (d) => d.job_id === jobId && d.kind === "email" && !d.sent_at && d.status !== "discarded"
+    );
+    if (!draft) {
+      try {
+        await navigator.clipboard.writeText(email);
+      } catch {
+        // clipboard may be blocked; the message below still names the address
+      }
+      return `${email} copied. Click Draft outreach for this job, then paste it into Recipient.`;
+    }
+    try {
+      const res = await fetch(`/api/admin/drafts/${draft.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient: email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save the recipient");
+      setDrafts((prev) => prev.map((d) => (d.id === draft.id ? data.draft : d)));
+      setEditingDrafts((prev) => {
+        const next = { ...prev };
+        delete next[draft.id];
+        return next;
+      });
+      return `${email} added as the recipient. Open the Messages tab to review and send.`;
+    } catch (err: unknown) {
+      return err instanceof Error ? err.message : "Could not save the recipient";
+    }
+  };
+
   const handleUpdateDraft = async (
     draftId: string,
     updates: { subject?: string; body?: string; status?: "draft" | "approved" | "discarded"; recipient?: string }
@@ -962,7 +998,11 @@ export function AdminDashboard() {
           return next;
         });
       }
-      const res = await fetch(`/api/admin/drafts/${draft.id}/send`, { method: "POST" });
+      const res = await fetch(`/api/admin/drafts/${draft.id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: emailMode }),
+      });
       const data = await res.json();
       if (!res.ok) {
         showSendToast(data.error || "Sending failed");
@@ -986,7 +1026,11 @@ export function AdminDashboard() {
     setConfirmSendAll(false);
     setIsSendingAll(true);
     try {
-      const res = await fetch("/api/admin/drafts/send-all", { method: "POST" });
+      const res = await fetch("/api/admin/drafts/send-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: emailMode }),
+      });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Send all failed");
@@ -1042,9 +1086,11 @@ export function AdminDashboard() {
         throw new Error(data.error || "Reply check failed");
       }
       setReplyCheckToast(
-        `Checked ${data.checked || 0} messages (${data.exactMatches || 0} exact, ${data.possibleMatches || 0} possible)`
+        data.error
+          ? `Reply check problem: ${data.error}`
+          : `Checked ${data.checked || 0} messages (${data.exactMatches || 0} exact, ${data.possibleMatches || 0} possible)`
       );
-      setTimeout(() => setReplyCheckToast(null), 4000);
+      setTimeout(() => setReplyCheckToast(null), data.error ? 10000 : 5000);
       await fetchPipeline();
       await fetchJobs();
     } catch (err: unknown) {
@@ -1082,6 +1128,29 @@ export function AdminDashboard() {
       setTimeout(() => setCopyToast(null), 2500);
     } catch {
       // Fallback
+    }
+  };
+
+  // Copies the email the way it will look in the chosen mode, so it can be pasted into Gmail compose.
+  const handleCopyFormatted = async (draft: OutreachDraft) => {
+    const body = editingDrafts[draft.id]?.body !== undefined ? editingDrafts[draft.id].body : draft.body;
+    const parts = buildEmailParts(body, emailMode);
+    try {
+      if (parts.html && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([parts.html], { type: "text/html" }),
+            "text/plain": new Blob([parts.text], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(parts.text);
+      }
+      setCopyToast("Email copied. Paste it into Gmail.");
+      setTimeout(() => setCopyToast(null), 2500);
+    } catch {
+      setCopyToast("Could not copy. Allow clipboard access and try again.");
+      setTimeout(() => setCopyToast(null), 3500);
     }
   };
 
@@ -1576,6 +1645,12 @@ export function AdminDashboard() {
                                 Contact ↗
                               </a>
                             )}
+                            <ContactFinder
+                              jobId={job.id}
+                              company={job.company}
+                              postingEmail={job.contact_email}
+                              onUse={handleUseContact}
+                            />
                             <button
                               type="button"
                               className={`btn ${job.status === "shortlisted" ? "primary" : "ghost"} btn-sm`}
@@ -1924,6 +1999,25 @@ export function AdminDashboard() {
                   Approve a draft, then use Send email to send it from Gmail. Copy and Open in Gmail are there if you prefer to send it yourself.
                 </div>
 
+                <div className="admin-mode-bar">
+                  <label htmlFor="email-mode-select" className="admin-mode-label">Email look</label>
+                  <select
+                    id="email-mode-select"
+                    className="admin-select"
+                    value={emailMode}
+                    onChange={(e) => setEmailMode(e.target.value as EmailMode)}
+                  >
+                    <option value="plain">Plain text (best for first contact)</option>
+                    <option value="light">Light: text with a neat signature</option>
+                    <option value="full">Full: card with Experience and Projects</option>
+                  </select>
+                  <span className="admin-mode-hint">
+                    {emailMode === "plain" && "Plain text with one direct portfolio link. Least likely to reach spam."}
+                    {emailMode === "light" && "Plain text style, plus a signature with icon links."}
+                    {emailMode === "full" && "The complete card. Better after someone has replied."}
+                  </span>
+                </div>
+
                 <div className="admin-drafts-header-bar">
                   <div className="admin-view-filters" role="group" aria-label="Filter drafts by status">
                     <button
@@ -2238,6 +2332,16 @@ export function AdminDashboard() {
                                     <Ico name="copy" />
                                     Copy
                                   </button>
+                                  {isEmail && (
+                                    <button
+                                      type="button"
+                                      className="btn ghost btn-sm admin-copy-formatted-btn"
+                                      onClick={() => handleCopyFormatted(draft)}
+                                    >
+                                      <Ico name="copy" />
+                                      Copy formatted
+                                    </button>
+                                  )}
                                   {isEmail && (
                                     <a
                                       href={`mailto:${encodeURIComponent(currentRecipient || "")}?subject=${encodeURIComponent(currentSubject || "")}&body=${encodeURIComponent(currentBody)}`}

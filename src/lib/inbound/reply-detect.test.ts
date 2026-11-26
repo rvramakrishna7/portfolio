@@ -293,4 +293,74 @@ describe("Reply Detection and Alerts (src/lib/inbound/reply-detect.ts)", () => {
       }
     }
   });
+  it("checkRepliesAndAlert finds a reply by searching for the recipient, even when the inbox is full of other mail", async () => {
+    const { Readable } = await import("node:stream");
+    const raw = (from: string, id: string, subject: string) =>
+      `From: ${from}\r\nTo: owner@example.com\r\nSubject: ${subject}\r\nMessage-ID: <${id}>\r\nDate: Thu, 26 Nov 2026 10:00:00 +0000\r\n\r\nSure!`;
+    const messages = new Map<number, string>();
+    // 300 newsletters fill the inbox; the reply is an older UID that the newest-50 scan would miss
+    for (let uid = 10; uid < 310; uid++) messages.set(uid, raw("news@letters.example", `n${uid}`, "Weekly digest"));
+    messages.set(5, raw("recruiter@acmecorp.com", "reply-1", "Re: Staff Engineer"));
+
+    const searches: unknown[] = [];
+    const fakeClient = {
+      connect: async () => {},
+      logout: async () => {},
+      getMailboxLock: async () => ({ release: () => {} }),
+      search: async (criteria: { from?: string }) => {
+        searches.push(criteria);
+        if (criteria.from) return criteria.from === "recruiter@acmecorp.com" ? [5] : [];
+        return Array.from(messages.keys()).sort((a, b) => a - b);
+      },
+      download: async (uid: string) => ({ content: Readable.from([messages.get(Number(uid)) ?? ""]) }),
+    };
+
+    const saved = { user: process.env.GMAIL_IMAP_USER, pass: process.env.GMAIL_IMAP_APP_PASSWORD };
+    process.env.GMAIL_IMAP_USER = "owner@example.com";
+    process.env.GMAIL_IMAP_APP_PASSWORD = "app-pass-value";
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+    try {
+      const res = await checkRepliesAndAlert({ repo, clientFactory: () => fakeClient as never });
+      expect(res.error).toBeUndefined();
+      expect(res.exactMatches).toBe(1);
+      expect(searches.some((c) => (c as { from?: string }).from === "recruiter@acmecorp.com")).toBe(true);
+      const job = await repo.getJobById("job-apple-1");
+      expect(job?.status).toBe("replied");
+
+      // A second check records nothing new
+      const again = await checkRepliesAndAlert({ repo, clientFactory: () => fakeClient as never });
+      expect(again.exactMatches).toBe(0);
+    } finally {
+      if (saved.user === undefined) delete process.env.GMAIL_IMAP_USER;
+      else process.env.GMAIL_IMAP_USER = saved.user;
+      if (saved.pass === undefined) delete process.env.GMAIL_IMAP_APP_PASSWORD;
+      else process.env.GMAIL_IMAP_APP_PASSWORD = saved.pass;
+    }
+  });
+
+  it("checkRepliesAndAlert reports an error instead of a silent zero when no message can be read", async () => {
+    const fakeClient = {
+      connect: async () => {},
+      logout: async () => {},
+      getMailboxLock: async () => ({ release: () => {} }),
+      search: async () => [1, 2, 3],
+      download: async () => {
+        throw new Error("boom");
+      },
+    };
+    const saved = { user: process.env.GMAIL_IMAP_USER, pass: process.env.GMAIL_IMAP_APP_PASSWORD };
+    process.env.GMAIL_IMAP_USER = "owner@example.com";
+    process.env.GMAIL_IMAP_APP_PASSWORD = "app-pass-value";
+    try {
+      const res = await checkRepliesAndAlert({ repo, clientFactory: () => fakeClient as never });
+      expect(res.checked).toBe(0);
+      expect(res.error).toContain("could not read");
+    } finally {
+      if (saved.user === undefined) delete process.env.GMAIL_IMAP_USER;
+      else process.env.GMAIL_IMAP_USER = saved.user;
+      if (saved.pass === undefined) delete process.env.GMAIL_IMAP_APP_PASSWORD;
+      else process.env.GMAIL_IMAP_APP_PASSWORD = saved.pass;
+    }
+  });
 });

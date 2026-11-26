@@ -3,6 +3,7 @@ import { requireAdminApi } from "@/lib/admin/require-admin";
 import { verifyAdminOrigin } from "@/lib/admin/origin";
 import { getJobsRepository } from "@/lib/jobs/repository";
 import { sendAllApproved } from "@/lib/outreach/send-email";
+import { parseEmailMode } from "@/lib/outreach/email-format";
 
 export const maxDuration = 60;
 
@@ -19,7 +20,13 @@ export async function POST(req: Request) {
   }
 
   const repo = getJobsRepository();
-  const summary = await sendAllApproved(repo);
+  let mode: unknown;
+  try {
+    mode = ((await req.json()) as { mode?: unknown })?.mode;
+  } catch {
+    mode = undefined;
+  }
+  const summary = await sendAllApproved(repo, { mode: parseEmailMode(mode) });
   const counts = await repo.countDrafts();
   return NextResponse.json({ ...summary, counts }, { headers: HEADERS });
 }

@@ -25,9 +25,20 @@ const EXPERIENCE = {
 
 const OPT_OUT = "If this is not relevant, just reply and I will not write again.";
 
+// plain: text only, one direct link. Safest for first contact with a company that does not know you.
+// light: the same text plus a tidy signature with coloured icon links. Looks personal, not promotional.
+// full: the whole card with Experience and Projects. Best after someone has replied.
+export type EmailMode = "plain" | "light" | "full";
+
+export const EMAIL_MODES: readonly EmailMode[] = ["plain", "light", "full"] as const;
+
+export function parseEmailMode(value: unknown): EmailMode {
+  return EMAIL_MODES.includes(value as EmailMode) ? (value as EmailMode) : "plain";
+}
+
 export interface EmailParts {
   text: string;
-  html: string;
+  html?: string;
 }
 
 function escapeHtml(value: string): string {
@@ -64,12 +75,31 @@ function iconLink(url: string, symbol: string, label: string, color: string): st
   );
 }
 
-export function buildEmailParts(rawBody: string): EmailParts {
-  const body = structureEmailBody(rawBody);
+export function buildEmailParts(rawBody: string, mode: EmailMode = "full"): EmailParts {
   const profile = getCandidateProfile();
   // Never put a localhost address in a real email (it is broken for the reader and looks suspicious).
   const configured = profile.portfolioUrl.replace(/\/+$/, "");
   const portfolio = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(configured) ? "https://rramakrishna.vercel.app" : configured;
+
+  if (mode !== "full") {
+    // First-contact modes use the direct portfolio link instead of the tracked redirect (a redirect from an unknown domain looks like a spam signal).
+    const direct = structureEmailBody(rawBody).replace(/https?:\/\/[^\s]+\/r\/[A-Za-z0-9_-]+/g, portfolio);
+    const roleLine = `${EXPERIENCE.role}, ${EXPERIENCE.company}`;
+    const text = [direct.trim(), "", OPT_OUT, "", profile.name, roleLine, `Portfolio: ${portfolio}`, `LinkedIn: ${profile.linkedinUrl}`, `GitHub: ${GITHUB_PROFILE}`].join("\n");
+    if (mode === "plain") return { text };
+    const html =
+      `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;max-width:600px">` +
+      bodyToHtml(direct) +
+      `<p style="margin:0 0 14px;font-size:13px;line-height:20px;color:#6b7280">${escapeHtml(OPT_OUT)}</p>` +
+      `<div style="border-top:2px solid #2563eb;padding-top:12px;margin-top:6px">` +
+      `<div style="font-size:15px;font-weight:700;color:#111827">${escapeHtml(profile.name)}</div>` +
+      `<div style="font-size:13px;color:#6b7280;margin:2px 0 10px">${escapeHtml(roleLine)}</div>` +
+      `${iconLink(portfolio, "&#8599;", "Portfolio", "#2563eb")}${iconLink(profile.linkedinUrl, "in", "LinkedIn", "#0a66c2")}${iconLink(GITHUB_PROFILE, "&lt;/&gt;", "GitHub", "#7c3aed")}` +
+      `</div></div>`;
+    return { text, html };
+  }
+
+  const body = structureEmailBody(rawBody);
   const projects = profile.projects
     .filter((p) => PROJECT_LINKS[p.id])
     .map((p) => ({ name: p.name, summary: p.summary, metrics: p.metrics, url: PROJECT_LINKS[p.id] }));

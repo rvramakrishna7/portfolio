@@ -57,6 +57,7 @@ See `.env.example` for the full list with comments. The main ones:
 | `GROQ_API_KEY` | Job triage and draft writing |
 | `GMAIL_IMAP_USER`, `GMAIL_IMAP_APP_PASSWORD` | Reading job alerts and replies, and sending email |
 | `OUTREACH_DAILY_SEND_CAP` | Optional daily send limit (default 20, maximum 100) |
+| `HUNTER_API_KEY` | Optional. Hunter.io key for the Find contact button (server side only) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | Alerts and forwards |
 | `APIFY_API_TOKEN` | LinkedIn job search |
 | `CRON_SECRET` | Protects the daily search endpoint |

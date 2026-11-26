@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 import type { JobsRepository, OutreachDraft } from "../jobs/repository";
-import { buildEmailParts } from "./email-format";
+import { buildEmailParts, type EmailMode } from "./email-format";
 
 // Sending outreach email from the owner's own Gmail, one draft at a time, only when the owner clicks.
 // Safety rules, all enforced here and covered by tests:
@@ -123,6 +123,8 @@ export interface SendOptions {
   setup?: MailSetup | null;
   now?: Date;
   cap?: number;
+  // How the email looks. Plain by default: the safest choice for a first message to a company.
+  mode?: EmailMode;
 }
 
 export async function sendDraftEmail(repo: JobsRepository, draftId: string, options: SendOptions = {}): Promise<SendResult> {
@@ -165,7 +167,7 @@ export async function sendDraftEmail(repo: JobsRepository, draftId: string, opti
   if (!claimed) return { ok: false, code: "already_sent", message: "This draft was already sent." };
 
   try {
-    const parts = buildEmailParts(draft.body);
+    const parts = buildEmailParts(draft.body, options.mode ?? "plain");
     await setup.transport.sendMail({
       from: setup.fromName ? `"${setup.fromName}" <${setup.from}>` : setup.from,
       replyTo: setup.from,
@@ -232,7 +234,7 @@ export async function sendAllApproved(
 
   for (const draft of queue) {
     if (summary.sent + summary.failed >= maxPerRequest) break;
-    const result = await sendDraftEmail(repo, draft.id, { setup, now, cap });
+    const result = await sendDraftEmail(repo, draft.id, { setup, now, cap, mode: options.mode });
     if (result.ok) {
       summary.sent++;
       summary.eligibleLeft--;
