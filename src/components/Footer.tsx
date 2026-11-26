@@ -50,24 +50,6 @@ export function Footer() {
               />
             </svg>
           </a>
-          <a
-            className="footer-icon footer-owner"
-            href="/admin/login"
-            rel="nofollow"
-            aria-label="Owner login"
-            title="Owner login"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-              <path
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1zM8 11V8a4 4 0 0 1 8 0v3"
-              />
-            </svg>
-          </a>
         </span>
       </div>
     </footer>
