@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import ContactFinder from "./ContactFinder";
 import AnswerStudio from "./AnswerStudio";
+import { readableDescription, shortLinkLabel } from "../../lib/jobs/description-text";
 import { buildEmailParts, type EmailMode } from "@/lib/outreach/email-format";
 import {
   StoredJob,
@@ -1666,16 +1667,20 @@ export function AdminDashboard() {
                               <p className="admin-job-details-link">
                                 Apply link:{" "}
                                 <a href={job.apply_url || job.url} target="_blank" rel="noopener noreferrer">
-                                  {job.apply_url || job.url}
+                                  {shortLinkLabel(job.apply_url || job.url)}
                                 </a>
                               </p>
-                              <div className="admin-job-description">{job.description || "No description was saved for this job."}</div>
-                              {job.inbound_raw && job.inbound_raw.trim() !== (job.description || "").trim() && (
-                                <details className="admin-job-details-raw">
-                                  <summary>Original message</summary>
-                                  <div className="admin-job-description">{job.inbound_raw}</div>
-                                </details>
-                              )}
+                              <div className="admin-job-description">
+                                {readableDescription(job.description) || "No description was saved for this job."}
+                              </div>
+                              {job.inbound_raw &&
+                                readableDescription(job.inbound_raw).length > 0 &&
+                                readableDescription(job.inbound_raw) !== readableDescription(job.description) && (
+                                  <details className="admin-job-details-raw">
+                                    <summary>Original message</summary>
+                                    <div className="admin-job-description">{readableDescription(job.inbound_raw)}</div>
+                                  </details>
+                                )}
                             </div>
                           </details>
 

@@ -19,10 +19,13 @@ export default function AnswerStudio() {
   const [results, setResults] = useState<Result[]>([]);
   const [copied, setCopied] = useState<number | null>(null);
 
-  const questions = questionsText
-    .split("\n")
-    .map((q) => q.trim())
+  // Questions are separated by a blank line. A question may run over several lines (for example a hint line).
+  // With no blank lines at all, every line is its own question.
+  const blocks = questionsText
+    .split(/\n\s*\n/)
+    .map((q) => q.replace(/\s*\n\s*/g, " ").trim())
     .filter(Boolean);
+  const questions = blocks.length > 1 || !/\n/.test(questionsText.trim()) ? blocks : questionsText.split("\n").map((q) => q.trim()).filter(Boolean);
 
   async function generate() {
     setBusy(true);
@@ -69,7 +72,7 @@ export default function AnswerStudio() {
       />
 
       <label className="admin-studio-label" htmlFor="studio-questions">
-        Questions (one per line, up to 5)
+        Questions (separate each with a blank line, up to 5)
       </label>
       <textarea
         id="studio-questions"
@@ -98,6 +101,14 @@ export default function AnswerStudio() {
           {busy ? "Writing answers..." : "Write answers"}
         </button>
       </div>
+
+      <p className="admin-studio-hint">
+        {questions.length === 0
+          ? "Add at least one question."
+          : questions.length > 5
+          ? `${questions.length} questions found. The limit is 5 at a time, remove some.`
+          : `${questions.length} question${questions.length === 1 ? "" : "s"} found.`}
+      </p>
 
       {error && (
         <p className="admin-contact-error" role="alert">

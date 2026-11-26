@@ -3207,7 +3207,7 @@ export class NeonJobsRepository implements JobsRepository {
       FROM outreach_drafts d
       LEFT JOIN jobs j ON d.job_id = j.id
       WHERE (${statusFilter} = '' OR d.status = ${statusFilter})
-        AND (${jobIdFilter} = '' OR d.job_id = ${jobIdFilter}::uuid)
+        AND (${jobIdFilter} = '' OR d.job_id = NULLIF(${jobIdFilter}, '')::uuid)
         AND (${kindFilter} = '' OR d.kind = ${kindFilter})
       ORDER BY d.created_at DESC
       LIMIT ${limit} OFFSET ${offset}

@@ -9,7 +9,7 @@ export const maxDuration = 60;
 
 const Schema = z.object({
   description: z.string().min(20, "Paste the job description first").max(6000),
-  questions: z.array(z.string().trim().min(3).max(500)).min(1, "Add at least one question").max(5),
+  questions: z.array(z.string().trim().min(3).max(800)).min(1, "Add at least one question").max(5),
   maxWords: z
     .number()
     .refine((n) => (ALLOWED_WORD_LIMITS as readonly number[]).includes(n))

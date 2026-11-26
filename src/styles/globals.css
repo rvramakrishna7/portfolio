@@ -4211,3 +4211,5 @@ body:has(.admin-login-layout) .totop {
 }
 .admin-studio-result h3 { margin: 0 0 8px; font-size: 1rem; }
 .admin-studio-result p { margin: 0 0 10px; white-space: pre-wrap; }
+
+.admin-studio-hint { margin: 0; font-size: 0.85rem; color: var(--text-2); }
